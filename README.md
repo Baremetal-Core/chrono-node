@@ -75,7 +75,7 @@ inversion. Use `TEST` to check the real panel; see Troubleshooting.
 
 | Part | Notes |
 |------|-------|
-| ESP32-2432S028R (CYD) | 320×240 ILI9341 TFT, CH340 USB-UART |
+| ESP32-2432S028R (CYD) | 320×240 TFT (this unit: ST7789 IPS), CH340 USB-UART |
 | DS3231 RTC module | I2C address `0x68` (ZS-042 modules also show an EEPROM at `0x57`) |
 
 ### Wiring: use the CYD **LEFT** 4-pin connector
@@ -233,9 +233,10 @@ src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/SHOT/HELP development c
   console for the failure reason code, then run `WIFI PORTAL` to re-enter credentials.
 - **Time is off by whole hours after upgrading from v0.1.0:** v0.1.0 stored local time in
   the DS3231. Run `SET` once with the current local time.
-- **White background or wrong colours:** CYD batches use different panels. This project
-  sets `TFT_INVERSION_ON` (IPS panel). Run `TEST`: the background must be black and each bar
-  must match its label. The comment at the end of `platformio.ini` lists the flags for other
-  variants (inversion off, BGR order, ST7789).
+- **White background, wrong or washed-out colours:** CYD batches use different panels. This
+  project targets the ST7789 IPS panel (`ST7789_DRIVER`, BGR order, inversion off, as on the
+  "CYD2USB"). The original CYD uses an ILI9341. Run `TEST`: the background must be black and
+  each bar must match its label. The comment at the end of `platformio.ini` lists the flags
+  for the other variant.
 - **`DS3231 not detected`:** check that the RTC is on the LEFT connector and that SDA and SCL
   aren't swapped.
