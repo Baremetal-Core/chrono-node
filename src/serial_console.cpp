@@ -7,6 +7,7 @@
 
 #include "clock_sync.h"
 #include "config.h"
+#include "display_manager.h"
 #include "net_manager.h"
 #include "rtc_manager.h"
 #include "settings.h"
@@ -88,7 +89,7 @@ void printInfo(RtcManager& rtc) {
   }
 }
 
-bool handleLine(RtcManager& rtc, char* text) {
+bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   while (*text == ' ') ++text;
   if (*text == '\0') return false;
 
@@ -111,6 +112,12 @@ bool handleLine(RtcManager& rtc, char* text) {
     printRtcTime(rtc);
   } else if (strcasecmp(text, "INFO") == 0) {
     printInfo(rtc);
+  } else if (strcasecmp(text, "TEST PALETTE") == 0) {
+    display.showPaletteTest(30000);
+  } else if (strcasecmp(text, "TEST") == 0) {
+    display.showTestPattern(20000);
+  } else if (strcasecmp(text, "SHOT") == 0) {
+    display.screenshot(Serial);
   } else if (strcasecmp(text, "NTP") == 0) {
     Serial.printf("[NTP] Server %s\n", settings::ntpServer());
     clock_sync::printStatus();
@@ -134,10 +141,10 @@ bool handleLine(RtcManager& rtc, char* text) {
 void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
-      "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | HELP");
+      "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | SHOT | TEST [PALETTE] | HELP");
 }
 
-bool serialConsolePoll(RtcManager& rtc) {
+bool serialConsolePoll(RtcManager& rtc, DisplayManager& display) {
   bool changed = false;
   while (Serial.available() > 0) {
     char c = static_cast<char>(Serial.read());
@@ -146,7 +153,7 @@ bool serialConsolePoll(RtcManager& rtc) {
         Serial.println("[CONSOLE] ERROR: line too long");
       } else if (lineLen > 0) {
         line[lineLen] = '\0';
-        changed |= handleLine(rtc, line);
+        changed |= handleLine(rtc, display, line);
       }
       lineLen = 0;
       overflow = false;

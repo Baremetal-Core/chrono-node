@@ -46,7 +46,7 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - Re-sync every 6 h plus on reconnect. Show the last-sync age and status (synced / stale / never).
 - Clear the DS3231 lost-power flag automatically after a good sync.
 
-## M5 – "Gorgeous" UI system
+## M5 – "Gorgeous" UI system ✅
 - TFT_eSPI with anti-aliased smooth fonts compiled into flash (no filesystem upload step) and sprites.
 - Custom anti-aliased digit font (e.g. a large Inter/Rajdhani/DSEG variant), seconds as a progress arc or small digits.
 - Layout: a big time display, date with weekday, a status bar (Wi-Fi, NTP, indoor temperature from the DS3231's sensor).

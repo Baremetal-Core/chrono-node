@@ -27,7 +27,7 @@ std::atomic<bool> forgetRequested{false};
 std::atomic<bool> ntpRequested{false};
 bool sntpStarted = false;
 char ntpServer[config::kNtpServerMaxLen + 1] = "";  // SNTP keeps a pointer to this
-char portalSsid[32] = "";
+char apSsid[32] = "";
 
 uint32_t attemptStartMs = 0;
 uint32_t retryAtMs = 0;
@@ -83,10 +83,10 @@ void openPortal(uint32_t timeoutS) {
   clearEvents();
   WiFi.disconnect();
   wm.setConfigPortalTimeout(timeoutS);
-  wm.startConfigPortal(portalSsid);  // non-blocking; serviced by wm.process()
+  wm.startConfigPortal(apSsid);  // non-blocking; serviced by wm.process()
   current = State::Portal;
   Serial.printf("[WIFI] Setup portal open: join Wi-Fi \"%s\", then browse to http://%s\n",
-                portalSsid, WiFi.softAPIP().toString().c_str());
+                apSsid, WiFi.softAPIP().toString().c_str());
   if (timeoutS) Serial.printf("[WIFI] Portal closes in %lus if unused\n", (unsigned long)timeoutS);
 }
 
@@ -140,7 +140,7 @@ void onAttemptFailed(const char* why) {
 void setup() {
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-  snprintf(portalSsid, sizeof(portalSsid), "%s%02X%02X", config::kPortalSsidPrefix, mac[4],
+  snprintf(apSsid, sizeof(apSsid), "%s%02X%02X", config::kPortalSsidPrefix, mac[4],
            mac[5]);
 
   WiFi.setHostname(config::kHostname);  // must precede WiFi.mode()
@@ -263,22 +263,17 @@ State state() { return current; }
 
 bool isConnected() { return current == State::Connected; }
 
-void statusText(char* buf, size_t len) {
-  switch (current.load()) {
-    case State::Connected:
-      snprintf(buf, len, "Wi-Fi: %s", WiFi.SSID().c_str());
-      break;
-    case State::Connecting:
-      snprintf(buf, len, "Wi-Fi: connecting...");
-      break;
-    case State::WaitingRetry:
-      snprintf(buf, len, "Wi-Fi: offline");
-      break;
-    case State::Portal:
-      snprintf(buf, len, "Setup: join Wi-Fi %s", portalSsid);
-      break;
+void ssid(char* buf, size_t len) {
+  if (current == State::Connected) {
+    strlcpy(buf, WiFi.SSID().c_str(), len);
+  } else if (len) {
+    buf[0] = '\0';
   }
 }
+
+int rssi() { return current == State::Connected ? WiFi.RSSI() : 0; }
+
+const char* portalSsid() { return apSsid; }
 
 void printStatus() {
   static const char* names[] = {"connecting", "connected", "waiting to retry", "setup portal"};
@@ -290,7 +285,7 @@ void printStatus() {
                   WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(),
                   WiFi.RSSI(), config::kHostname);
   } else if (current == State::Portal) {
-    Serial.printf("[WIFI] Portal SSID \"%s\", http://%s\n", portalSsid,
+    Serial.printf("[WIFI] Portal SSID \"%s\", http://%s\n", apSsid,
                   WiFi.softAPIP().toString().c_str());
   } else if (current == State::WaitingRetry) {
     Serial.printf("[WIFI] Next attempt in %lds\n", (long)(retryAtMs - millis()) / 1000);
