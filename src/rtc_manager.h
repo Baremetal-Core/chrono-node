@@ -22,8 +22,11 @@ class RtcManager {
   // if the device does not respond, or false if the time read is invalid.
   bool read(DateTime& out);
 
-  // Writes a new time to the DS3231 and clears the oscillator-stop flag.
+  // Writes a new UTC time to the DS3231 and clears the oscillator-stop flag.
   bool setTime(const DateTime& dt);
+
+  // DS3231 die temperature (0.25 °C resolution, about ±3 °C accuracy).
+  bool temperatureC(float& out);
 
  private:
   bool acknowledges();

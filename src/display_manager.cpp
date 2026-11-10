@@ -53,12 +53,11 @@ void DisplayManager::enterMode(Mode mode) {
   lastError_[0] = '\0';
 }
 
-void DisplayManager::showTime(const DateTime& now) {
+void DisplayManager::showTime(const struct tm& local) {
   enterMode(Mode::Clock);
 
   char timeText[sizeof(lastTime_)];
-  snprintf(timeText, sizeof(timeText), "%02u:%02u:%02u", now.hour(), now.minute(),
-           now.second());
+  strftime(timeText, sizeof(timeText), "%H:%M:%S", &local);
   if (strcmp(timeText, lastTime_) != 0) {
     if (spriteOk_) {
       timeSprite.fillSprite(kBackground);
@@ -77,7 +76,7 @@ void DisplayManager::showTime(const DateTime& now) {
   }
 
   char dateText[sizeof(lastDate_)];
-  snprintf(dateText, sizeof(dateText), "%02u/%02u/%04u", now.day(), now.month(), now.year());
+  strftime(dateText, sizeof(dateText), "%d/%m/%Y", &local);
   if (strcmp(dateText, lastDate_) != 0) {
     tft.setTextColor(kDateColor, kBackground);
     tft.setTextDatum(MC_DATUM);

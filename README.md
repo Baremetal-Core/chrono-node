@@ -3,8 +3,17 @@
 Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 ("Cheap Yellow Display", CYD) with an external DS3231 RTC as its time source.
 
-**Milestone 1 (current):** TFT bring-up, I2C on GPIO27/GPIO22, DS3231 detection,
-and a 24-hour clock read directly from the DS3231. No Wi-Fi or NTP, and no touch input.
+**Current state (M2):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
+local time using a configurable POSIX timezone stored in NVS. Builds run in CI. No Wi-Fi or
+NTP yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
+
+## Time model
+
+- The DS3231 is the source of truth and **always stores UTC**.
+- Local time = DS3231 UTC + the POSIX `TZ` string (default `<+07>-7`, change it with `TZ`).
+- The ESP32 system clock is seeded from the DS3231 on a second boundary and corrected if it
+  drifts by more than 200 ms. It exists for libraries (TLS/SNTP later). The display always
+  reads the DS3231.
 
 ## Hardware
 
@@ -60,16 +69,22 @@ checkout builds without editing anything in the global PlatformIO packages direc
    (921600 is unreliable with the CH340). If auto-reset fails, hold **BOOT** while
    the upload starts connecting.
 
-## Setting the RTC time (development)
+## Serial console
 
 Firmware **never** writes the RTC at boot. Normal operation only reads the DS3231.
-To set it, open `pio device monitor` and type:
+Open `pio device monitor` and type:
 
 ```text
-SET 2026-11-08 14:32:51     # 24-hour local time, written once to the DS3231
-GET                         # print the current DS3231 time
+SET 2026-11-08 14:32:51     # local wall-clock time, converted and stored as UTC
+GET                         # current time, local and UTC
+TZ                          # show the timezone
+TZ <+07>-7                  # set and save a POSIX timezone (UTC+7, no DST)
+TZ CET-1CEST,M3.5.0,M10.5.0/3   # example with DST rules
+INFO                        # firmware/git revision, heap, partition, DS3231 temperature
 HELP
 ```
+
+`SET` rejects impossible dates and local times skipped by a DST change.
 
 `SET` also clears the DS3231 "oscillator stopped" (lost power) flag. If that flag is
 set at boot, the serial log warns about it and the screen shows
@@ -78,11 +93,13 @@ set at boot, the serial log warns about it and the screen shows
 ## Expected serial output
 
 ```text
-[Chrono Node] Booting chrono-node-fw v0.1.0
+[Chrono Node] Booting chrono-node-fw v0.2.0 (a27a8c7)
+[SETTINGS] TZ=<+07>-7 (saved)
 [DISPLAY] Initialized
 [I2C] SDA=GPIO27 SCL=GPIO22 @ 100000 Hz
 [RTC] DS3231 detected at 0x68
-[RTC] 14:32:51 2026-11-08
+[TIME] 2026-11-08 14:32:51 +0700
+[TIME] System clock seeded from DS3231
 ```
 
 If the RTC is missing, you get `[RTC] ERROR: DS3231 not detected` and an error
@@ -94,17 +111,23 @@ To disable the once-per-second time log, set `kLogEverySecond = false` in `inclu
 ## Project layout
 
 ```text
-platformio.ini            board, libraries, TFT_eSPI pin configuration
-scripts/firmware_name.py  names build artifacts chrono-node-fw.*
-include/config.h          pins, I2C address, timing, firmware metadata
-src/main.cpp              setup/loop, 1 Hz update via millis()
-src/rtc_manager.*         I2C + DS3231 detection/read/write
-src/display_manager.*     TFT rendering (sprite-based, flicker-free time)
-src/serial_console.*      SET/GET/HELP development commands
+platformio.ini                  board, libraries, TFT_eSPI pin configuration
+partitions/chrono_node_4mb.csv  2 x 1.75 MB OTA app slots + 384 KB LittleFS
+scripts/build_info.py           names artifacts chrono-node-fw.*, embeds git revision
+.github/workflows/build.yml     CI: pio run + firmware artifacts
+include/config.h                pins, I2C address, timing, defaults, firmware metadata
+src/main.cpp                    setup/loop, DS3231 polling, system clock seeding
+src/rtc_manager.*               I2C + DS3231 detection/read/write/temperature
+src/time_utils.*                UTC <-> local conversion using the POSIX TZ
+src/settings.*                  NVS-backed settings (timezone)
+src/display_manager.*           TFT rendering (sprite-based, flicker-free time)
+src/serial_console.*            SET/GET/TZ/INFO/HELP development commands
 ```
 
 ## Troubleshooting
 
+- **Time is off by whole hours after upgrading from v0.1.0:** v0.1.0 stored local time in
+  the DS3231. Run `SET` once with the current local time.
 - **Garbled or colour-inverted display:** some CYD variants use an ST7789 panel. See the
   comment at the end of `platformio.ini`.
 - **`DS3231 not detected`:** check that the RTC is on the LEFT connector and that SDA and SCL

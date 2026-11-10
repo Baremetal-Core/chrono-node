@@ -1,50 +1,51 @@
 #include "serial_console.h"
 
 #include <Arduino.h>
+#include <esp_ota_ops.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "config.h"
 #include "rtc_manager.h"
+#include "settings.h"
+#include "time_utils.h"
 
 namespace {
 
-constexpr size_t kLineMax = 48;
+constexpr size_t kLineMax = 96;
 char line[kLineMax];
 size_t lineLen = 0;
 bool overflow = false;
 
 void printRtcTime(RtcManager& rtc) {
-  DateTime now;
-  if (!rtc.read(now)) {
+  DateTime utc;
+  if (!rtc.read(utc)) {
     Serial.println("[RTC] ERROR: DS3231 not readable");
     return;
   }
-  Serial.printf("[RTC] %02u:%02u:%02u %04u-%02u-%02u\n", now.hour(), now.minute(),
-                now.second(), now.year(), now.month(), now.day());
+  char local[32];
+  time_utils::formatLocal(utc, local, sizeof(local));
+  Serial.printf("[TIME] %s (UTC %02u:%02u:%02u)\n", local, utc.hour(), utc.minute(),
+                utc.second());
 }
 
 bool handleSet(RtcManager& rtc, const char* args) {
   int y, mo, d, h, mi, s;
   char extra;
   if (sscanf(args, "%4d-%2d-%2d %2d:%2d:%2d %c", &y, &mo, &d, &h, &mi, &s, &extra) != 6) {
-    Serial.println("[CONSOLE] Usage: SET YYYY-MM-DD HH:MM:SS");
+    Serial.println("[CONSOLE] Usage: SET YYYY-MM-DD HH:MM:SS (local time)");
     return false;
   }
-  if (y < 2000 || y > 2099) {
-    Serial.println("[CONSOLE] ERROR: year must be 2000-2099");
-    return false;
-  }
-  DateTime dt(y, mo, d, h, mi, s);
-  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59 || !dt.isValid() ||
-      dt.day() != d) {
-    Serial.println("[CONSOLE] ERROR: invalid date/time");
+  DateTime utc;
+  if (!time_utils::localToUtc(y, mo, d, h, mi, s, utc)) {
+    Serial.println("[CONSOLE] ERROR: invalid local date/time (years 2000-2099)");
     return false;
   }
   if (!rtc.isPresent()) {
     Serial.println("[RTC] ERROR: DS3231 not detected, time not set");
     return false;
   }
-  if (!rtc.setTime(dt)) {
+  if (!rtc.setTime(utc)) {
     Serial.println("[RTC] ERROR: failed to write time");
     return false;
   }
@@ -53,26 +54,61 @@ bool handleSet(RtcManager& rtc, const char* args) {
   return true;
 }
 
+bool handleTz(RtcManager& rtc, const char* args) {
+  while (*args == ' ') ++args;
+  if (*args == '\0') {
+    Serial.printf("[SETTINGS] TZ=%s\n", settings::timezone());
+    return false;
+  }
+  if (!settings::setTimezone(args)) {
+    Serial.println("[CONSOLE] ERROR: invalid POSIX TZ, e.g. TZ <+07>-7");
+    return false;
+  }
+  Serial.printf("[SETTINGS] TZ=%s (saved)\n", settings::timezone());
+  printRtcTime(rtc);
+  return true;
+}
+
+void printInfo(RtcManager& rtc) {
+  const esp_partition_t* part = esp_ota_get_running_partition();
+  Serial.printf("[INFO] %s %s v%s (%s)\n", config::kProjectName, config::kFirmwareName,
+                config::kFirmwareVersion, config::kGitRevision);
+  Serial.printf("[INFO] Uptime %lus, heap free %u B (min %u B), partition %s\n",
+                (unsigned long)(millis() / 1000), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
+                part ? part->label : "?");
+  Serial.printf("[INFO] TZ=%s\n", settings::timezone());
+  float tempC;
+  if (rtc.isPresent() && rtc.temperatureC(tempC)) {
+    Serial.printf("[INFO] DS3231 present, lost power: %s, temperature %.2f C\n",
+                  rtc.lostPower() ? "yes" : "no", tempC);
+  } else {
+    Serial.println("[INFO] DS3231 not detected");
+  }
+}
+
 bool handleLine(RtcManager& rtc, char* text) {
   while (*text == ' ') ++text;
   if (*text == '\0') return false;
 
   if (strncasecmp(text, "SET ", 4) == 0) return handleSet(rtc, text + 4);
+  if (strcasecmp(text, "TZ") == 0 || strncasecmp(text, "TZ ", 3) == 0) {
+    return handleTz(rtc, text + 2);
+  }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
-    return false;
+  } else if (strcasecmp(text, "INFO") == 0) {
+    printInfo(rtc);
+  } else {
+    if (strcasecmp(text, "HELP") != 0) Serial.printf("[CONSOLE] Unknown command: %s\n", text);
+    serialConsolePrintHelp();
   }
-  if (strcasecmp(text, "HELP") != 0) {
-    Serial.printf("[CONSOLE] Unknown command: %s\n", text);
-  }
-  serialConsolePrintHelp();
   return false;
 }
 
 }  // namespace
 
 void serialConsolePrintHelp() {
-  Serial.println("[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS | GET | HELP");
+  Serial.println("[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | HELP");
 }
 
 bool serialConsolePoll(RtcManager& rtc) {
