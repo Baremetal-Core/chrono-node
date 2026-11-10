@@ -1,14 +1,17 @@
 // Chrono Node - TFT rendering for the CYD display (320x240, landscape).
 //
-// Layout: status bar (Wi-Fi, NTP, temperature), large HH:MM with small
-// seconds, a minute progress bar, the date, and a bottom notice line.
-// Changing digits roll in; everything is drawn through sprites, so nothing
-// flickers. Call tick() every loop iteration to advance animations.
+// Layout: status bar (Wi-Fi, NTP, temperature), large gradient HH:MM, a
+// minute progress bar with the seconds at its end, the date, and a bottom
+// notice line. Gradient colours follow the time of day. Changing digits roll
+// in; everything is drawn through sprites, so nothing flickers. Call tick()
+// every loop iteration to advance animations.
 #pragma once
 
 #include <Print.h>
 #include <stdint.h>
 #include <time.h>
+
+#include "ui_theme.h"
 
 struct StatusInfo {
   enum class Wifi : uint8_t { Offline, Connecting, Connected, Setup };
@@ -40,12 +43,15 @@ class DisplayManager {
   // Full-screen error. Redrawn only when the message changes.
   void showError(const char* title, const char* detail);
 
+  // Colour test pattern (labelled bars) shown for `durationMs`; the clock resumes afterwards.
+  void showTestPattern(uint32_t durationMs);
+
   // Streams the screen as big-endian RGB565 between "[SHOT] BEGIN w h" and
   // "[SHOT] END" lines. Blocks for ~14 s at 115200 baud (development only).
   void screenshot(Print& out);
 
  private:
-  enum class Mode { None, Clock, Error };
+  enum class Mode { None, Clock, Error, Test };
   struct Roll {
     char from = ' ';
     char to = ' ';
@@ -61,7 +67,7 @@ class DisplayManager {
   void drawBigDigit(int index, float progress);
   void drawSeconds(float progress);
   void drawProgress(int targetPx, bool animate);
-  void setAccent(uint16_t accent);
+  void setPalette(const theme::Palette& palette);
 
   Mode mode_ = Mode::None;
   bool spritesOk_ = false;
@@ -78,8 +84,9 @@ class DisplayManager {
   uint32_t barStartMs_ = 0;
   bool barAnimating_ = false;
 
-  uint16_t accent_ = 0;
-  int lastMinuteOfDay_ = -1;
+  theme::Palette pal_{0, 0};
+  bool palValid_ = false;
+  struct tm lastLocal_ = {};
   int lastYday_ = -1;
   uint32_t lastFrameMs_ = 0;
 
@@ -88,4 +95,5 @@ class DisplayManager {
   char notice_[64] = "";
   uint16_t noticeColor_ = 0;
   char lastError_[96] = "";
+  uint32_t testUntilMs_ = 0;
 };

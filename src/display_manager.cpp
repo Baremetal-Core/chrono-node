@@ -9,12 +9,11 @@
 #include "fonts/font_seconds.h"
 #include "fonts/font_small.h"
 #include "fonts/font_time.h"
-#include "ui_theme.h"
 
 namespace {
 
 TFT_eSPI tft;
-TFT_eSprite digitSprite(&tft);   // one big digit cell, reused for every digit
+TFT_eSprite digitSprite(&tft);   // one big digit cell, reused for every digit and the colon
 TFT_eSprite secondsSprite(&tft); // both seconds digits
 
 constexpr int16_t kScreenW = 320;
@@ -25,46 +24,43 @@ constexpr int16_t kStatusH = 26;
 constexpr int16_t kStatusBaseline = 18;
 
 // Big HH:MM digits: fixed-width cells so the time never shifts sideways.
-constexpr int16_t kDigitW = 56;
-constexpr int16_t kColonW = 24;
-constexpr int16_t kDigitH = 78;
-constexpr int16_t kDigitBaseline = 74;
-constexpr int16_t kTimeTop = 66;
+constexpr int16_t kDigitW = 66;
+constexpr int16_t kColonW = 30;
+constexpr int16_t kDigitH = 86;
+constexpr int16_t kDigitBaseline = 82;
+constexpr int16_t kGlyphTop = 4;  // top of the digit glyphs inside a cell (gradient start)
+constexpr int16_t kTimeTop = 54;
+constexpr int16_t kTimeW = 4 * kDigitW + kColonW;
+constexpr int16_t kTimeX = (kScreenW - kTimeW) / 2;
 
-// Seconds: two cells, top-aligned with the big digits.
-constexpr int16_t kSecCellW = 21;
+// Bar row: minute progress bar with the seconds at its right end.
+constexpr int16_t kRowY = kTimeTop + kDigitH + 12;  // vertical centre of the row
+constexpr int16_t kSecCellW = 18;
 constexpr int16_t kSecW = 2 * kSecCellW;
-constexpr int16_t kSecH = 34;
-constexpr int16_t kSecBaseline = 30;
-constexpr int16_t kSecGap = 8;
-constexpr int16_t kSecTopOffset = 1;
-
-constexpr int16_t kBlockW = 4 * kDigitW + kColonW + kSecGap + kSecW;
-constexpr int16_t kBlockX = (kScreenW - kBlockW) / 2;
-constexpr int16_t kSecX = kBlockX + 4 * kDigitW + kColonW + kSecGap;
-
-// Minute progress bar under the time
-constexpr int16_t kBarY = kTimeTop + kDigitH + 12;
-constexpr int16_t kBarH = 3;
-constexpr int16_t kBarX = kBlockX;
-constexpr int16_t kBarW = kBlockW;
+constexpr int16_t kSecH = 24;
+constexpr int16_t kSecBaseline = 21;
+constexpr int16_t kSecX = kTimeX + kTimeW - kSecW;
+constexpr int16_t kBarH = 4;
+constexpr int16_t kBarX = kTimeX + 4;
+constexpr int16_t kBarW = kSecX - 12 - kBarX;
+constexpr int16_t kBarY = kRowY - kBarH / 2;
 
 // Date and notice lines
-constexpr int16_t kDateTop = kBarY + 20;
+constexpr int16_t kDateTop = kRowY + 18;
 constexpr int16_t kDateH = 30;
 constexpr int16_t kNoticeTop = 212;
 constexpr int16_t kNoticeH = 24;
 
-constexpr uint32_t kRollMs = 280;
-constexpr uint32_t kBarMs = 280;
+constexpr uint32_t kRollMs = 300;
+constexpr uint32_t kBarMs = 300;
 constexpr uint32_t kFrameMs = 16;
 
-const char* const kWeekdays[] = {"Sunday",   "Monday", "Tuesday", "Wednesday",
-                                 "Thursday", "Friday", "Saturday"};
+const char* const kWeekdays[] = {"SUNDAY",   "MONDAY", "TUESDAY", "WEDNESDAY",
+                                 "THURSDAY", "FRIDAY", "SATURDAY"};
 const char* const kMonths[] = {"January", "February", "March",     "April",   "May",      "June",
                                "July",    "August",   "September", "October", "November", "December"};
 
-int16_t digitX(int index) { return kBlockX + index * kDigitW + (index >= 2 ? kColonW : 0); }
+int16_t digitX(int index) { return kTimeX + index * kDigitW + (index >= 2 ? kColonW : 0); }
 
 float easeOutCubic(float t) {
   float u = 1.0f - t;
@@ -75,6 +71,38 @@ float progressOf(uint32_t startMs, uint32_t durationMs, uint32_t nowMs) {
   uint32_t elapsed = nowMs - startMs;
   if (elapsed >= durationMs) return 1.0f;
   return easeOutCubic(static_cast<float>(elapsed) / durationMs);
+}
+
+inline uint16_t swap16(uint16_t c) { return (c >> 8) | (c << 8); }
+
+// Turns white-on-black glyphs in a 16-bit sprite into a vertical gradient
+// (top colour at row y0, bottom colour at row y1) over the background,
+// keeping the glyphs' anti-aliasing. Sprite pixels are stored byte-swapped.
+void tintSprite(TFT_eSprite& s, int16_t w, int16_t h, const theme::Palette& p, int16_t y0,
+                int16_t y1) {
+  uint16_t* px = static_cast<uint16_t*>(s.getPointer());
+  if (!px) return;
+  const uint16_t bg = theme::kBackground;
+  const int bgR = bg >> 11, bgG = (bg >> 5) & 0x3F, bgB = bg & 0x1F;
+  const uint16_t bgSwapped = swap16(bg);
+  for (int16_t y = 0; y < h; ++y) {
+    int t = y <= y0 ? 0 : y >= y1 ? 255 : (y - y0) * 255 / (y1 - y0);
+    const uint16_t fg = theme::mix(p.top, p.bottom, t);
+    const int fR = fg >> 11, fG = (fg >> 5) & 0x3F, fB = fg & 0x1F;
+    uint16_t* row = px + y * w;
+    for (int16_t x = 0; x < w; ++x) {
+      const uint16_t c = row[x];
+      if (c == 0) {
+        row[x] = bgSwapped;
+        continue;
+      }
+      const int a = (swap16(c) >> 5) & 0x3F;  // glyph coverage 0..63
+      const int r = bgR + (fR - bgR) * a / 63;
+      const int g = bgG + (fG - bgG) * a / 63;
+      const int b = bgB + (fB - bgB) * a / 63;
+      row[x] = swap16((r << 11) | (g << 5) | b);
+    }
+  }
 }
 
 // Draws one text line through a temporary full-width sprite (no flicker).
@@ -102,6 +130,10 @@ void drawWifiIcon(TFT_eSprite& s, int16_t cx, int16_t baseY, uint8_t bars, uint1
   s.fillSmoothCircle(cx, baseY - 1, 1, bars > 0 ? on : off, theme::kBackground);
 }
 
+void drawGlyphString(TFT_eSprite& s, const char* text, int16_t cellX, int16_t cellW, int16_t y) {
+  s.drawString(text, cellX + (cellW - s.textWidth(text)) / 2, y);
+}
+
 }  // namespace
 
 bool DisplayManager::begin() {
@@ -117,8 +149,13 @@ bool DisplayManager::begin() {
     Serial.println("[DISPLAY] ERROR: sprite allocation failed");
     return false;
   }
+  // Glyphs are rendered white on black, then tinted (see tintSprite).
   digitSprite.loadFont(font_time);
+  digitSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+  digitSprite.setTextDatum(L_BASELINE);
   secondsSprite.loadFont(font_seconds);
+  secondsSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+  secondsSprite.setTextDatum(L_BASELINE);
   return true;
 }
 
@@ -134,32 +171,40 @@ void DisplayManager::enterMode(Mode mode) {
   secAnimating_ = false;
   barPx_ = -1;
   barAnimating_ = false;
-  lastMinuteOfDay_ = -1;
+  palValid_ = false;
   lastYday_ = -1;
   statusValid_ = false;
   notice_[0] = '\0';
   lastError_[0] = '\0';
 }
 
-void DisplayManager::setAccent(uint16_t accent) {
-  if (accent == accent_ && lastMinuteOfDay_ != -1) return;
-  accent_ = accent;
+void DisplayManager::setPalette(const theme::Palette& palette) {
+  if (palValid_ && palette == pal_) return;
+  const bool firstFrame = !palValid_;
+  pal_ = palette;
+  palValid_ = true;
+  if (firstFrame) return;  // showTime draws everything on the first frame
+  // Re-tint everything that uses the gradient colours.
+  for (int i = 0; i < 4; ++i) {
+    if (!bigRoll_[i].active) drawBigDigit(i, 1.0f);
+  }
   drawColon();
-  drawSeconds(1.0f);
-  barPx_ = -1;  // force a full redraw in the new colour
+  if (!secAnimating_) drawSeconds(1.0f);
+  barPx_ = -1;
+  drawProgress(lastLocal_.tm_sec * kBarW / 59, false);
+  drawDate(lastLocal_);
+  drawStatusBar();
 }
 
 void DisplayManager::showTime(const struct tm& local) {
   if (!spritesOk_) return;
+  if (mode_ == Mode::Test && (int32_t)(millis() - testUntilMs_) < 0) return;
   const bool firstFrame = mode_ != Mode::Clock;
   enterMode(Mode::Clock);
   const uint32_t now = millis();
+  lastLocal_ = local;
 
-  const int minuteOfDay = local.tm_hour * 60 + local.tm_min;
-  if (minuteOfDay != lastMinuteOfDay_) {
-    setAccent(theme::accentForMinute(minuteOfDay));
-    lastMinuteOfDay_ = minuteOfDay;
-  }
+  setPalette(theme::paletteForMinute(local.tm_hour * 60 + local.tm_min));
 
   const char next[4] = {char('0' + local.tm_hour / 10), char('0' + local.tm_hour % 10),
                         char('0' + local.tm_min / 10), char('0' + local.tm_min % 10)};
@@ -177,14 +222,10 @@ void DisplayManager::showTime(const struct tm& local) {
   const char sec[2] = {char('0' + local.tm_sec / 10), char('0' + local.tm_sec % 10)};
   bool secChanged = false;
   for (int i = 0; i < 2; ++i) {
-    if (sec[i] == secDigits_[i]) {
-      secRoll_[i].from = secRoll_[i].to = sec[i];
-      continue;
-    }
     secRoll_[i].from = secDigits_[i];
     secRoll_[i].to = sec[i];
+    if (sec[i] != secDigits_[i]) secChanged = true;
     secDigits_[i] = sec[i];
-    secChanged = true;
   }
   if (secChanged) {
     secRoll_[0].startMs = secRoll_[1].startMs = now;
@@ -192,8 +233,7 @@ void DisplayManager::showTime(const struct tm& local) {
     if (!secAnimating_) drawSeconds(1.0f);
   }
 
-  const int barTarget = local.tm_sec * kBarW / 59;
-  drawProgress(barTarget, !firstFrame);
+  drawProgress(local.tm_sec * kBarW / 59, !firstFrame);
 
   if (local.tm_yday != lastYday_) {
     drawDate(local);
@@ -234,40 +274,32 @@ void DisplayManager::tick() {
 
 void DisplayManager::drawBigDigit(int index, float progress) {
   const Roll& r = bigRoll_[index];
-  digitSprite.fillSprite(theme::kBackground);
-  digitSprite.setTextColor(theme::kDigits, theme::kBackground);
-  digitSprite.setTextDatum(BC_DATUM);
+  digitSprite.fillSprite(TFT_BLACK);
   const char to[2] = {r.active ? r.to : digits_[index], '\0'};
   if (r.active && progress < 1.0f && r.from != ' ') {
     // Old digit slides up and out while the new one rises from below.
     const int shift = static_cast<int>(progress * kDigitH);
     const char from[2] = {r.from, '\0'};
-    digitSprite.setTextDatum(L_BASELINE);
-    digitSprite.drawString(from, (kDigitW - digitSprite.textWidth(from)) / 2,
-                           kDigitBaseline - shift);
-    digitSprite.drawString(to, (kDigitW - digitSprite.textWidth(to)) / 2,
-                           kDigitBaseline + kDigitH - shift);
+    drawGlyphString(digitSprite, from, 0, kDigitW, kDigitBaseline - shift);
+    drawGlyphString(digitSprite, to, 0, kDigitW, kDigitBaseline + kDigitH - shift);
   } else {
-    digitSprite.setTextDatum(L_BASELINE);
-    digitSprite.drawString(to, (kDigitW - digitSprite.textWidth(to)) / 2, kDigitBaseline);
+    drawGlyphString(digitSprite, to, 0, kDigitW, kDigitBaseline);
   }
+  tintSprite(digitSprite, kDigitW, kDigitH, pal_, kGlyphTop, kDigitBaseline);
   digitSprite.pushSprite(digitX(index), kTimeTop);
 }
 
 void DisplayManager::drawColon() {
   if (mode_ != Mode::Clock) return;
-  digitSprite.fillSprite(theme::kBackground);
-  digitSprite.setTextColor(accent_, theme::kBackground);
-  digitSprite.setTextDatum(L_BASELINE);
-  digitSprite.drawString(":", (kColonW - digitSprite.textWidth(":")) / 2, kDigitBaseline - 4);
-  digitSprite.pushSprite(kBlockX + 2 * kDigitW, kTimeTop, 0, 0, kColonW, kDigitH);
+  digitSprite.fillSprite(TFT_BLACK);
+  drawGlyphString(digitSprite, ":", 0, kColonW, kDigitBaseline - 6);
+  tintSprite(digitSprite, kDigitW, kDigitH, pal_, kGlyphTop, kDigitBaseline);
+  digitSprite.pushSprite(kTimeX + 2 * kDigitW, kTimeTop, 0, 0, kColonW, kDigitH);
 }
 
 void DisplayManager::drawSeconds(float progress) {
   if (mode_ != Mode::Clock) return;
-  secondsSprite.fillSprite(theme::kBackground);
-  secondsSprite.setTextColor(accent_, theme::kBackground);
-  secondsSprite.setTextDatum(L_BASELINE);
+  secondsSprite.fillSprite(TFT_BLACK);
   const int shift = static_cast<int>(progress * kSecH);
   for (int i = 0; i < 2; ++i) {
     const Roll& r = secRoll_[i];
@@ -275,22 +307,21 @@ void DisplayManager::drawSeconds(float progress) {
     const char to[2] = {secDigits_[i], '\0'};
     if (progress < 1.0f && r.from != r.to && r.from != ' ') {
       const char from[2] = {r.from, '\0'};
-      secondsSprite.drawString(from, cellX + (kSecCellW - secondsSprite.textWidth(from)) / 2,
-                               kSecBaseline - shift);
-      secondsSprite.drawString(to, cellX + (kSecCellW - secondsSprite.textWidth(to)) / 2,
-                               kSecBaseline + kSecH - shift);
+      drawGlyphString(secondsSprite, from, cellX, kSecCellW, kSecBaseline - shift);
+      drawGlyphString(secondsSprite, to, cellX, kSecCellW, kSecBaseline + kSecH - shift);
     } else {
-      secondsSprite.drawString(to, cellX + (kSecCellW - secondsSprite.textWidth(to)) / 2,
-                               kSecBaseline);
+      drawGlyphString(secondsSprite, to, cellX, kSecCellW, kSecBaseline);
     }
   }
-  secondsSprite.pushSprite(kSecX, kTimeTop + kSecTopOffset);
+  tintSprite(secondsSprite, kSecW, kSecH, pal_, 2, kSecBaseline);
+  secondsSprite.pushSprite(kSecX, kRowY - kSecH / 2 - 1);
 }
 
 void DisplayManager::drawProgress(int targetPx, bool animate) {
+  const uint16_t track = theme::mix(theme::kBackground, pal_.bottom, 48);
   if (barPx_ < 0) {
-    // Full redraw (first frame or accent change).
-    tft.fillRect(kBarX, kBarY, kBarW, kBarH, theme::dim(accent_, 56));
+    // Full redraw (first frame or palette change).
+    tft.fillRect(kBarX, kBarY, kBarW, kBarH, track);
     barPx_ = 0;
     animate = false;
   }
@@ -302,22 +333,29 @@ void DisplayManager::drawProgress(int targetPx, bool animate) {
     return;
   }
   barAnimating_ = false;  // tick() re-arms it while an animation is running
-  if (targetPx > barPx_) {
-    tft.fillRect(kBarX + barPx_, kBarY, targetPx - barPx_, kBarH, accent_);
-  } else if (targetPx < barPx_) {
-    tft.fillRect(kBarX + targetPx, kBarY, barPx_ - targetPx, kBarH, theme::dim(accent_, 56));
+  // Horizontal gradient from the palette's top to bottom colour.
+  for (int x = barPx_; x < targetPx; ++x) {
+    tft.drawFastVLine(kBarX + x, kBarY, kBarH, theme::mix(pal_.top, pal_.bottom, x * 255 / kBarW));
+  }
+  if (targetPx < barPx_) {
+    tft.fillRect(kBarX + targetPx, kBarY, barPx_ - targetPx, kBarH, track);
   }
   barPx_ = targetPx;
 }
 
 void DisplayManager::drawDate(const struct tm& local) {
-  char text[48];
-  snprintf(text, sizeof(text), "%s, %d %s %d", kWeekdays[local.tm_wday % 7], local.tm_mday,
-           kMonths[local.tm_mon % 12], local.tm_year + 1900);
+  const char* weekday = kWeekdays[local.tm_wday % 7];
+  char rest[40];
+  snprintf(rest, sizeof(rest), " \xC2\xB7 %d %s %d", local.tm_mday, kMonths[local.tm_mon % 12],
+           local.tm_year + 1900);
   drawLine(kDateTop, kDateH, font_date, [&](TFT_eSprite& s) {
+    const int16_t w1 = s.textWidth(weekday);
+    const int16_t x = (kScreenW - w1 - s.textWidth(rest)) / 2;
+    s.setTextDatum(ML_DATUM);
+    s.setTextColor(pal_.top, theme::kBackground);
+    s.drawString(weekday, x, kDateH / 2);
     s.setTextColor(theme::kDate, theme::kBackground);
-    s.setTextDatum(MC_DATUM);
-    s.drawString(text, kScreenW / 2, kDateH / 2);
+    s.drawString(rest, x + w1, kDateH / 2);
   });
 }
 
@@ -336,7 +374,7 @@ void DisplayManager::drawStatusBar() {
     uint8_t bars = 0;
     switch (st.wifi) {
       case StatusInfo::Wifi::Connected:
-        iconColor = theme::kText;
+        iconColor = pal_.top;
         bars = st.rssi > -60 ? 3 : st.rssi > -72 ? 2 : 1;
         break;
       case StatusInfo::Wifi::Connecting:
@@ -411,7 +449,41 @@ void DisplayManager::showError(const char* title, const char* detail) {
   });
 }
 
+void DisplayManager::showTestPattern(uint32_t durationMs) {
+  enterMode(Mode::Test);
+  testUntilMs_ = millis() + durationMs;
+  struct Bar {
+    const char* label;
+    uint16_t color;
+    uint16_t text;
+  };
+  const Bar bars[] = {{"RED", TFT_RED, TFT_WHITE},      {"GREEN", TFT_GREEN, TFT_BLACK},
+                      {"BLUE", TFT_BLUE, TFT_WHITE},    {"WHITE", TFT_WHITE, TFT_BLACK},
+                      {"YELLOW", TFT_YELLOW, TFT_BLACK}};
+  const int16_t barH = 34;
+  for (int i = 0; i < 5; ++i) {
+    drawLine(i * barH, barH, font_date, [&](TFT_eSprite& s) {
+      s.fillSprite(bars[i].color);
+      s.setTextColor(bars[i].text, bars[i].color);
+      s.setTextDatum(MC_DATUM);
+      s.drawString(bars[i].label, kScreenW / 2, barH / 2);
+    });
+  }
+  drawLine(5 * barH, kScreenH - 5 * barH, font_date, [&](TFT_eSprite& s) {
+    s.setTextColor(TFT_WHITE, theme::kBackground);
+    s.setTextDatum(MC_DATUM);
+    s.drawString("BLACK background", kScreenW / 2, (kScreenH - 5 * barH) / 2);
+  });
+}
+
 void DisplayManager::screenshot(Print& out) {
+  // Finish running animations so the capture shows a settled frame.
+  lastFrameMs_ = 0;
+  for (int i = 0; i < 4; ++i) bigRoll_[i].startMs -= kRollMs;
+  secRoll_[0].startMs -= kRollMs;
+  barStartMs_ -= kBarMs;
+  tick();
+
   static uint16_t row[kScreenW];
   out.printf("\n[SHOT] BEGIN %d %d\n", kScreenW, kScreenH);
   for (int16_t y = 0; y < kScreenH; ++y) {

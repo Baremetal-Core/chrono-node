@@ -112,6 +112,8 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     printRtcTime(rtc);
   } else if (strcasecmp(text, "INFO") == 0) {
     printInfo(rtc);
+  } else if (strcasecmp(text, "TEST") == 0) {
+    display.showTestPattern(20000);
   } else if (strcasecmp(text, "SHOT") == 0) {
     display.screenshot(Serial);
   } else if (strcasecmp(text, "NTP") == 0) {
@@ -137,7 +139,7 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
 void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
-      "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | SHOT | HELP");
+      "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | SHOT | TEST | HELP");
 }
 
 bool serialConsolePoll(RtcManager& rtc, DisplayManager& display) {

@@ -5,27 +5,31 @@ Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 
 **Current state (M5):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
 local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal, mDNS
-(`chrono-node.local`) and NTP that keeps the DS3231 accurate. The UI uses anti-aliased Inter
-digits, rolling transitions and an accent colour that follows the time of day. See
+(`chrono-node.local`) and NTP that keeps the DS3231 accurate. The UI uses bold anti-aliased
+gradient digits, rolling transitions and colours that follow the time of day. See
 [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
 
-| Clock | Setup mode |
-|-------|------------|
-| ![Clock](docs/images/clock.png) | ![Setup mode](docs/images/setup-mode.png) |
+| Night | Day |
+|-------|-----|
+| ![Night](docs/images/clock.png) | ![Day](docs/images/clock-day.png) |
+| **Sunset** | **Setup mode** |
+| ![Sunset](docs/images/clock-sunset.png) | ![Setup mode](docs/images/setup-mode.png) |
 
 ## Display
 
 - **Status bar:** Wi-Fi signal and network name, NTP sync age (`NTP 5m`, amber when stale),
   and the DS3231 temperature (±3 °C; it's the RTC chip's own sensor).
-- **Time:** HH:MM in 92 px Inter Light, with seconds in the accent colour. Changed digits
-  roll upwards over 280 ms. Every digit uses a fixed-width cell, so the time never shifts sideways.
-- **Minute bar:** fills over the minute in the accent colour.
-- **Date:** weekday, day, month and year.
+- **Time:** HH:MM in 104 px Inter Bold with a vertical colour gradient. Changed digits roll
+  upwards over 300 ms. Every digit uses a fixed-width cell, so the time never shifts sideways.
+- **Minute bar:** fills over the minute with a horizontal gradient. The seconds sit at its
+  right end.
+- **Date:** the weekday in the accent colour, then the date.
 - **Notice line:** RTC lost-power warning (red) or Wi-Fi setup instructions (cyan).
-- **Accent colour by time of day:** indigo at night, coral at sunrise (~06:30), warm amber
-  09:00–16:00, rose at sunset (~18:30), violet in the evening, then back to indigo by 22:00.
-  It blends smoothly minute by minute.
-- Everything is drawn through sprites, so nothing flickers. An animation frame takes 2–6 ms.
+- **Colours by time of day** (on a deep navy background), blended minute by minute:
+  night periwinkle→purple, sunrise (~06:30) gold→coral, day (09:00–16:00) yellow→orange,
+  sunset (~18:30) orange→magenta, evening (~20:30) violet→indigo.
+- Glyphs are rendered white-on-black into sprites, then tinted per pixel, so the gradients
+  keep their anti-aliasing. Nothing flickers. An animation frame takes a few ms.
 - The CYD's RGB LED is switched off at boot.
 
 Fonts are generated from the Inter variable font (SIL Open Font License, see
@@ -49,6 +53,9 @@ uv run --with pyserial --with pillow tools/screenshot.py -o setup.png --send "WI
 Opening the port resets most CYDs, so the script waits for boot first (`--wait`, default
 8 s). A capture takes ~15 s, during which the clock pauses. Readback needs
 `SPI_READ_FREQUENCY` at 6 MHz; at 20 MHz the CYD returns bit-shifted colours.
+
+The capture reads the display's memory, so it can't show panel-level problems such as
+inversion. Use `TEST` to check the real panel; see Troubleshooting.
 
 ## Time model
 
@@ -158,6 +165,7 @@ NTP                         # server, last sync age, last measured DS3231 offset
 NTP SYNC                    # sync now (busy pool servers may answer only after a retry, ~15 s)
 NTP SERVER time.google.com  # set and save the NTP server (default pool.ntp.org), then sync
 SHOT                        # stream the screen (use tools/screenshot.py)
+TEST                        # labelled colour bars for 20 s (panel variant check)
 HELP
 ```
 
@@ -225,7 +233,9 @@ src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/SHOT/HELP development c
   console for the failure reason code, then run `WIFI PORTAL` to re-enter credentials.
 - **Time is off by whole hours after upgrading from v0.1.0:** v0.1.0 stored local time in
   the DS3231. Run `SET` once with the current local time.
-- **Garbled or colour-inverted display:** some CYD variants use an ST7789 panel. See the
-  comment at the end of `platformio.ini`.
+- **White background or wrong colours:** CYD batches use different panels. This project
+  sets `TFT_INVERSION_ON` (IPS panel). Run `TEST`: the background must be black and each bar
+  must match its label. The comment at the end of `platformio.ini` lists the flags for other
+  variants (inversion off, BGR order, ST7789).
 - **`DS3231 not detected`:** check that the RTC is on the LEFT connector and that SDA and SCL
   aren't swapped.

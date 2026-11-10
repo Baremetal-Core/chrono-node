@@ -28,9 +28,9 @@ DIGITS = "0123456789"
 
 # name, pixel size, weight (100-900), optical size (14-32), characters
 FONTS = [
-    ("font_time", 92, 300, 32, DIGITS + ":"),
-    ("font_seconds", 34, 400, 28, DIGITS),
-    ("font_date", 20, 400, 20, ASCII + "\u00b7"),
+    ("font_time", 104, 700, 32, DIGITS + ":"),
+    ("font_seconds", 26, 700, 24, DIGITS),
+    ("font_date", 20, 500, 20, ASCII + "\u00b7"),
     ("font_small", 15, 500, 14, ASCII + "\u00b0\u00b7"),
 ]
 

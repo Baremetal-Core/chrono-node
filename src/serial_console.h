@@ -11,6 +11,7 @@
 //   NTP                       NTP sync status
 //   NTP SYNC                  sync with the NTP server now
 //   NTP SERVER <host>         set and save the NTP server, then sync
+//   TEST                      colour test pattern for 20 s (panel variant check)
 //   SHOT                      dump the screen (tools/screenshot.py turns it into a PNG)
 //   HELP                      list commands
 #pragma once
