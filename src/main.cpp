@@ -11,6 +11,7 @@
 
 #include "config.h"
 #include "display_manager.h"
+#include "net_manager.h"
 #include "rtc_manager.h"
 #include "serial_console.h"
 #include "settings.h"
@@ -27,6 +28,7 @@ bool rtcLostPower = false;
 bool systemClockSeeded = false;
 
 uint32_t lastPollMs = 0;
+uint32_t lastReadOkMs = 0;
 uint32_t lastReprobeMs = 0;
 int lastSecond = -1;
 
@@ -61,6 +63,22 @@ void syncSystemClock(const DateTime& utc) {
   systemClockSeeded = true;
 }
 
+DisplayManager::NetLevel netLevel(net::State s) {
+  switch (s) {
+    case net::State::Connected: return DisplayManager::NetLevel::Ok;
+    case net::State::Connecting: return DisplayManager::NetLevel::Busy;
+    case net::State::Portal: return DisplayManager::NetLevel::Setup;
+    case net::State::WaitingRetry: break;
+  }
+  return DisplayManager::NetLevel::Offline;
+}
+
+void updateNetworkStatus() {
+  char text[64];
+  net::statusText(text, sizeof(text));
+  display.setNetworkStatus(text, netLevel(net::state()));
+}
+
 void enterMissing() {
   if (rtcState != RtcState::Missing) {
     Serial.println("[RTC] ERROR: DS3231 not detected");
@@ -92,8 +110,13 @@ void pollRtc(bool forceLog = false) {
   }
 
   rtcState = RtcState::Ok;
+  const uint32_t nowMs = millis();
+  // Only a tick seen by consecutive polls is a true second boundary; after a
+  // stall the first new second could be seen anywhere within that second.
+  const bool recentRead = nowMs - lastReadOkMs <= 2 * config::kRtcPollIntervalMs;
+  lastReadOkMs = nowMs;
   if (utc.second() == lastSecond) return;
-  const bool secondEdge = lastSecond != -1;
+  const bool secondEdge = lastSecond != -1 && recentRead;
   lastSecond = utc.second();
 
   if (secondEdge && !rtcLostPower) syncSystemClock(utc);
@@ -102,6 +125,7 @@ void pollRtc(bool forceLog = false) {
   time_utils::utcToLocal(utc, local);
   display.showTime(local);
   display.setStatus(rtcLostPower ? "RTC lost power - time not set" : nullptr);
+  updateNetworkStatus();
   if (forceLog || config::kLogEverySecond) logTime(utc);
 }
 
@@ -130,6 +154,9 @@ void setup() {
     Serial.println("[RTC] ERROR: DS3231 not detected");
     display.showError("RTC ERROR", "DS3231 not detected (SDA=27 SCL=22)");
   }
+
+  // Wi-Fi starts after the first clock frame so the time is visible immediately.
+  net::begin();
   serialConsolePrintHelp();
 }
 
@@ -146,11 +173,10 @@ void loop() {
       lastReprobeMs = nowMs;
       if (rtc.probe()) onRtcDetected();
     }
-    return;
-  }
-
-  if (nowMs - lastPollMs >= config::kRtcPollIntervalMs) {
+  } else if (nowMs - lastPollMs >= config::kRtcPollIntervalMs) {
     lastPollMs = nowMs;
     pollRtc();
   }
+
+  delay(5);  // yield; keeps the loop responsive without spinning at 100% CPU
 }

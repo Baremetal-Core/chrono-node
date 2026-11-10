@@ -18,7 +18,7 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 | UI rendering | TFT_eSPI + anti-aliased smooth fonts + sprites (no LVGL) |
 | Wi-Fi provisioning | WiFiManager library (captive portal) |
 | Weather provider | Open-Meteo (no API key) |
-| Tracking | This file; one branch/PR per milestone |
+| Tracking | This file; one GitHub issue per milestone, opened when work starts; one branch/PR per milestone |
 
 ---
 
@@ -32,7 +32,7 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - Serial: `SET` takes local time and converts it, `TZ <posix>`, `INFO`.
 - Note: the RTC currently holds local (+07) time, so re-SET once after this lands.
 
-## M3 – Wi-Fi connectivity & provisioning
+## M3 – Wi-Fi connectivity & provisioning ✅
 - Non-blocking Wi-Fi state machine (event callbacks) with auto-reconnect and backoff.
 - Provisioning: if no creds or connect fails → AP + captive portal (`Chrono-Node-XXXX`).
   Uses the WiFiManager library; credentials are stored by the ESP32 Wi-Fi stack in NVS.

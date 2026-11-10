@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "net_manager.h"
 #include "rtc_manager.h"
 #include "settings.h"
 #include "time_utils.h"
@@ -98,6 +99,12 @@ bool handleLine(RtcManager& rtc, char* text) {
     printRtcTime(rtc);
   } else if (strcasecmp(text, "INFO") == 0) {
     printInfo(rtc);
+  } else if (strcasecmp(text, "WIFI") == 0) {
+    net::printStatus();
+  } else if (strcasecmp(text, "WIFI PORTAL") == 0) {
+    net::requestPortal();
+  } else if (strcasecmp(text, "WIFI FORGET") == 0) {
+    net::requestForget();
   } else {
     if (strcasecmp(text, "HELP") != 0) Serial.printf("[CONSOLE] Unknown command: %s\n", text);
     serialConsolePrintHelp();
@@ -108,7 +115,9 @@ bool handleLine(RtcManager& rtc, char* text) {
 }  // namespace
 
 void serialConsolePrintHelp() {
-  Serial.println("[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | HELP");
+  Serial.println(
+      "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
+      "WIFI [PORTAL|FORGET] | HELP");
 }
 
 bool serialConsolePoll(RtcManager& rtc) {
