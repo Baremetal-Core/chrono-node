@@ -13,6 +13,7 @@
 namespace {
 
 TFT_eSPI tft;
+const theme::Colors* C = &theme::kDayColors;  // active UI colours (day or night)
 TFT_eSprite digitSprite(&tft);   // one big digit cell, reused for every digit and the colon
 TFT_eSprite secondsSprite(&tft); // both seconds digits
 
@@ -82,7 +83,7 @@ void tintSprite(TFT_eSprite& s, int16_t w, int16_t h, const theme::Palette& p, i
                 int16_t y1) {
   uint16_t* px = static_cast<uint16_t*>(s.getPointer());
   if (!px) return;
-  const uint16_t bg = theme::kBackground;
+  const uint16_t bg = C->bg;
   const int bgR = bg >> 11, bgG = (bg >> 5) & 0x3F, bgB = bg & 0x1F;
   const uint16_t bgSwapped = swap16(bg);
   for (int16_t y = 0; y < h; ++y) {
@@ -111,7 +112,7 @@ void drawLine(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
   TFT_eSprite line(&tft);
   line.setColorDepth(16);
   if (!line.createSprite(kScreenW, height)) return;
-  line.fillSprite(theme::kBackground);
+  line.fillSprite(C->bg);
   line.loadFont(font);
   draw(line);
   line.unloadFont();
@@ -125,9 +126,9 @@ void drawWifiIcon(TFT_eSprite& s, int16_t cx, int16_t baseY, uint8_t bars, uint1
   const uint8_t radii[] = {13, 9, 5};
   for (int i = 0; i < 3; ++i) {
     uint16_t c = (3 - i) <= bars ? on : off;
-    s.drawSmoothArc(cx, baseY, radii[i], radii[i] - 2, 135, 225, c, theme::kBackground, true);
+    s.drawSmoothArc(cx, baseY, radii[i], radii[i] - 2, 135, 225, c, C->bg, true);
   }
-  s.fillSmoothCircle(cx, baseY - 1, 1, bars > 0 ? on : off, theme::kBackground);
+  s.fillSmoothCircle(cx, baseY - 1, 1, bars > 0 ? on : off, C->bg);
 }
 
 void drawGlyphString(TFT_eSprite& s, const char* text, int16_t cellX, int16_t cellW, int16_t y) {
@@ -139,7 +140,7 @@ void drawGlyphString(TFT_eSprite& s, const char* text, int16_t cellX, int16_t ce
 bool DisplayManager::begin() {
   tft.init();  // also switches the backlight (TFT_BL) on
   tft.setRotation(1);
-  tft.fillScreen(theme::kBackground);
+  tft.fillScreen(C->bg);
 
   digitSprite.setColorDepth(16);
   secondsSprite.setColorDepth(16);
@@ -162,7 +163,7 @@ bool DisplayManager::begin() {
 void DisplayManager::enterMode(Mode mode) {
   if (mode_ == mode) return;
   mode_ = mode;
-  tft.fillScreen(theme::kBackground);
+  tft.fillScreen(C->bg);
   for (int i = 0; i < 4; ++i) {
     digits_[i] = ' ';
     bigRoll_[i].active = false;
@@ -204,7 +205,8 @@ void DisplayManager::showTime(const struct tm& local) {
   const uint32_t now = millis();
   lastLocal_ = local;
 
-  setPalette(theme::paletteForMinute(local.tm_hour * 60 + local.tm_min));
+  setPalette(night_ ? theme::nightPalette()
+                    : theme::paletteForMinute(local.tm_hour * 60 + local.tm_min));
 
   const char next[4] = {char('0' + local.tm_hour / 10), char('0' + local.tm_hour % 10),
                         char('0' + local.tm_min / 10), char('0' + local.tm_min % 10)};
@@ -318,7 +320,7 @@ void DisplayManager::drawSeconds(float progress) {
 }
 
 void DisplayManager::drawProgress(int targetPx, bool animate) {
-  const uint16_t track = theme::mix(theme::kBackground, pal_.bottom, 48);
+  const uint16_t track = theme::mix(C->bg, pal_.bottom, 48);
   if (barPx_ < 0) {
     // Full redraw (first frame or palette change).
     tft.fillRect(kBarX, kBarY, kBarW, kBarH, track);
@@ -344,17 +346,24 @@ void DisplayManager::drawProgress(int targetPx, bool animate) {
 }
 
 void DisplayManager::drawDate(const struct tm& local) {
-  const char* weekday = kWeekdays[local.tm_wday % 7];
-  char rest[40];
-  snprintf(rest, sizeof(rest), " \xC2\xB7 %d %s %d", local.tm_mday, kMonths[local.tm_mon % 12],
-           local.tm_year + 1900);
   drawLine(kDateTop, kDateH, font_date, [&](TFT_eSprite& s) {
-    const int16_t w1 = s.textWidth(weekday);
+    // Long weekday/month combinations (e.g. WEDNESDAY, September) don't fit:
+    // shorten the month first, then the weekday.
+    char weekday[12];
+    char rest[40];
+    int16_t w1 = 0;
+    for (int level = 0; level < 3; ++level) {
+      strlcpy(weekday, kWeekdays[local.tm_wday % 7], level == 2 ? 4 : sizeof(weekday));
+      snprintf(rest, sizeof(rest), " \xC2\xB7 %d %.*s %d", local.tm_mday, level >= 1 ? 3 : 12,
+               kMonths[local.tm_mon % 12], local.tm_year + 1900);
+      w1 = s.textWidth(weekday);
+      if (w1 + s.textWidth(rest) <= kScreenW - 16) break;
+    }
     const int16_t x = (kScreenW - w1 - s.textWidth(rest)) / 2;
     s.setTextDatum(ML_DATUM);
-    s.setTextColor(pal_.top, theme::kBackground);
+    s.setTextColor(pal_.top, C->bg);
     s.drawString(weekday, x, kDateH / 2);
-    s.setTextColor(theme::kDate, theme::kBackground);
+    s.setTextColor(C->date, C->bg);
     s.drawString(rest, x + w1, kDateH / 2);
   });
 }
@@ -370,7 +379,7 @@ void DisplayManager::drawStatusBar() {
   if (mode_ != Mode::Clock || !statusValid_) return;
   const StatusInfo& st = status_;
   drawLine(0, kStatusH, font_small, [&](TFT_eSprite& s) {
-    uint16_t iconColor = theme::kTextDim;
+    uint16_t iconColor = C->dim;
     uint8_t bars = 0;
     switch (st.wifi) {
       case StatusInfo::Wifi::Connected:
@@ -378,20 +387,20 @@ void DisplayManager::drawStatusBar() {
         bars = st.rssi > -60 ? 3 : st.rssi > -72 ? 2 : 1;
         break;
       case StatusInfo::Wifi::Connecting:
-        iconColor = theme::kTextDim;
+        iconColor = C->dim;
         break;
       case StatusInfo::Wifi::Setup:
-        iconColor = theme::kSetup;
+        iconColor = C->setup;
         bars = 3;
         break;
       case StatusInfo::Wifi::Offline:
         break;
     }
-    drawWifiIcon(s, 18, kStatusBaseline + 1, bars, iconColor, theme::kTextFaint);
+    drawWifiIcon(s, 18, kStatusBaseline + 1, bars, iconColor, C->faint);
 
     s.setTextDatum(L_BASELINE);
-    s.setTextColor(st.wifi == StatusInfo::Wifi::Setup ? theme::kSetup : theme::kTextDim,
-                   theme::kBackground);
+    s.setTextColor(st.wifi == StatusInfo::Wifi::Setup ? C->setup : C->dim,
+                   C->bg);
     s.drawString(st.wifiText, 38, kStatusBaseline);
 
     int16_t x = kScreenW - 10;
@@ -399,27 +408,35 @@ void DisplayManager::drawStatusBar() {
     if (st.hasTemp) {
       char temp[12];
       snprintf(temp, sizeof(temp), "%d\xC2\xB0" "C", st.tempC);
-      s.setTextColor(theme::kTextDim, theme::kBackground);
+      s.setTextColor(C->dim, C->bg);
       s.drawString(temp, x, kStatusBaseline);
       x -= s.textWidth(temp) + 14;
     }
-    s.setTextColor(st.ntpWarn ? theme::kWarn : theme::kTextDim, theme::kBackground);
+    s.setTextColor(st.ntpWarn ? C->warn : C->dim, C->bg);
     s.drawString(st.ntpText, x, kStatusBaseline);
   });
 }
 
-void DisplayManager::setNotice(const char* text, uint16_t color) {
+void DisplayManager::setNotice(const char* text, NoticeKind kind) {
   const char* value = text ? text : "";
-  if (strcmp(value, notice_) == 0 && color == noticeColor_) return;
+  if (strcmp(value, notice_) == 0 && kind == noticeKind_) return;
   strlcpy(notice_, value, sizeof(notice_));
-  noticeColor_ = color;
+  noticeKind_ = kind;
   drawNotice();
+}
+
+void DisplayManager::setNightMode(bool night) {
+  if (night == night_) return;
+  night_ = night;
+  C = night ? &theme::kNightColors : &theme::kDayColors;
+  // Repaint everything with the new colours on the next showTime().
+  mode_ = Mode::None;
 }
 
 void DisplayManager::drawNotice() {
   if (mode_ != Mode::Clock) return;
   drawLine(kNoticeTop, kNoticeH, font_small, [&](TFT_eSprite& s) {
-    s.setTextColor(noticeColor_, theme::kBackground);
+    s.setTextColor(noticeKind_ == NoticeKind::Error ? C->error : C->setup, C->bg);
     s.setTextDatum(MC_DATUM);
     s.drawString(notice_, kScreenW / 2, kNoticeH / 2);
   });
@@ -433,17 +450,17 @@ void DisplayManager::showError(const char* title, const char* detail) {
   strlcpy(lastError_, key, sizeof(lastError_));
 
   drawLine(88, 34, font_date, [&](TFT_eSprite& s) {
-    s.setTextColor(theme::kError, theme::kBackground);
+    s.setTextColor(C->error, C->bg);
     s.setTextDatum(MC_DATUM);
     s.drawString(title, kScreenW / 2, 17);
   });
   drawLine(124, 24, font_small, [&](TFT_eSprite& s) {
-    s.setTextColor(theme::kText, theme::kBackground);
+    s.setTextColor(C->text, C->bg);
     s.setTextDatum(MC_DATUM);
     s.drawString(detail, kScreenW / 2, 12);
   });
   drawLine(kNoticeTop, kNoticeH, font_small, [&](TFT_eSprite& s) {
-    s.setTextColor(theme::kTextFaint, theme::kBackground);
+    s.setTextColor(C->faint, C->bg);
     s.setTextDatum(MC_DATUM);
     s.drawString(config::kProjectName, kScreenW / 2, kNoticeH / 2);
   });
@@ -470,7 +487,7 @@ void DisplayManager::showTestPattern(uint32_t durationMs) {
     });
   }
   drawLine(5 * barH, kScreenH - 5 * barH, font_date, [&](TFT_eSprite& s) {
-    s.setTextColor(TFT_WHITE, theme::kBackground);
+    s.setTextColor(TFT_WHITE, C->bg);
     s.setTextDatum(MC_DATUM);
     s.drawString("BLACK background", kScreenW / 2, (kScreenH - 5 * barH) / 2);
   });
@@ -500,7 +517,7 @@ void DisplayManager::showPaletteTest(uint32_t durationMs) {
     for (int i = 0; i < n; ++i) {
       const char* name = nullptr;
       const theme::Palette p = theme::namedPalette(i, &name);
-      s.setTextColor(p.top, theme::kBackground);
+      s.setTextColor(p.top, C->bg);
       s.drawString(name, i * colW + colW / 2, 12);
     }
   });

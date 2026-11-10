@@ -14,6 +14,17 @@ namespace {
 constexpr const char* kNamespace = "chrono-node";
 constexpr const char* kKeyTimezone = "tz";
 constexpr const char* kKeyNtpServer = "ntp";
+constexpr const char* kKeyBrightDay = "bri_day";
+constexpr const char* kKeyBrightNight = "bri_night";
+constexpr const char* kKeyNightOn = "night_on";
+constexpr const char* kKeyNightStart = "night_start";
+constexpr const char* kKeyNightEnd = "night_end";
+
+uint8_t briDay = config::kDefaultBrightnessDay;
+uint8_t briNight = config::kDefaultBrightnessNight;
+bool nightOn = true;
+uint16_t nightFrom = config::kDefaultNightStart;
+uint16_t nightTo = config::kDefaultNightEnd;
 
 char currentTz[config::kTimezoneMaxLen + 1] = "";
 char currentNtp[config::kNtpServerMaxLen + 1] = "";
@@ -57,6 +68,11 @@ void begin() {
   if (prefs.begin(kNamespace, false)) {
     if (prefs.isKey(kKeyTimezone)) prefs.getString(kKeyTimezone, tz, sizeof(tz));
     if (prefs.isKey(kKeyNtpServer)) prefs.getString(kKeyNtpServer, ntp, sizeof(ntp));
+    briDay = min<uint8_t>(prefs.getUChar(kKeyBrightDay, briDay), 100);
+    briNight = min<uint8_t>(prefs.getUChar(kKeyBrightNight, briNight), 100);
+    nightOn = prefs.getBool(kKeyNightOn, nightOn);
+    nightFrom = prefs.getUShort(kKeyNightStart, nightFrom) % 1440;
+    nightTo = prefs.getUShort(kKeyNightEnd, nightTo) % 1440;
     prefs.end();
   }
   bool tzFromNvs = looksLikePosixTz(tz);
@@ -65,6 +81,9 @@ void begin() {
   strlcpy(currentNtp, ntpFromNvs ? ntp : config::kDefaultNtpServer, sizeof(currentNtp));
   Serial.printf("[SETTINGS] TZ=%s (%s), NTP=%s (%s)\n", currentTz,
                 tzFromNvs ? "saved" : "default", currentNtp, ntpFromNvs ? "saved" : "default");
+  Serial.printf("[SETTINGS] Brightness day %u%% night %u%%, night mode %s %02u:%02u-%02u:%02u\n",
+                briDay, briNight, nightOn ? "on" : "off", nightFrom / 60, nightFrom % 60,
+                nightTo / 60, nightTo % 60);
 }
 
 const char* timezone() { return currentTz; }
@@ -80,6 +99,59 @@ bool setTimezone(const char* posixTz) {
 }
 
 const char* ntpServer() { return currentNtp; }
+
+namespace {
+
+template <typename Fn>
+bool save(Fn&& write) {
+  Preferences prefs;
+  if (!prefs.begin(kNamespace, false)) return false;
+  bool ok = write(prefs);
+  prefs.end();
+  return ok;
+}
+
+}  // namespace
+
+uint8_t brightnessDay() { return briDay; }
+uint8_t brightnessNight() { return briNight; }
+
+bool setBrightness(bool night, uint8_t percent) {
+  if (percent > 100) return false;
+  bool ok = save([&](Preferences& p) {
+    return p.putUChar(night ? kKeyBrightNight : kKeyBrightDay, percent) > 0;
+  });
+  if (ok) (night ? briNight : briDay) = percent;
+  return ok;
+}
+
+bool nightEnabled() { return nightOn; }
+uint16_t nightStart() { return nightFrom; }
+uint16_t nightEnd() { return nightTo; }
+
+bool setNightEnabled(bool enabled) {
+  bool ok = save([&](Preferences& p) { return p.putBool(kKeyNightOn, enabled) > 0; });
+  if (ok) nightOn = enabled;
+  return ok;
+}
+
+bool setNightWindow(uint16_t startMinute, uint16_t endMinute) {
+  if (startMinute >= 1440 || endMinute >= 1440 || startMinute == endMinute) return false;
+  bool ok = save([&](Preferences& p) {
+    return p.putUShort(kKeyNightStart, startMinute) > 0 && p.putUShort(kKeyNightEnd, endMinute) > 0;
+  });
+  if (ok) {
+    nightFrom = startMinute;
+    nightTo = endMinute;
+  }
+  return ok;
+}
+
+bool isNightAt(int minuteOfDay) {
+  if (!nightOn) return false;
+  if (nightFrom < nightTo) return minuteOfDay >= nightFrom && minuteOfDay < nightTo;
+  return minuteOfDay >= nightFrom || minuteOfDay < nightTo;  // wraps past midnight
+}
 
 bool setNtpServer(const char* host) {
   if (!looksLikeHostname(host)) return false;
