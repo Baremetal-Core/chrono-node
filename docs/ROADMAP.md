@@ -39,9 +39,10 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - mDNS `chrono-node.local`. Wi-Fi status icon in a status bar.
 - Clock keeps ticking normally throughout.
 
-## M4 – NTP sync → DS3231 correction
+## M4 – NTP sync → DS3231 correction ✅
 - SNTP (`pool.ntp.org`, configurable) with a sync callback.
-- On sync: compare with the DS3231 and write UTC if drift > 500 ms. Log the drift (ppm estimate).
+- On sync: measure the DS3231 offset on a second edge and rewrite it (aligned to the second
+  boundary) if it is off by > 100 ms. Log the offset and a drift estimate (ppm).
 - Re-sync every 6 h plus on reconnect. Show the last-sync age and status (synced / stale / never).
 - Clear the DS3231 lost-power flag automatically after a good sync.
 

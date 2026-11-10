@@ -5,10 +5,13 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <esp_mac.h>
+#include <esp_sntp.h>
 
 #include <atomic>
 
+#include "clock_sync.h"
 #include "config.h"
+#include "settings.h"
 
 namespace net {
 namespace {
@@ -21,6 +24,9 @@ WiFiManager wm;
 std::atomic<State> current{State::Connecting};
 std::atomic<bool> portalRequested{false};
 std::atomic<bool> forgetRequested{false};
+std::atomic<bool> ntpRequested{false};
+bool sntpStarted = false;
+char ntpServer[config::kNtpServerMaxLen + 1] = "";  // SNTP keeps a pointer to this
 char portalSsid[32] = "";
 
 uint32_t attemptStartMs = 0;
@@ -84,6 +90,21 @@ void openPortal(uint32_t timeoutS) {
   if (timeoutS) Serial.printf("[WIFI] Portal closes in %lus if unused\n", (unsigned long)timeoutS);
 }
 
+void onNtpSync(struct timeval*) { clock_sync::notifyNtpSync(); }
+
+void startNtp() {
+  strlcpy(ntpServer, settings::ntpServer(), sizeof(ntpServer));
+  if (sntpStarted) sntp_stop();
+  sntp_setoperatingmode(SNTP_OPMODE_POLL);
+  sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
+  sntp_setservername(0, ntpServer);
+  sntp_set_sync_interval(config::kNtpSyncIntervalMs);
+  sntp_set_time_sync_notification_cb(onNtpSync);
+  sntp_init();
+  sntpStarted = true;
+  Serial.printf("[NTP] Syncing with %s\n", ntpServer);
+}
+
 void onConnected() {
   current = State::Connected;
   failures = 0;
@@ -95,6 +116,7 @@ void onConnected() {
     mdnsStarted = MDNS.begin(config::kHostname);
     if (mdnsStarted) Serial.printf("[WIFI] mDNS: %s.local\n", config::kHostname);
   }
+  startNtp();
 }
 
 void onAttemptFailed(const char* why) {
@@ -158,6 +180,13 @@ void handleRequests() {
     failures = 0;
     justProvisioned = false;
     openPortal(0);
+  }
+  if (ntpRequested.exchange(false)) {
+    if (current == State::Connected) {
+      startNtp();
+    } else {
+      Serial.println("[NTP] Wi-Fi not connected; will sync on connect");
+    }
   }
   if (portalRequested.exchange(false)) {
     if (current == State::Portal) {
@@ -271,5 +300,7 @@ void printStatus() {
 void requestPortal() { portalRequested = true; }
 
 void requestForget() { forgetRequested = true; }
+
+void requestNtpSync() { ntpRequested = true; }
 
 }  // namespace net

@@ -4,7 +4,8 @@
 // portal never pause the clock. Connects with credentials saved in NVS and
 // retries with exponential backoff. A WiFiManager captive portal is opened
 // when no credentials exist, when the first connection after boot fails,
-// when newly entered credentials fail, or on request.
+// when newly entered credentials fail, or on request. SNTP is started on
+// every (re)connect and reports to clock_sync.
 #pragma once
 
 #include <stddef.h>
@@ -26,5 +27,6 @@ void printStatus();
 // Requests are handled asynchronously by the network task.
 void requestPortal();     // open the setup portal (auto-closes if credentials exist)
 void requestForget();     // erase saved credentials and open the portal
+void requestNtpSync();    // (re)start SNTP with the configured server; syncs now
 
 }  // namespace net
