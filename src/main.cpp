@@ -1,14 +1,20 @@
-// Chrono Node - firmware entry point (milestone 1: display + DS3231 bring-up).
+// Chrono Node - firmware entry point.
 //
-// The displayed time always comes directly from the DS3231. The RTC is never
-// written at boot; use the serial console "SET" command during development.
+// Time model: the DS3231 is the source of truth and always holds UTC. Local
+// time is derived with the POSIX TZ from settings. The ESP32 system clock is
+// seeded from the DS3231 on second boundaries for libraries that need it
+// (TLS, SNTP later), but the display is always driven by DS3231 reads.
+// The RTC is never written at boot; use the serial console "SET" command.
 
 #include <Arduino.h>
+#include <sys/time.h>
 
 #include "config.h"
 #include "display_manager.h"
 #include "rtc_manager.h"
 #include "serial_console.h"
+#include "settings.h"
+#include "time_utils.h"
 
 namespace {
 
@@ -18,14 +24,16 @@ DisplayManager display;
 enum class RtcState { Ok, Missing, InvalidTime };
 RtcState rtcState = RtcState::Missing;
 bool rtcLostPower = false;
+bool systemClockSeeded = false;
 
 uint32_t lastPollMs = 0;
 uint32_t lastReprobeMs = 0;
 int lastSecond = -1;
 
-void logTime(const DateTime& t) {
-  Serial.printf("[RTC] %02u:%02u:%02u %04u-%02u-%02u\n", t.hour(), t.minute(), t.second(),
-                t.year(), t.month(), t.day());
+void logTime(const DateTime& utc) {
+  char local[32];
+  time_utils::formatLocal(utc, local, sizeof(local));
+  Serial.printf("[TIME] %s\n", local);
 }
 
 void refreshLostPower() {
@@ -33,6 +41,24 @@ void refreshLostPower() {
   if (rtcLostPower) {
     Serial.println("[RTC] WARNING: DS3231 lost power, time is not valid. Use SET to fix.");
   }
+}
+
+// Called right after the DS3231 seconds register ticked over, so `utc` is
+// accurate to within one poll interval.
+void syncSystemClock(const DateTime& utc) {
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  int64_t driftMs = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000 - (int64_t)utc.unixtime() * 1000;
+  if (systemClockSeeded && llabs(driftMs) <= config::kSystemClockMaxDriftMs) return;
+
+  struct timeval set = {static_cast<time_t>(utc.unixtime()), 0};
+  settimeofday(&set, nullptr);
+  if (systemClockSeeded) {
+    Serial.printf("[TIME] System clock corrected from DS3231 (drift %lld ms)\n", driftMs);
+  } else {
+    Serial.println("[TIME] System clock seeded from DS3231");
+  }
+  systemClockSeeded = true;
 }
 
 void enterMissing() {
@@ -52,25 +78,31 @@ void onRtcDetected() {
 }
 
 void pollRtc(bool forceLog = false) {
-  DateTime now;
-  if (!rtc.read(now)) {
+  DateTime utc;
+  if (!rtc.read(utc)) {
     if (!rtc.isPresent()) {
       enterMissing();
     } else if (rtcState != RtcState::InvalidTime) {
       Serial.println("[RTC] ERROR: DS3231 returned an invalid time. Use SET to fix.");
       rtcState = RtcState::InvalidTime;
+      lastSecond = -1;
       display.showError("RTC TIME INVALID", "Set time: SET YYYY-MM-DD HH:MM:SS");
     }
     return;
   }
 
   rtcState = RtcState::Ok;
-  if (now.second() == lastSecond) return;
-  lastSecond = now.second();
+  if (utc.second() == lastSecond) return;
+  const bool secondEdge = lastSecond != -1;
+  lastSecond = utc.second();
 
-  display.showTime(now);
+  if (secondEdge && !rtcLostPower) syncSystemClock(utc);
+
+  struct tm local;
+  time_utils::utcToLocal(utc, local);
+  display.showTime(local);
   display.setStatus(rtcLostPower ? "RTC lost power - time not set" : nullptr);
-  if (forceLog || config::kLogEverySecond) logTime(now);
+  if (forceLog || config::kLogEverySecond) logTime(utc);
 }
 
 }  // namespace
@@ -78,8 +110,10 @@ void pollRtc(bool forceLog = false) {
 void setup() {
   Serial.begin(config::kSerialBaud);
   Serial.println();
-  Serial.printf("[%s] Booting %s v%s\n", config::kProjectName, config::kFirmwareName,
-                config::kFirmwareVersion);
+  Serial.printf("[%s] Booting %s v%s (%s)\n", config::kProjectName, config::kFirmwareName,
+                config::kFirmwareVersion, config::kGitRevision);
+
+  settings::begin();
 
   if (display.begin()) {
     Serial.println("[DISPLAY] Initialized");
@@ -101,7 +135,8 @@ void setup() {
 
 void loop() {
   if (serialConsolePoll(rtc)) {
-    rtcLostPower = false;  // writing the time clears the oscillator-stop flag
+    // Time or timezone changed: re-read the oscillator-stop flag and redraw.
+    rtcLostPower = rtc.lostPower();
     lastSecond = -1;
   }
 

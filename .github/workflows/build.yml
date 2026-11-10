@@ -1,0 +1,42 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build
+        run: pio run
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: chrono-node-fw-${{ github.sha }}
+          path: |
+            .pio/build/cyd/chrono-node-fw.bin
+            .pio/build/cyd/chrono-node-fw.elf
+            .pio/build/cyd/bootloader.bin
+            .pio/build/cyd/partitions.bin

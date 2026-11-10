@@ -58,3 +58,9 @@ bool RtcManager::setTime(const DateTime& dt) {
   DateTime check;
   return read(check) && check.isValid();
 }
+
+bool RtcManager::temperatureC(float& out) {
+  if (!present_ || !acknowledges()) return false;
+  out = rtc_.getTemperature();
+  return true;
+}

@@ -22,7 +22,7 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 
 ---
 
-## M2 – Foundation (time model, settings, CI)
+## M2 – Foundation (time model, settings, CI) ✅
 - DS3231 stores **UTC**. Local time comes from a POSIX TZ string (e.g. `<+07>-7`, or rules with DST).
 - At boot the ESP32 system clock is seeded from the DS3231, with periodic re-seeding (~1 min).
   Rendering uses `localtime_r()`, and the DS3231 stays the source of truth.

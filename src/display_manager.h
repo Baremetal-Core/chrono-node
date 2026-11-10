@@ -1,15 +1,15 @@
 // Chrono Node - TFT rendering for the CYD display.
 #pragma once
 
-#include <RTClib.h>
 #include <stdint.h>
+#include <time.h>
 
 class DisplayManager {
  public:
   bool begin();
 
-  // Draws HH:MM:SS (24h) and DD/MM/YYYY. Only changed regions are redrawn.
-  void showTime(const DateTime& now);
+  // Draws local HH:MM:SS (24h) and DD/MM/YYYY. Only changed regions are redrawn.
+  void showTime(const struct tm& local);
 
   // Full-screen error message. Redrawn only when the message changes.
   void showError(const char* title, const char* detail);
