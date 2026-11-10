@@ -9,11 +9,11 @@ local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup
 gradient digits, rolling transitions and colours that follow the time of day. See
 [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
 
-| Night | Day |
-|-------|-----|
-| ![Night](docs/images/clock.png) | ![Day](docs/images/clock-day.png) |
-| **Sunset** | **Setup mode** |
-| ![Sunset](docs/images/clock-sunset.png) | ![Setup mode](docs/images/setup-mode.png) |
+| Night | Sunrise | Day |
+|-------|---------|-----|
+| ![Night](docs/images/clock.png) | ![Sunrise](docs/images/clock-sunrise.png) | ![Day](docs/images/clock-day.png) |
+| **Sunset** | **Palettes (`TEST PALETTE`)** | **Setup mode** |
+| ![Sunset](docs/images/clock-sunset.png) | ![Palettes](docs/images/palettes.png) | ![Setup mode](docs/images/setup-mode.png) |
 
 ## Display
 
@@ -26,8 +26,9 @@ gradient digits, rolling transitions and colours that follow the time of day. Se
 - **Date:** the weekday in the accent colour, then the date.
 - **Notice line:** RTC lost-power warning (red) or Wi-Fi setup instructions (cyan).
 - **Colours by time of day** (on a deep navy background), blended minute by minute:
-  night periwinkle→purple, sunrise (~06:30) gold→coral, day (09:00–16:00) yellow→orange,
-  sunset (~18:30) orange→magenta, evening (~20:30) violet→indigo.
+  night blue→violet, sunrise (~06:30) gold→red-pink, day (09:00–16:00) yellow→orange,
+  sunset (~18:30) orange→magenta, evening (~20:30) purple→blue. The colours are fully
+  saturated, because pastels look washed out on the IPS panel.
 - Glyphs are rendered white-on-black into sprites, then tinted per pixel, so the gradients
   keep their anti-aliasing. Nothing flickers. An animation frame takes a few ms.
 - The CYD's RGB LED is switched off at boot.
@@ -166,6 +167,7 @@ NTP SYNC                    # sync now (busy pool servers may answer only after 
 NTP SERVER time.google.com  # set and save the NTP server (default pool.ntp.org), then sync
 SHOT                        # stream the screen (use tools/screenshot.py)
 TEST                        # labelled colour bars for 20 s (panel variant check)
+TEST PALETTE                # the five day-cycle palettes side by side for 30 s
 HELP
 ```
 

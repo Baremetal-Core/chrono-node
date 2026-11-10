@@ -46,6 +46,9 @@ class DisplayManager {
   // Colour test pattern (labelled bars) shown for `durationMs`; the clock resumes afterwards.
   void showTestPattern(uint32_t durationMs);
 
+  // All day-cycle palettes side by side for `durationMs`.
+  void showPaletteTest(uint32_t durationMs);
+
   // Streams the screen as big-endian RGB565 between "[SHOT] BEGIN w h" and
   // "[SHOT] END" lines. Blocks for ~14 s at 115200 baud (development only).
   void screenshot(Print& out);

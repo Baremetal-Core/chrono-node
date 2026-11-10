@@ -27,9 +27,13 @@ struct Palette {
 };
 
 // Palette for a minute of the local day (0-1439), blended between stops:
-// night periwinkle->purple, sunrise gold->coral, day yellow->orange,
-// sunset orange->magenta, evening violet->indigo.
+// night blue->violet, sunrise gold->red-pink, day yellow->orange,
+// sunset orange->magenta, evening purple->blue.
 Palette paletteForMinute(int minuteOfDay);
+
+// The five key palettes (night, sunrise, day, sunset, evening), for previews.
+int namedPaletteCount();
+Palette namedPalette(int index, const char** name);
 
 // Linear blend between two colours; t in 0..255.
 uint16_t mix(uint16_t a, uint16_t b, uint8_t t);

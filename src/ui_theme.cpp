@@ -15,17 +15,31 @@ struct Stop {
   Rgb bottom;
 };
 
+// Saturated colours: pastels look washed out on the CYD's IPS panel.
+constexpr Rgb kNightTop = {40, 110, 255}, kNightBottom = {170, 50, 255};      // blue -> violet
+constexpr Rgb kSunriseTop = {255, 200, 0}, kSunriseBottom = {255, 40, 80};    // gold -> red-pink
+constexpr Rgb kDayTop = {255, 225, 0}, kDayBottom = {255, 90, 0};             // yellow -> orange
+constexpr Rgb kSunsetTop = {255, 120, 0}, kSunsetBottom = {235, 0, 130};      // orange -> magenta
+constexpr Rgb kEveningTop = {190, 40, 255}, kEveningBottom = {40, 70, 255};   // purple -> blue
+
 constexpr Stop kStops[] = {
-    {0, {130, 150, 255}, {200, 120, 255}},             // night
-    {5 * 60, {130, 150, 255}, {200, 120, 255}},
-    {6 * 60 + 30, {255, 210, 100}, {255, 110, 120}},   // sunrise
-    {9 * 60, {255, 222, 110}, {255, 140, 60}},         // day
-    {16 * 60, {255, 222, 110}, {255, 140, 60}},
-    {18 * 60 + 30, {255, 160, 90}, {245, 85, 160}},    // sunset
-    {20 * 60 + 30, {205, 130, 255}, {120, 120, 255}},  // evening
-    {22 * 60, {130, 150, 255}, {200, 120, 255}},
-    {24 * 60, {130, 150, 255}, {200, 120, 255}},
+    {0, kNightTop, kNightBottom},
+    {5 * 60, kNightTop, kNightBottom},
+    {6 * 60 + 30, kSunriseTop, kSunriseBottom},
+    {9 * 60, kDayTop, kDayBottom},
+    {16 * 60, kDayTop, kDayBottom},
+    {18 * 60 + 30, kSunsetTop, kSunsetBottom},
+    {20 * 60 + 30, kEveningTop, kEveningBottom},
+    {22 * 60, kNightTop, kNightBottom},
+    {24 * 60, kNightTop, kNightBottom},
 };
+
+constexpr const char* kNames[] = {"NIGHT", "DAWN", "DAY", "DUSK", "EVE"};
+constexpr Rgb kNamed[][2] = {{kNightTop, kNightBottom},
+                             {kSunriseTop, kSunriseBottom},
+                             {kDayTop, kDayBottom},
+                             {kSunsetTop, kSunsetBottom},
+                             {kEveningTop, kEveningBottom}};
 
 uint16_t blend(const Rgb& a, const Rgb& b, int num, int den) {
   auto l = [&](uint8_t x, uint8_t y) { return uint8_t(x + (int(y) - int(x)) * num / den); };
@@ -47,6 +61,13 @@ Palette paletteForMinute(int minuteOfDay) {
     }
   }
   return {blend(kStops[0].top, kStops[0].top, 0, 1), blend(kStops[0].bottom, kStops[0].bottom, 0, 1)};
+}
+
+int namedPaletteCount() { return sizeof(kNamed) / sizeof(kNamed[0]); }
+
+Palette namedPalette(int index, const char** name) {
+  if (name) *name = kNames[index];
+  return {blend(kNamed[index][0], kNamed[index][0], 0, 1), blend(kNamed[index][1], kNamed[index][1], 0, 1)};
 }
 
 uint16_t mix(uint16_t a, uint16_t b, uint8_t t) {

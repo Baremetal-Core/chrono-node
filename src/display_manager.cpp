@@ -476,6 +476,36 @@ void DisplayManager::showTestPattern(uint32_t durationMs) {
   });
 }
 
+void DisplayManager::showPaletteTest(uint32_t durationMs) {
+  if (!spritesOk_) return;
+  enterMode(Mode::Test);
+  testUntilMs_ = millis() + durationMs;
+  const int n = theme::namedPaletteCount();
+  const int16_t colW = kScreenW / n;
+  for (int i = 0; i < n; ++i) {
+    const theme::Palette p = theme::namedPalette(i, nullptr);
+    const int16_t x = i * colW;
+    // Big digit sample, cropped to the column.
+    digitSprite.fillSprite(TFT_BLACK);
+    drawGlyphString(digitSprite, "8", 0, colW, kDigitBaseline);
+    tintSprite(digitSprite, kDigitW, kDigitH, p, kGlyphTop, kDigitBaseline);
+    digitSprite.pushSprite(x, 30, 0, 0, colW, kDigitH);
+    // Vertical gradient swatch.
+    for (int16_t y = 0; y < 70; ++y) {
+      tft.drawFastHLine(x + 8, 128 + y, colW - 16, theme::mix(p.top, p.bottom, y * 255 / 69));
+    }
+  }
+  drawLine(206, 24, font_small, [&](TFT_eSprite& s) {
+    s.setTextDatum(MC_DATUM);
+    for (int i = 0; i < n; ++i) {
+      const char* name = nullptr;
+      const theme::Palette p = theme::namedPalette(i, &name);
+      s.setTextColor(p.top, theme::kBackground);
+      s.drawString(name, i * colW + colW / 2, 12);
+    }
+  });
+}
+
 void DisplayManager::screenshot(Print& out) {
   // Finish running animations so the capture shows a settled frame.
   lastFrameMs_ = 0;
