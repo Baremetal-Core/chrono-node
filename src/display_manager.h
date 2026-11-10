@@ -17,6 +17,10 @@ class DisplayManager {
   // Small status line at the bottom of the clock screen; pass nullptr to clear.
   void setStatus(const char* text);
 
+  enum class NetLevel { Ok, Busy, Offline, Setup };
+  // Network line at the top of the clock screen. Redrawn only when changed.
+  void setNetworkStatus(const char* text, NetLevel level);
+
  private:
   enum class Mode { None, Clock, Error };
   void enterMode(Mode mode);
@@ -26,5 +30,7 @@ class DisplayManager {
   char lastTime_[9] = "";
   char lastDate_[11] = "";
   char lastStatus_[64] = "";
+  char lastNet_[64] = "";
+  NetLevel lastNetLevel_ = NetLevel::Ok;
   char lastError_[96] = "";
 };

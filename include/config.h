@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.2.0";
+constexpr const char* kFirmwareVersion = "0.3.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -39,6 +39,19 @@ constexpr uint32_t kRtcPollIntervalMs = 50;
 // The ESP32 system clock is re-seeded from the DS3231 when it drifts further than this.
 constexpr int32_t kSystemClockMaxDriftMs = 200;
 constexpr uint32_t kRtcReprobeIntervalMs = 2000;
+
+// ---- Network ----
+// mDNS name (chrono-node.local) and DHCP hostname.
+constexpr const char* kHostname = "chrono-node";
+// Setup portal SSID prefix; the last two MAC bytes are appended, e.g. Chrono-Node-1A2B.
+constexpr const char* kPortalSsidPrefix = "Chrono-Node-";
+constexpr uint32_t kWifiConnectTimeoutMs = 20000;
+constexpr uint32_t kWifiRetryMinMs = 10000;
+constexpr uint32_t kWifiRetryMaxMs = 300000;
+// Portal auto-closes after this long when credentials exist (0 = stay open).
+constexpr uint32_t kPortalTimeoutS = 180;
+// Max time the display may pause while the portal tests newly entered credentials.
+constexpr uint32_t kPortalSaveConnectTimeoutS = 15;
 
 // Set to false to silence the once-per-second time log.
 constexpr bool kLogEverySecond = true;

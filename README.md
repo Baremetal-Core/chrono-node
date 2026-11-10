@@ -3,9 +3,10 @@
 Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 ("Cheap Yellow Display", CYD) with an external DS3231 RTC as its time source.
 
-**Current state (M2):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
-local time using a configurable POSIX timezone stored in NVS. Builds run in CI. No Wi-Fi or
-NTP yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
+**Current state (M3):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
+local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal and
+mDNS (`chrono-node.local`). No NTP yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming
+milestones.
 
 ## Time model
 
@@ -69,6 +70,27 @@ checkout builds without editing anything in the global PlatformIO packages direc
    (921600 is unreliable with the CH340). If auto-reset fails, hold **BOOT** while
    the upload starts connecting.
 
+## Wi-Fi setup
+
+The clock works without Wi-Fi. Network work runs in its own FreeRTOS task (core 0), so
+connecting, scanning and the portal never pause the clock.
+
+1. If no Wi-Fi credentials are saved, the clock opens a setup portal. The top line of the
+   screen shows `Setup: join Wi-Fi Chrono-Node-XXXX`.
+2. Join that open network from a phone. The captive page opens automatically, or browse to
+   `http://192.168.4.1`.
+3. Choose **Configure WiFi**, pick a **2.4 GHz** network, enter the password and save.
+4. The top line turns green (`Wi-Fi: <network>`), and the clock answers at `chrono-node.local`.
+
+Credentials are stored in ESP32 NVS by the Wi-Fi stack, never in the repository.
+
+Behaviour:
+- If the first connection after boot fails, the portal opens for 180 s, in case the
+  network changed. Afterwards the clock retries with backoff (10 s, doubling up to 5 min).
+- If credentials just entered in the portal fail, the portal reopens.
+- A dropped connection is retried automatically with the same backoff.
+- The portal has no firmware-update page, because the setup AP is open.
+
 ## Serial console
 
 Firmware **never** writes the RTC at boot. Normal operation only reads the DS3231.
@@ -81,6 +103,9 @@ TZ                          # show the timezone
 TZ <+07>-7                  # set and save a POSIX timezone (UTC+7, no DST)
 TZ CET-1CEST,M3.5.0,M10.5.0/3   # example with DST rules
 INFO                        # firmware/git revision, heap, partition, DS3231 temperature
+WIFI                        # Wi-Fi state, SSID, IP, RSSI
+WIFI PORTAL                 # open the setup portal (closes after 180 s if credentials exist)
+WIFI FORGET                 # erase saved Wi-Fi credentials and open the portal
 HELP
 ```
 
@@ -93,13 +118,16 @@ set at boot, the serial log warns about it and the screen shows
 ## Expected serial output
 
 ```text
-[Chrono Node] Booting chrono-node-fw v0.2.0 (a27a8c7)
+[Chrono Node] Booting chrono-node-fw v0.3.0 (1a2b3c4)
 [SETTINGS] TZ=<+07>-7 (saved)
 [DISPLAY] Initialized
 [I2C] SDA=GPIO27 SCL=GPIO22 @ 100000 Hz
 [RTC] DS3231 detected at 0x68
 [TIME] 2026-11-08 14:32:51 +0700
+[WIFI] Connecting to "MyNetwork"
 [TIME] System clock seeded from DS3231
+[WIFI] Connected to "MyNetwork", IP 192.168.1.93, RSSI -48 dBm
+[WIFI] mDNS: chrono-node.local
 ```
 
 If the RTC is missing, you get `[RTC] ERROR: DS3231 not detected` and an error
@@ -120,12 +148,15 @@ src/main.cpp                    setup/loop, DS3231 polling, system clock seeding
 src/rtc_manager.*               I2C + DS3231 detection/read/write/temperature
 src/time_utils.*                UTC <-> local conversion using the POSIX TZ
 src/settings.*                  NVS-backed settings (timezone)
+src/net_manager.*               Wi-Fi task: connect/backoff, WiFiManager portal, mDNS
 src/display_manager.*           TFT rendering (sprite-based, flicker-free time)
-src/serial_console.*            SET/GET/TZ/INFO/HELP development commands
+src/serial_console.*            SET/GET/TZ/INFO/WIFI/HELP development commands
 ```
 
 ## Troubleshooting
 
+- **Clock never joins Wi-Fi:** the ESP32 supports 2.4 GHz only. Check `WIFI` on the serial
+  console for the failure reason code, then run `WIFI PORTAL` to re-enter credentials.
 - **Time is off by whole hours after upgrading from v0.1.0:** v0.1.0 stored local time in
   the DS3231. Run `SET` once with the current local time.
 - **Garbled or colour-inverted display:** some CYD variants use an ST7789 panel. See the

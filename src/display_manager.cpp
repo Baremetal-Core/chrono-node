@@ -26,6 +26,7 @@ constexpr int16_t kTimeSpriteH = 56;
 constexpr int16_t kTimeCenterY = 95;
 constexpr int16_t kDateCenterY = 155;
 constexpr int16_t kStatusCenterY = 222;
+constexpr int16_t kNetCenterY = 14;
 
 }  // namespace
 
@@ -50,6 +51,7 @@ void DisplayManager::enterMode(Mode mode) {
   lastTime_[0] = '\0';
   lastDate_[0] = '\0';
   lastStatus_[0] = '\0';
+  lastNet_[0] = '\0';
   lastError_[0] = '\0';
 }
 
@@ -98,6 +100,26 @@ void DisplayManager::setStatus(const char* text) {
   tft.drawString(value, tft.width() / 2, kStatusCenterY, kSmallFont);
   tft.setTextPadding(0);
   strlcpy(lastStatus_, value, sizeof(lastStatus_));
+}
+
+void DisplayManager::setNetworkStatus(const char* text, NetLevel level) {
+  if (mode_ != Mode::Clock) return;
+  if (level == lastNetLevel_ && strcmp(text, lastNet_) == 0) return;
+
+  uint16_t color = TFT_GREEN;
+  switch (level) {
+    case NetLevel::Ok: color = TFT_GREEN; break;
+    case NetLevel::Busy: color = TFT_YELLOW; break;
+    case NetLevel::Offline: color = TFT_DARKGREY; break;
+    case NetLevel::Setup: color = TFT_CYAN; break;
+  }
+  tft.setTextColor(color, kBackground);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextPadding(tft.width());
+  tft.drawString(text, tft.width() / 2, kNetCenterY, kSmallFont);
+  tft.setTextPadding(0);
+  strlcpy(lastNet_, text, sizeof(lastNet_));
+  lastNetLevel_ = level;
 }
 
 void DisplayManager::showError(const char* title, const char* detail) {
