@@ -20,8 +20,12 @@ void begin();
 State state();
 bool isConnected();
 
-// Short human-readable status for the display, e.g. "Wi-Fi: MyNetwork".
-void statusText(char* buf, size_t len);
+// Connected network name (empty when not connected) and signal strength.
+void ssid(char* buf, size_t len);
+int rssi();
+
+// Name of the setup portal network, e.g. "Chrono-Node-57A1".
+const char* portalSsid();
 
 void printStatus();
 // Requests are handled asynchronously by the network task.

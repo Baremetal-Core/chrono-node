@@ -11,12 +11,14 @@
 //   NTP                       NTP sync status
 //   NTP SYNC                  sync with the NTP server now
 //   NTP SERVER <host>         set and save the NTP server, then sync
+//   SHOT                      dump the screen (tools/screenshot.py turns it into a PNG)
 //   HELP                      list commands
 #pragma once
 
+class DisplayManager;
 class RtcManager;
 
 // Non-blocking; call from loop(). Returns true if the RTC time or timezone changed.
-bool serialConsolePoll(RtcManager& rtc);
+bool serialConsolePoll(RtcManager& rtc, DisplayManager& display);
 
 void serialConsolePrintHelp();

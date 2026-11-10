@@ -3,10 +3,52 @@
 Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 ("Cheap Yellow Display", CYD) with an external DS3231 RTC as its time source.
 
-**Current state (M4):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
+**Current state (M5):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
 local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal, mDNS
-(`chrono-node.local`) and NTP that keeps the DS3231 accurate. See
+(`chrono-node.local`) and NTP that keeps the DS3231 accurate. The UI uses anti-aliased Inter
+digits, rolling transitions and an accent colour that follows the time of day. See
 [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
+
+| Clock | Setup mode |
+|-------|------------|
+| ![Clock](docs/images/clock.png) | ![Setup mode](docs/images/setup-mode.png) |
+
+## Display
+
+- **Status bar:** Wi-Fi signal and network name, NTP sync age (`NTP 5m`, amber when stale),
+  and the DS3231 temperature (±3 °C; it's the RTC chip's own sensor).
+- **Time:** HH:MM in 92 px Inter Light, with seconds in the accent colour. Changed digits
+  roll upwards over 280 ms. Every digit uses a fixed-width cell, so the time never shifts sideways.
+- **Minute bar:** fills over the minute in the accent colour.
+- **Date:** weekday, day, month and year.
+- **Notice line:** RTC lost-power warning (red) or Wi-Fi setup instructions (cyan).
+- **Accent colour by time of day:** indigo at night, coral at sunrise (~06:30), warm amber
+  09:00–16:00, rose at sunset (~18:30), violet in the evening, then back to indigo by 22:00.
+  It blends smoothly minute by minute.
+- Everything is drawn through sprites, so nothing flickers. An animation frame takes 2–6 ms.
+- The CYD's RGB LED is switched off at boot.
+
+Fonts are generated from the Inter variable font (SIL Open Font License, see
+`tools/fonts/OFL.txt`) into `src/fonts/*.h` by `tools/gen_fonts.py`. The headers are
+committed, so builds need no extra tools. To change sizes or weights:
+
+```bash
+uv run --with freetype-py tools/gen_fonts.py
+```
+
+### Screenshots
+
+`SHOT` on the serial console streams the screen back over USB. The helper script saves it as
+a PNG:
+
+```bash
+uv run --with pyserial --with pillow tools/screenshot.py -o shot.png
+uv run --with pyserial --with pillow tools/screenshot.py -o setup.png --send "WIFI PORTAL"
+```
+
+Opening the port resets most CYDs, so the script waits for boot first (`--wait`, default
+8 s). A capture takes ~15 s, during which the clock pauses. Readback needs
+`SPI_READ_FREQUENCY` at 6 MHz; at 20 MHz the CYD returns bit-shifted colours.
 
 ## Time model
 
@@ -115,6 +157,7 @@ WIFI FORGET                 # erase saved Wi-Fi credentials and open the portal
 NTP                         # server, last sync age, last measured DS3231 offset
 NTP SYNC                    # sync now (busy pool servers may answer only after a retry, ~15 s)
 NTP SERVER time.google.com  # set and save the NTP server (default pool.ntp.org), then sync
+SHOT                        # stream the screen (use tools/screenshot.py)
 HELP
 ```
 
@@ -128,7 +171,7 @@ set at boot, the serial log warns about it and the screen shows
 ## Expected serial output
 
 ```text
-[Chrono Node] Booting chrono-node-fw v0.4.0 (1a2b3c4)
+[Chrono Node] Booting chrono-node-fw v0.5.0 (1a2b3c4)
 [SETTINGS] TZ=<+07>-7 (saved), NTP=pool.ntp.org (default)
 [DISPLAY] Initialized
 [I2C] SDA=GPIO27 SCL=GPIO22 @ 100000 Hz
@@ -144,8 +187,8 @@ set at boot, the serial log warns about it and the screen shows
 [NTP] DS3231 corrected from NTP
 ```
 
-The top line of the screen shows the Wi-Fi network and the NTP sync age (`NTP 5m`,
-`NTP --` if never synced, `NTP stale` after 24 h without a sync).
+The status bar shows the NTP sync age (`NTP 5m`, `NTP --` if never synced, `NTP stale`
+in amber after 24 h without a sync).
 
 If the RTC is missing, you get `[RTC] ERROR: DS3231 not detected` and an error
 screen. The firmware keeps running and re-probes every 2 s, so a reconnected RTC is
@@ -167,8 +210,13 @@ src/time_utils.*                UTC <-> local conversion using the POSIX TZ
 src/settings.*                  NVS-backed settings (timezone, NTP server)
 src/net_manager.*               Wi-Fi task: connect/backoff, WiFiManager portal, mDNS, SNTP
 src/clock_sync.*                DS3231 <-> system clock <-> NTP discipline
-src/display_manager.*           TFT rendering (sprite-based, flicker-free time)
-src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/HELP development commands
+src/display_manager.*           UI: status bar, rolling digits, minute bar, date, notices, SHOT
+src/ui_theme.*                  palette and time-of-day accent colour
+src/fonts/*.h                   generated Inter smooth fonts (do not edit)
+tools/gen_fonts.py              font generator (FreeType -> TFT_eSPI VLW arrays)
+tools/screenshot.py             screen capture over USB serial
+tools/fonts/                    Inter variable font + OFL licence
+src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/SHOT/HELP development commands
 ```
 
 ## Troubleshooting

@@ -28,6 +28,9 @@ bool loop(RtcManager& rtc);
 // Short status for the display: "NTP --", "NTP <1m", "NTP 5m", "NTP 3h", "NTP stale".
 void statusText(char* buf, size_t len);
 
+// True once synced and the last sync is older than kNtpStaleS.
+bool isStale();
+
 void printStatus();
 
 }  // namespace clock_sync

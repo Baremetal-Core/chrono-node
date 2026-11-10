@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.4.0";
+constexpr const char* kFirmwareVersion = "0.5.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -31,6 +31,14 @@ constexpr int kI2cSclPin = 22;
 constexpr uint32_t kI2cFrequencyHz = 100000;
 
 constexpr uint8_t kDs3231Address = 0x68;
+
+// CYD on-board RGB LED (active-low); kept off.
+constexpr int kLedRedPin = 4;
+constexpr int kLedGreenPin = 16;
+constexpr int kLedBluePin = 17;
+
+// DS3231 die temperature (shown in the status bar) is read this often.
+constexpr uint32_t kTemperatureIntervalMs = 60000;
 
 // The RTC is polled faster than 1 Hz so the display follows the DS3231 second
 // boundary closely; the screen is only redrawn when the second changes.

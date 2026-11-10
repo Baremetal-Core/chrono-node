@@ -16,6 +16,7 @@
 #include "serial_console.h"
 #include "settings.h"
 #include "time_utils.h"
+#include "ui_theme.h"
 
 namespace {
 
@@ -29,7 +30,10 @@ bool rtcLostPower = false;
 uint32_t lastPollMs = 0;
 uint32_t lastReadOkMs = 0;
 uint32_t lastReprobeMs = 0;
+uint32_t lastTempMs = 0;
 int lastSecond = -1;
+bool hasTemp = false;
+float tempC = 0;
 
 void logTime(const DateTime& utc) {
   char local[32];
@@ -44,28 +48,50 @@ void refreshLostPower() {
   }
 }
 
-DisplayManager::NetLevel netLevel(net::State s) {
-  switch (s) {
-    case net::State::Connected: return DisplayManager::NetLevel::Ok;
-    case net::State::Connecting: return DisplayManager::NetLevel::Busy;
-    case net::State::Portal: return DisplayManager::NetLevel::Setup;
-    case net::State::WaitingRetry: break;
+void updateStatus() {
+  StatusInfo st;
+  switch (net::state()) {
+    case net::State::Connected:
+      st.wifi = StatusInfo::Wifi::Connected;
+      st.rssi = static_cast<int8_t>(net::rssi());
+      net::ssid(st.wifiText, sizeof(st.wifiText));
+      break;
+    case net::State::Connecting:
+      st.wifi = StatusInfo::Wifi::Connecting;
+      strlcpy(st.wifiText, "Connecting", sizeof(st.wifiText));
+      break;
+    case net::State::WaitingRetry:
+      st.wifi = StatusInfo::Wifi::Offline;
+      strlcpy(st.wifiText, "Offline", sizeof(st.wifiText));
+      break;
+    case net::State::Portal:
+      st.wifi = StatusInfo::Wifi::Setup;
+      strlcpy(st.wifiText, "Setup mode", sizeof(st.wifiText));
+      break;
   }
-  return DisplayManager::NetLevel::Offline;
+  // RSSI changes constantly; quantise so the bar is only redrawn on a level change.
+  st.rssi = st.rssi > -60 ? -50 : st.rssi > -72 ? -65 : st.rssi < 0 ? -80 : 0;
+  clock_sync::statusText(st.ntpText, sizeof(st.ntpText));
+  st.ntpWarn = clock_sync::isStale();
+  st.hasTemp = hasTemp;
+  st.tempC = static_cast<int8_t>(lroundf(tempC));
+  display.setStatus(st);
+
+  if (rtcLostPower) {
+    display.setNotice("RTC lost power - waiting for NTP or SET", theme::kError);
+  } else if (net::state() == net::State::Portal) {
+    char text[64];
+    snprintf(text, sizeof(text), "Join Wi-Fi \"%s\" to set up", net::portalSsid());
+    display.setNotice(text, theme::kSetup);
+  } else {
+    display.setNotice(nullptr, theme::kBackground);
+  }
 }
 
-void updateNetworkStatus() {
-  char wifi[48];
-  net::statusText(wifi, sizeof(wifi));
-  if (net::state() == net::State::Portal) {
-    display.setNetworkStatus(wifi, netLevel(net::state()));
-    return;
-  }
-  char ntp[16];
-  clock_sync::statusText(ntp, sizeof(ntp));
-  char text[72];
-  snprintf(text, sizeof(text), "%s   %s", wifi, ntp);
-  display.setNetworkStatus(text, netLevel(net::state()));
+void readTemperature() {
+  float t;
+  hasTemp = rtc.isPresent() && rtc.temperatureC(t);
+  if (hasTemp) tempC = t;
 }
 
 void enterMissing() {
@@ -113,14 +139,19 @@ void pollRtc(bool forceLog = false) {
   struct tm local;
   time_utils::utcToLocal(utc, local);
   display.showTime(local);
-  display.setStatus(rtcLostPower ? "RTC lost power - time not set" : nullptr);
-  updateNetworkStatus();
+  updateStatus();
   if (forceLog || config::kLogEverySecond) logTime(utc);
 }
 
 }  // namespace
 
 void setup() {
+  // The CYD RGB LED is active-low and glows dimly if left floating: switch it off.
+  for (int pin : {config::kLedRedPin, config::kLedGreenPin, config::kLedBluePin}) {
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, HIGH);
+  }
+
   Serial.begin(config::kSerialBaud);
   Serial.println();
   Serial.printf("[%s] Booting %s v%s (%s)\n", config::kProjectName, config::kFirmwareName,
@@ -156,7 +187,9 @@ void loop() {
     lastSecond = -1;
   }
 
-  if (serialConsolePoll(rtc)) {
+  display.tick();
+
+  if (serialConsolePoll(rtc, display)) {
     // Time or timezone changed: re-read the oscillator-stop flag and redraw.
     rtcLostPower = rtc.lostPower();
     lastSecond = -1;
@@ -170,6 +203,10 @@ void loop() {
     }
   } else if (nowMs - lastPollMs >= config::kRtcPollIntervalMs) {
     lastPollMs = nowMs;
+    if (lastTempMs == 0 || nowMs - lastTempMs >= config::kTemperatureIntervalMs) {
+      lastTempMs = nowMs;
+      readTemperature();
+    }
     pollRtc();
   }
 

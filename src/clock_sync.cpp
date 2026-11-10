@@ -175,6 +175,8 @@ void statusText(char* buf, size_t len) {
   }
 }
 
+bool isStale() { return everSynced && (millis() - lastSyncMs) / 1000 > config::kNtpStaleS; }
+
 void printStatus() {
   if (!everSynced) {
     Serial.println("[NTP] Not synced since boot");
