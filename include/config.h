@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.3.0";
+constexpr const char* kFirmwareVersion = "0.4.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -36,7 +36,8 @@ constexpr uint8_t kDs3231Address = 0x68;
 // boundary closely; the screen is only redrawn when the second changes.
 constexpr uint32_t kRtcPollIntervalMs = 50;
 
-// The ESP32 system clock is re-seeded from the DS3231 when it drifts further than this.
+// Between NTP syncs the DS3231 is the reference: the ESP32 system clock is
+// re-seeded from it when they differ by more than this.
 constexpr int32_t kSystemClockMaxDriftMs = 200;
 constexpr uint32_t kRtcReprobeIntervalMs = 2000;
 
@@ -52,6 +53,17 @@ constexpr uint32_t kWifiRetryMaxMs = 300000;
 constexpr uint32_t kPortalTimeoutS = 180;
 // Max time the display may pause while the portal tests newly entered credentials.
 constexpr uint32_t kPortalSaveConnectTimeoutS = 15;
+
+// ---- NTP ----
+constexpr const char* kDefaultNtpServer = "pool.ntp.org";
+constexpr size_t kNtpServerMaxLen = 63;
+constexpr uint32_t kNtpSyncIntervalMs = 6UL * 60 * 60 * 1000;
+// After an NTP sync the DS3231 is rewritten if it is off by more than this.
+// Must stay below kSystemClockMaxDriftMs so a tolerated DS3231 offset never
+// pulls the NTP-set system clock away.
+constexpr int32_t kRtcCorrectThresholdMs = 100;
+// Sync status is shown as stale when the last successful sync is older than this.
+constexpr uint32_t kNtpStaleS = 24UL * 60 * 60;
 
 // Set to false to silence the once-per-second time log.
 constexpr bool kLogEverySecond = true;

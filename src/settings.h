@@ -12,4 +12,10 @@ const char* timezone();
 // Validates, saves and applies a POSIX TZ string. Returns false if rejected.
 bool setTimezone(const char* posixTz);
 
+// NTP server host name, for example "pool.ntp.org".
+const char* ntpServer();
+
+// Validates and saves an NTP host name. Returns false if rejected.
+bool setNtpServer(const char* host);
+
 }  // namespace settings

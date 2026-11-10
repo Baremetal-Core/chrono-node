@@ -8,6 +8,9 @@
 //   WIFI                      Wi-Fi status
 //   WIFI PORTAL               open the Wi-Fi setup portal
 //   WIFI FORGET               erase saved Wi-Fi credentials and open the portal
+//   NTP                       NTP sync status
+//   NTP SYNC                  sync with the NTP server now
+//   NTP SERVER <host>         set and save the NTP server, then sync
 //   HELP                      list commands
 #pragma once
 

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "clock_sync.h"
 #include "config.h"
 #include "net_manager.h"
 #include "rtc_manager.h"
@@ -77,7 +78,7 @@ void printInfo(RtcManager& rtc) {
   Serial.printf("[INFO] Uptime %lus, heap free %u B (min %u B), partition %s\n",
                 (unsigned long)(millis() / 1000), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
                 part ? part->label : "?");
-  Serial.printf("[INFO] TZ=%s\n", settings::timezone());
+  Serial.printf("[INFO] TZ=%s, NTP=%s\n", settings::timezone(), settings::ntpServer());
   float tempC;
   if (rtc.isPresent() && rtc.temperatureC(tempC)) {
     Serial.printf("[INFO] DS3231 present, lost power: %s, temperature %.2f C\n",
@@ -95,10 +96,26 @@ bool handleLine(RtcManager& rtc, char* text) {
   if (strcasecmp(text, "TZ") == 0 || strncasecmp(text, "TZ ", 3) == 0) {
     return handleTz(rtc, text + 2);
   }
+  if (strncasecmp(text, "NTP SERVER ", 11) == 0) {
+    const char* host = text + 11;
+    while (*host == ' ') ++host;
+    if (settings::setNtpServer(host)) {
+      Serial.printf("[SETTINGS] NTP=%s (saved)\n", settings::ntpServer());
+      net::requestNtpSync();
+    } else {
+      Serial.println("[CONSOLE] ERROR: invalid host name");
+    }
+    return false;
+  }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
   } else if (strcasecmp(text, "INFO") == 0) {
     printInfo(rtc);
+  } else if (strcasecmp(text, "NTP") == 0) {
+    Serial.printf("[NTP] Server %s\n", settings::ntpServer());
+    clock_sync::printStatus();
+  } else if (strcasecmp(text, "NTP SYNC") == 0) {
+    net::requestNtpSync();
   } else if (strcasecmp(text, "WIFI") == 0) {
     net::printStatus();
   } else if (strcasecmp(text, "WIFI PORTAL") == 0) {
@@ -117,7 +134,7 @@ bool handleLine(RtcManager& rtc, char* text) {
 void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
-      "WIFI [PORTAL|FORGET] | HELP");
+      "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | HELP");
 }
 
 bool serialConsolePoll(RtcManager& rtc) {

@@ -3,18 +3,24 @@
 Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 ("Cheap Yellow Display", CYD) with an external DS3231 RTC as its time source.
 
-**Current state (M3):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
-local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal and
-mDNS (`chrono-node.local`). No NTP yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming
-milestones.
+**Current state (M4):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
+local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal, mDNS
+(`chrono-node.local`) and NTP that keeps the DS3231 accurate. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
 
 ## Time model
 
 - The DS3231 is the source of truth and **always stores UTC**.
 - Local time = DS3231 UTC + the POSIX `TZ` string (default `<+07>-7`, change it with `TZ`).
-- The ESP32 system clock is seeded from the DS3231 on a second boundary and corrected if it
-  drifts by more than 200 ms. It exists for libraries (TLS/SNTP later). The display always
-  reads the DS3231.
+- The display always reads the DS3231, so the clock works without any network.
+- Between NTP syncs the DS3231 (±2 ppm) is the reference. The ESP32 system clock (used by
+  TLS/SNTP) is seeded from it on a second edge, and corrected when it drifts more than 200 ms.
+- When NTP time arrives (on every Wi-Fi connect, then every 6 h), the DS3231 offset is measured
+  on its next second edge. If it is off by more than 100 ms, or the DS3231 lost power, it is
+  rewritten exactly on the system second boundary. Writing the seconds register restarts the
+  DS3231's internal 1 Hz countdown, so both clocks tick together, typically within a few ms.
+- Each measurement is logged, with a drift estimate in ppm once two measurements are an hour
+  or more apart.
 
 ## Hardware
 
@@ -106,10 +112,14 @@ INFO                        # firmware/git revision, heap, partition, DS3231 tem
 WIFI                        # Wi-Fi state, SSID, IP, RSSI
 WIFI PORTAL                 # open the setup portal (closes after 180 s if credentials exist)
 WIFI FORGET                 # erase saved Wi-Fi credentials and open the portal
+NTP                         # server, last sync age, last measured DS3231 offset
+NTP SYNC                    # sync now (busy pool servers may answer only after a retry, ~15 s)
+NTP SERVER time.google.com  # set and save the NTP server (default pool.ntp.org), then sync
 HELP
 ```
 
-`SET` rejects impossible dates and local times skipped by a DST change.
+`SET` rejects impossible dates and local times skipped by a DST change. With Wi-Fi
+configured, `SET` is rarely needed: NTP fixes the DS3231 on the next sync.
 
 `SET` also clears the DS3231 "oscillator stopped" (lost power) flag. If that flag is
 set at boot, the serial log warns about it and the screen shows
@@ -118,8 +128,8 @@ set at boot, the serial log warns about it and the screen shows
 ## Expected serial output
 
 ```text
-[Chrono Node] Booting chrono-node-fw v0.3.0 (1a2b3c4)
-[SETTINGS] TZ=<+07>-7 (saved)
+[Chrono Node] Booting chrono-node-fw v0.4.0 (1a2b3c4)
+[SETTINGS] TZ=<+07>-7 (saved), NTP=pool.ntp.org (default)
 [DISPLAY] Initialized
 [I2C] SDA=GPIO27 SCL=GPIO22 @ 100000 Hz
 [RTC] DS3231 detected at 0x68
@@ -128,7 +138,14 @@ set at boot, the serial log warns about it and the screen shows
 [TIME] System clock seeded from DS3231
 [WIFI] Connected to "MyNetwork", IP 192.168.1.93, RSSI -48 dBm
 [WIFI] mDNS: chrono-node.local
+[NTP] Syncing with pool.ntp.org
+[NTP] Time received
+[NTP] DS3231 offset -118 ms
+[NTP] DS3231 corrected from NTP
 ```
+
+The top line of the screen shows the Wi-Fi network and the NTP sync age (`NTP 5m`,
+`NTP --` if never synced, `NTP stale` after 24 h without a sync).
 
 If the RTC is missing, you get `[RTC] ERROR: DS3231 not detected` and an error
 screen. The firmware keeps running and re-probes every 2 s, so a reconnected RTC is
@@ -147,10 +164,11 @@ include/config.h                pins, I2C address, timing, defaults, firmware me
 src/main.cpp                    setup/loop, DS3231 polling, system clock seeding
 src/rtc_manager.*               I2C + DS3231 detection/read/write/temperature
 src/time_utils.*                UTC <-> local conversion using the POSIX TZ
-src/settings.*                  NVS-backed settings (timezone)
-src/net_manager.*               Wi-Fi task: connect/backoff, WiFiManager portal, mDNS
+src/settings.*                  NVS-backed settings (timezone, NTP server)
+src/net_manager.*               Wi-Fi task: connect/backoff, WiFiManager portal, mDNS, SNTP
+src/clock_sync.*                DS3231 <-> system clock <-> NTP discipline
 src/display_manager.*           TFT rendering (sprite-based, flicker-free time)
-src/serial_console.*            SET/GET/TZ/INFO/WIFI/HELP development commands
+src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/HELP development commands
 ```
 
 ## Troubleshooting

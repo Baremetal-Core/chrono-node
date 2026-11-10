@@ -1,14 +1,14 @@
 // Chrono Node - firmware entry point.
 //
-// Time model: the DS3231 is the source of truth and always holds UTC. Local
-// time is derived with the POSIX TZ from settings. The ESP32 system clock is
-// seeded from the DS3231 on second boundaries for libraries that need it
-// (TLS, SNTP later), but the display is always driven by DS3231 reads.
-// The RTC is never written at boot; use the serial console "SET" command.
+// Time model: the DS3231 is the timekeeper and always holds UTC. Local time
+// is derived with the POSIX TZ from settings. The display is always driven by
+// DS3231 reads. clock_sync keeps the ESP32 system clock in step with the
+// DS3231 and corrects the DS3231 after each NTP sync. The RTC is never
+// written at boot; without network use the serial console "SET" command.
 
 #include <Arduino.h>
-#include <sys/time.h>
 
+#include "clock_sync.h"
 #include "config.h"
 #include "display_manager.h"
 #include "net_manager.h"
@@ -25,7 +25,6 @@ DisplayManager display;
 enum class RtcState { Ok, Missing, InvalidTime };
 RtcState rtcState = RtcState::Missing;
 bool rtcLostPower = false;
-bool systemClockSeeded = false;
 
 uint32_t lastPollMs = 0;
 uint32_t lastReadOkMs = 0;
@@ -45,24 +44,6 @@ void refreshLostPower() {
   }
 }
 
-// Called right after the DS3231 seconds register ticked over, so `utc` is
-// accurate to within one poll interval.
-void syncSystemClock(const DateTime& utc) {
-  struct timeval tv;
-  gettimeofday(&tv, nullptr);
-  int64_t driftMs = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000 - (int64_t)utc.unixtime() * 1000;
-  if (systemClockSeeded && llabs(driftMs) <= config::kSystemClockMaxDriftMs) return;
-
-  struct timeval set = {static_cast<time_t>(utc.unixtime()), 0};
-  settimeofday(&set, nullptr);
-  if (systemClockSeeded) {
-    Serial.printf("[TIME] System clock corrected from DS3231 (drift %lld ms)\n", driftMs);
-  } else {
-    Serial.println("[TIME] System clock seeded from DS3231");
-  }
-  systemClockSeeded = true;
-}
-
 DisplayManager::NetLevel netLevel(net::State s) {
   switch (s) {
     case net::State::Connected: return DisplayManager::NetLevel::Ok;
@@ -74,8 +55,16 @@ DisplayManager::NetLevel netLevel(net::State s) {
 }
 
 void updateNetworkStatus() {
-  char text[64];
-  net::statusText(text, sizeof(text));
+  char wifi[48];
+  net::statusText(wifi, sizeof(wifi));
+  if (net::state() == net::State::Portal) {
+    display.setNetworkStatus(wifi, netLevel(net::state()));
+    return;
+  }
+  char ntp[16];
+  clock_sync::statusText(ntp, sizeof(ntp));
+  char text[72];
+  snprintf(text, sizeof(text), "%s   %s", wifi, ntp);
   display.setNetworkStatus(text, netLevel(net::state()));
 }
 
@@ -119,7 +108,7 @@ void pollRtc(bool forceLog = false) {
   const bool secondEdge = lastSecond != -1 && recentRead;
   lastSecond = utc.second();
 
-  if (secondEdge && !rtcLostPower) syncSystemClock(utc);
+  if (secondEdge) clock_sync::onRtcSecondEdge(utc, !rtcLostPower);
 
   struct tm local;
   time_utils::utcToLocal(utc, local);
@@ -161,6 +150,12 @@ void setup() {
 }
 
 void loop() {
+  if (clock_sync::loop(rtc)) {
+    // DS3231 rewritten from NTP: this also clears its lost-power flag.
+    rtcLostPower = rtc.lostPower();
+    lastSecond = -1;
+  }
+
   if (serialConsolePoll(rtc)) {
     // Time or timezone changed: re-read the oscillator-stop flag and redraw.
     rtcLostPower = rtc.lostPower();
