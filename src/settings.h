@@ -36,4 +36,14 @@ bool setNightWindow(uint16_t startMinute, uint16_t endMinute);
 // True if night mode applies at `minuteOfDay` with the current schedule.
 bool isNightAt(int minuteOfDay);
 
+// Weather location (decimal degrees) and its display name.
+float latitude();
+float longitude();
+const char* place();
+bool setLocation(float lat, float lon, const char* name);
+
+// Periodic forecast screen on/off.
+bool weatherCycle();
+bool setWeatherCycle(bool enabled);
+
 }  // namespace settings

@@ -13,11 +13,12 @@
 #include "clock_sync.h"
 #include "config.h"
 #include "settings.h"
+#include "weather.h"
 
 namespace net {
 namespace {
 
-constexpr uint32_t kTaskStackBytes = 10 * 1024;
+constexpr uint32_t kTaskStackBytes = 16 * 1024;  // TLS handshakes for weather
 constexpr BaseType_t kTaskCore = 0;  // Arduino loop() runs on core 1
 constexpr uint32_t kTaskPeriodMs = 10;
 
@@ -340,6 +341,7 @@ void step() {
       break;
 
     case State::Connected:
+      if (!evtDisconnected) weather::service();
       if (evtDisconnected) {
         Serial.printf("[WIFI] Disconnected (reason %u)\n", evtReason);
         clearEvents();

@@ -3,11 +3,16 @@
 Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 ("Cheap Yellow Display", CYD) with an external DS3231 RTC as its time source.
 
-**Current state (M7):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
+**Current state (M8):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
 local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal, mDNS
 (`chrono-node.local`) and NTP that keeps the DS3231 accurate. The UI uses bold anti-aliased
 gradient digits, rolling transitions and colours that follow the time of day, plus a dimmed
-night mode on a schedule. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
+night mode on a schedule and weather from Open-Meteo. See [docs/ROADMAP.md](docs/ROADMAP.md)
+for upcoming milestones.
+
+| Clock with weather | Forecast screen |
+|--------------------|-----------------|
+| ![Clock with weather](docs/images/weather-clock.png) | ![Forecast](docs/images/weather-forecast.png) |
 
 | Night mode | Sunrise | Day |
 |------------|---------|-----|
@@ -18,13 +23,15 @@ night mode on a schedule. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming mi
 ## Display
 
 - **Status bar:** Wi-Fi signal and network name, NTP sync age (`NTP 5m`, amber when stale),
-  and the DS3231 temperature (±3 °C; it's the RTC chip's own sensor).
+  and the DS3231 temperature (±3 °C; it's the RTC chip's own sensor). The DS3231
+  temperature is shown only when there's no weather data.
 - **Time:** HH:MM in 104 px Inter Bold with a vertical colour gradient. Changed digits roll
   upwards over 300 ms. Every digit uses a fixed-width cell, so the time never shifts sideways.
 - **Minute bar:** fills over the minute with a horizontal gradient. The seconds sit at its
   right end.
 - **Date:** the weekday in the accent colour, then the date.
-- **Notice line:** RTC lost-power warning (red) or Wi-Fi setup instructions (cyan).
+- **Bottom line:** current weather (icon, temperature, condition, today's high/low). A notice
+  replaces it when needed: RTC lost-power warning (red) or Wi-Fi setup instructions (cyan).
 - **Colours by time of day** (on a deep navy background), blended minute by minute in HSV
   so transitions stay saturated: night hot pink→magenta, sunrise (~06:30) gold→red-pink,
   day (09:00–16:00) yellow→orange, sunset (~18:30) orange→magenta, evening (20:00–21:15)
@@ -34,6 +41,30 @@ night mode on a schedule. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming mi
 - Glyphs are rendered white-on-black into sprites, then tinted per pixel, so the gradients
   keep their anti-aliasing. Nothing flickers. An animation frame takes a few ms.
 - The CYD's RGB LED is switched off at boot.
+
+## Weather
+
+- The source is [Open-Meteo](https://open-meteo.com) (free, no API key): current conditions,
+  the next 24 hours and 4 days. It's fetched over **HTTPS with certificate verification** every
+  15 min while online, retrying after failures with backoff (1 min doubling up to 15 min).
+- The default location is Ho Chi Minh City. Change it with `WEATHER CITY <name>` (looked up
+  with Open-Meteo geocoding) or `WEATHER LOC <lat> <lon> [name]`. The location is saved in NVS.
+- **Forecast screen:** the current conditions with feels-like, humidity and rain chance; the
+  next hours in 3 h steps; and today plus 3 days with rain probability. Until touch arrives
+  (M6), it cycles in every 2 minutes at second 45 for 10 s, behind a quick backlight dip.
+  It's never shown at night or while a notice is shown. Turn it off with `WEATHER CYCLE OFF`.
+  `WEATHER SHOW` shows it for 30 s.
+- **Offline:** the last data stays on screen. After 2 h it's dimmed and marked "old". The
+  data is kept in RAM only, so a reboot without network shows no weather.
+- Icons are drawn from anti-aliased circles, lines and rounded rectangles (sun, moon, clouds,
+  drizzle, rain, showers, thunder, snow, fog), so there are no image assets. In night mode
+  they're drawn in the dim night colour.
+- TLS uses Mozilla's root store, converted into the ESP-IDF bundle format by
+  `tools/gen_ca_bundle.py` (`src/certs/ca_bundle.h`, 118 roots, 55 KB). To refresh it:
+
+```bash
+uv run --with cryptography tools/gen_ca_bundle.py
+```
 
 ## Brightness and night mode
 
@@ -65,10 +96,13 @@ a PNG:
 ```bash
 uv run --with pyserial --with pillow tools/screenshot.py -o shot.png
 uv run --with pyserial --with pillow tools/screenshot.py -o setup.png --send "WIFI PORTAL"
+uv run --with pyserial --with pillow tools/screenshot.py -o wx.png --wait-for "[WEATHER] " --send "WEATHER SHOW"
 ```
 
 Opening the port resets most CYDs, so the script waits for boot first (`--wait`, default
-8 s). A capture takes ~15 s, during which the clock pauses. Readback needs
+8 s). `--wait-for` keeps reading until a log line appears, e.g. once the weather has loaded.
+A capture takes ~15 s, during which the clock pauses. The frame is checked and the capture
+retried if log output from another task got mixed into it. Readback needs
 `SPI_READ_FREQUENCY` at 6 MHz; at 20 MHz the CYD returns bit-shifted colours.
 
 The capture reads the display's memory, so it can't show panel-level problems such as
@@ -196,6 +230,12 @@ BRIGHT DAY 90               # set and save the day backlight level (0-100 %)
 BRIGHT NIGHT 15             # set and save the night backlight level
 NIGHT 22:00 06:30           # set and save the night window (may wrap past midnight)
 NIGHT OFF                   # disable night mode (NIGHT ON to re-enable)
+WEATHER                     # location, current weather, 4-day forecast, last error
+WEATHER UPDATE              # fetch now
+WEATHER SHOW                # show the forecast screen for 30 s
+WEATHER CITY Da Nang        # look up a city and save it as the location
+WEATHER LOC 10.82 106.63 Home   # save a location by coordinates (name optional)
+WEATHER CYCLE OFF           # stop the periodic forecast screen (ON to re-enable)
 HELP
 ```
 
@@ -252,11 +292,15 @@ src/clock_sync.*                DS3231 <-> system clock <-> NTP discipline
 src/display_manager.*           UI: status bar, rolling digits, minute bar, date, notices, SHOT
 src/ui_theme.*                  day/night UI colours and time-of-day gradient palettes
 src/backlight.*                 gamma-corrected PWM backlight with fades
+src/weather.*                   Open-Meteo fetch/parse (HTTPS + ArduinoJson), geocoding
+src/weather_icons.*             weather icons from anti-aliased primitives
+src/certs/ca_bundle.h           generated Mozilla root CA bundle (do not edit)
+tools/gen_ca_bundle.py          CA bundle generator
 src/fonts/*.h                   generated Inter smooth fonts (do not edit)
 tools/gen_fonts.py              font generator (FreeType -> TFT_eSPI VLW arrays)
 tools/screenshot.py             screen capture over USB serial
 tools/fonts/                    Inter variable font + OFL licence
-src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/BRIGHT/NIGHT/SHOT/TEST/HELP commands
+src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/BRIGHT/NIGHT/WEATHER/SHOT/TEST/HELP
 ```
 
 ## Troubleshooting

@@ -19,6 +19,15 @@ constexpr const char* kKeyBrightNight = "bri_night";
 constexpr const char* kKeyNightOn = "night_on";
 constexpr const char* kKeyNightStart = "night_start";
 constexpr const char* kKeyNightEnd = "night_end";
+constexpr const char* kKeyLat = "wx_lat";
+constexpr const char* kKeyLon = "wx_lon";
+constexpr const char* kKeyPlace = "wx_place";
+constexpr const char* kKeyWxCycle = "wx_cycle";
+
+float lat = config::kDefaultLatitude;
+float lon = config::kDefaultLongitude;
+char placeName[config::kPlaceMaxLen + 1] = "";
+bool wxCycle = true;
 
 uint8_t briDay = config::kDefaultBrightnessDay;
 uint8_t briNight = config::kDefaultBrightnessNight;
@@ -73,6 +82,12 @@ void begin() {
     nightOn = prefs.getBool(kKeyNightOn, nightOn);
     nightFrom = prefs.getUShort(kKeyNightStart, nightFrom) % 1440;
     nightTo = prefs.getUShort(kKeyNightEnd, nightTo) % 1440;
+    if (prefs.isKey(kKeyLat) && prefs.isKey(kKeyLon)) {
+      lat = prefs.getFloat(kKeyLat, lat);
+      lon = prefs.getFloat(kKeyLon, lon);
+    }
+    if (prefs.isKey(kKeyPlace)) prefs.getString(kKeyPlace, placeName, sizeof(placeName));
+    wxCycle = prefs.getBool(kKeyWxCycle, wxCycle);
     prefs.end();
   }
   bool tzFromNvs = looksLikePosixTz(tz);
@@ -81,6 +96,9 @@ void begin() {
   strlcpy(currentNtp, ntpFromNvs ? ntp : config::kDefaultNtpServer, sizeof(currentNtp));
   Serial.printf("[SETTINGS] TZ=%s (%s), NTP=%s (%s)\n", currentTz,
                 tzFromNvs ? "saved" : "default", currentNtp, ntpFromNvs ? "saved" : "default");
+  if (placeName[0] == '\0') strlcpy(placeName, config::kDefaultPlace, sizeof(placeName));
+  Serial.printf("[SETTINGS] Weather %s (%.3f, %.3f), forecast screen %s\n", placeName, lat, lon,
+                wxCycle ? "on" : "off");
   Serial.printf("[SETTINGS] Brightness day %u%% night %u%%, night mode %s %02u:%02u-%02u:%02u\n",
                 briDay, briNight, nightOn ? "on" : "off", nightFrom / 60, nightFrom % 60,
                 nightTo / 60, nightTo % 60);
@@ -144,6 +162,38 @@ bool setNightWindow(uint16_t startMinute, uint16_t endMinute) {
     nightFrom = startMinute;
     nightTo = endMinute;
   }
+  return ok;
+}
+
+float latitude() { return lat; }
+float longitude() { return lon; }
+const char* place() { return placeName; }
+
+bool setLocation(float newLat, float newLon, const char* name) {
+  if (newLat < -90 || newLat > 90 || newLon < -180 || newLon > 180) return false;
+  char n[sizeof(placeName)];
+  if (name && *name) {
+    strlcpy(n, name, sizeof(n));
+  } else {
+    snprintf(n, sizeof(n), "%.2f, %.2f", newLat, newLon);
+  }
+  bool ok = save([&](Preferences& p) {
+    return p.putFloat(kKeyLat, newLat) > 0 && p.putFloat(kKeyLon, newLon) > 0 &&
+           p.putString(kKeyPlace, n) > 0;
+  });
+  if (ok) {
+    lat = newLat;
+    lon = newLon;
+    strlcpy(placeName, n, sizeof(placeName));
+  }
+  return ok;
+}
+
+bool weatherCycle() { return wxCycle; }
+
+bool setWeatherCycle(bool enabled) {
+  bool ok = save([&](Preferences& p) { return p.putBool(kKeyWxCycle, enabled) > 0; });
+  if (ok) wxCycle = enabled;
   return ok;
 }
 

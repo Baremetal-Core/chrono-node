@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.6.1";
+constexpr const char* kFirmwareVersion = "0.7.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -49,6 +49,22 @@ constexpr uint16_t kDefaultNightEnd = 6 * 60 + 30;
 constexpr uint32_t kNightFadeOutMs = 600;
 constexpr uint32_t kNightFadeInMs = 1500;
 constexpr uint32_t kBrightnessFadeMs = 400;
+
+// ---- Weather (Open-Meteo, no API key) ----
+constexpr float kDefaultLatitude = 10.823f;  // Ho Chi Minh City
+constexpr float kDefaultLongitude = 106.630f;
+constexpr const char* kDefaultPlace = "Ho Chi Minh City";
+constexpr size_t kPlaceMaxLen = 31;
+constexpr uint32_t kWeatherRefreshMs = 15UL * 60 * 1000;
+constexpr uint32_t kWeatherRetryMs = 60UL * 1000;
+constexpr uint32_t kWeatherStaleS = 2UL * 60 * 60;  // shown as old after this
+// Forecast screen: shown every kWeatherCycleMinutes for kWeatherShowS seconds,
+// starting at second kWeatherShowAtSecond (not in night mode).
+constexpr int kWeatherCycleMinutes = 2;
+constexpr int kWeatherShowAtSecond = 45;
+constexpr uint32_t kWeatherShowS = 10;
+constexpr uint32_t kScreenFadeOutMs = 150;
+constexpr uint32_t kScreenFadeInMs = 300;
 
 // DS3231 die temperature (shown in the status bar) is read this often.
 constexpr uint32_t kTemperatureIntervalMs = 60000;
