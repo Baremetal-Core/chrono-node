@@ -37,8 +37,14 @@ class DisplayManager {
   // Status bar contents. Redrawn only when changed.
   void setStatus(const StatusInfo& status);
 
+  enum class NoticeKind : uint8_t { Error, Setup };
   // Bottom notice line; nullptr clears it. Redrawn only when changed.
-  void setNotice(const char* text, uint16_t color);
+  void setNotice(const char* text, NoticeKind kind);
+
+  // Night mode: black background, dim red UI and the night palette. The
+  // screen is repainted on the next showTime(); hide it behind a backlight fade.
+  void setNightMode(bool night);
+  bool nightMode() const { return night_; }
 
   // Full-screen error. Redrawn only when the message changes.
   void showError(const char* title, const char* detail);
@@ -96,7 +102,8 @@ class DisplayManager {
   StatusInfo status_;
   bool statusValid_ = false;
   char notice_[64] = "";
-  uint16_t noticeColor_ = 0;
+  NoticeKind noticeKind_ = NoticeKind::Setup;
+  bool night_ = false;
   char lastError_[96] = "";
   uint32_t testUntilMs_ = 0;
 };

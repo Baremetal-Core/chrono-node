@@ -72,6 +72,13 @@ bool handleTz(RtcManager& rtc, const char* args) {
   return true;
 }
 
+void printBrightness() {
+  Serial.printf("[NIGHT] Brightness day %u%%, night %u%%; night mode %s, %02u:%02u-%02u:%02u\n",
+                settings::brightnessDay(), settings::brightnessNight(),
+                settings::nightEnabled() ? "on" : "off", settings::nightStart() / 60,
+                settings::nightStart() % 60, settings::nightEnd() / 60, settings::nightEnd() % 60);
+}
+
 void printInfo(RtcManager& rtc) {
   const esp_partition_t* part = esp_ota_get_running_partition();
   Serial.printf("[INFO] %s %s v%s (%s)\n", config::kProjectName, config::kFirmwareName,
@@ -108,10 +115,48 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     }
     return false;
   }
+  if (strncasecmp(text, "BRIGHT ", 7) == 0) {
+    char which[8];
+    int pct;
+    if (sscanf(text + 7, "%7s %d", which, &pct) != 2 || pct < 0 || pct > 100 ||
+        (strcasecmp(which, "DAY") != 0 && strcasecmp(which, "NIGHT") != 0)) {
+      Serial.println("[CONSOLE] Usage: BRIGHT DAY|NIGHT <0-100>");
+      return false;
+    }
+    if (!settings::setBrightness(strcasecmp(which, "NIGHT") == 0, pct)) {
+      Serial.println("[CONSOLE] ERROR: could not save");
+      return false;
+    }
+    printBrightness();
+    return true;
+  }
+  if (strncasecmp(text, "NIGHT ", 6) == 0) {
+    const char* arg = text + 6;
+    int h1, m1, h2, m2;
+    bool ok;
+    if (strcasecmp(arg, "ON") == 0 || strcasecmp(arg, "OFF") == 0) {
+      ok = settings::setNightEnabled(strcasecmp(arg, "ON") == 0);
+    } else if (sscanf(arg, "%d:%d %d:%d", &h1, &m1, &h2, &m2) == 4 && h1 >= 0 && h1 < 24 &&
+               h2 >= 0 && h2 < 24 && m1 >= 0 && m1 < 60 && m2 >= 0 && m2 < 60) {
+      ok = settings::setNightWindow(h1 * 60 + m1, h2 * 60 + m2);
+    } else {
+      Serial.println("[CONSOLE] Usage: NIGHT ON|OFF|HH:MM HH:MM");
+      return false;
+    }
+    if (!ok) {
+      Serial.println("[CONSOLE] ERROR: invalid or not saved");
+      return false;
+    }
+    printBrightness();
+    return true;
+  }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
   } else if (strcasecmp(text, "INFO") == 0) {
     printInfo(rtc);
+    printBrightness();
+  } else if (strcasecmp(text, "BRIGHT") == 0 || strcasecmp(text, "NIGHT") == 0) {
+    printBrightness();
   } else if (strcasecmp(text, "TEST PALETTE") == 0) {
     display.showPaletteTest(30000);
   } else if (strcasecmp(text, "TEST") == 0) {
@@ -141,7 +186,8 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
 void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
-      "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | SHOT | TEST [PALETTE] | HELP");
+      "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | SHOT | TEST [PALETTE] | HELP");
 }
 
 bool serialConsolePoll(RtcManager& rtc, DisplayManager& display) {

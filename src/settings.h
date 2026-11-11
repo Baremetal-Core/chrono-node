@@ -1,6 +1,8 @@
 // Chrono Node - persistent settings stored in ESP32 NVS.
 #pragma once
 
+#include <stdint.h>
+
 namespace settings {
 
 // Loads settings from NVS and applies the timezone. Call once at boot.
@@ -17,5 +19,21 @@ const char* ntpServer();
 
 // Validates and saves an NTP host name. Returns false if rejected.
 bool setNtpServer(const char* host);
+
+// Backlight levels in percent (0-100).
+uint8_t brightnessDay();
+uint8_t brightnessNight();
+bool setBrightness(bool night, uint8_t percent);
+
+// Night mode schedule in minutes after local midnight; the window may wrap
+// past midnight (e.g. 22:00-06:30).
+bool nightEnabled();
+uint16_t nightStart();
+uint16_t nightEnd();
+bool setNightEnabled(bool enabled);
+bool setNightWindow(uint16_t startMinute, uint16_t endMinute);
+
+// True if night mode applies at `minuteOfDay` with the current schedule.
+bool isNightAt(int minuteOfDay);
 
 }  // namespace settings

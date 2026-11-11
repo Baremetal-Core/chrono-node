@@ -3,17 +3,17 @@
 Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 ("Cheap Yellow Display", CYD) with an external DS3231 RTC as its time source.
 
-**Current state (M5):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
+**Current state (M7):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
 local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal, mDNS
 (`chrono-node.local`) and NTP that keeps the DS3231 accurate. The UI uses bold anti-aliased
-gradient digits, rolling transitions and colours that follow the time of day. See
-[docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
+gradient digits, rolling transitions and colours that follow the time of day, plus a dimmed
+night mode on a schedule. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
 
-| Night | Sunrise | Day |
-|-------|---------|-----|
-| ![Night](docs/images/clock.png) | ![Sunrise](docs/images/clock-sunrise.png) | ![Day](docs/images/clock-day.png) |
-| **Sunset** | **Palettes (`TEST PALETTE`)** | **Setup mode** |
-| ![Sunset](docs/images/clock-sunset.png) | ![Palettes](docs/images/palettes.png) | ![Setup mode](docs/images/setup-mode.png) |
+| Night mode | Sunrise | Day |
+|------------|---------|-----|
+| ![Night mode](docs/images/clock-night.png) | ![Sunrise](docs/images/clock-sunrise.png) | ![Day](docs/images/clock-day.png) |
+| **Sunset** | **Evening** | **Palettes (`TEST PALETTE`)** |
+| ![Sunset](docs/images/clock-sunset.png) | ![Evening](docs/images/clock-evening.png) | ![Palettes](docs/images/palettes.png) |
 
 ## Display
 
@@ -25,13 +25,29 @@ gradient digits, rolling transitions and colours that follow the time of day. Se
   right end.
 - **Date:** the weekday in the accent colour, then the date.
 - **Notice line:** RTC lost-power warning (red) or Wi-Fi setup instructions (cyan).
-- **Colours by time of day** (on a deep navy background), blended minute by minute:
-  night blue→violet, sunrise (~06:30) gold→red-pink, day (09:00–16:00) yellow→orange,
-  sunset (~18:30) orange→magenta, evening (~20:30) purple→blue. The colours are fully
-  saturated, because pastels look washed out on the IPS panel.
+- **Colours by time of day** (on a deep navy background), blended minute by minute in HSV
+  so transitions stay saturated: night hot pink→magenta, sunrise (~06:30) gold→red-pink,
+  day (09:00–16:00) yellow→orange, sunset (~18:30) orange→magenta, evening (20:00–21:15)
+  cyan→blue. The colours are fully saturated, because pastels look washed out on the IPS
+  panel. They were picked on the device from side-by-side candidates (`TEST PALETTE`).
+- Long dates (e.g. `WEDNESDAY` in September) shorten the month, then the weekday, to fit.
 - Glyphs are rendered white-on-black into sprites, then tinted per pixel, so the gradients
   keep their anti-aliasing. Nothing flickers. An animation frame takes a few ms.
 - The CYD's RGB LED is switched off at boot.
+
+## Brightness and night mode
+
+- The backlight (GPIO21) is driven by 12-bit PWM with gamma correction, so 50% looks like
+  half brightness. Changes fade smoothly, and the screen fades in at boot.
+- **Night mode** runs on a schedule (default 22:00–06:30). The backlight dims to the night
+  level, the background turns pure black, the digits use the night palette, and the status
+  and date text turn dim pink. The switch happens behind a fade to dark, so the repaint is
+  never visible.
+- The levels default to 90% by day and 15% by night. Both levels and the schedule are saved
+  in NVS (`BRIGHT`, `NIGHT` commands below).
+- There's no automatic brightness. The CYD's on-board light sensor (LDR on GPIO34) read 0
+  under any light on this unit, whether covered or under a phone flashlight. An external I2C
+  light sensor could add it later (see roadmap M12).
 
 Fonts are generated from the Inter variable font (SIL Open Font License, see
 `tools/fonts/OFL.txt`) into `src/fonts/*.h` by `tools/gen_fonts.py`. The headers are
@@ -136,7 +152,9 @@ connecting, scanning and the portal never pause the clock.
 2. Join that open network from a phone. The captive page opens automatically, or browse to
    `http://192.168.4.1`.
 3. Choose **Configure WiFi**, pick a **2.4 GHz** network, enter the password and save.
-4. The top line turns green (`Wi-Fi: <network>`), and the clock answers at `chrono-node.local`.
+4. The status bar shows the network name, and the clock answers at `chrono-node.local`.
+
+![Setup mode](docs/images/setup-mode.png)
 
 Credentials are stored in ESP32 NVS by the Wi-Fi stack, never in the repository.
 
@@ -168,6 +186,11 @@ NTP SERVER time.google.com  # set and save the NTP server (default pool.ntp.org)
 SHOT                        # stream the screen (use tools/screenshot.py)
 TEST                        # labelled colour bars for 20 s (panel variant check)
 TEST PALETTE                # the five day-cycle palettes side by side for 30 s
+BRIGHT                      # show brightness levels and night schedule
+BRIGHT DAY 90               # set and save the day backlight level (0-100 %)
+BRIGHT NIGHT 15             # set and save the night backlight level
+NIGHT 22:00 06:30           # set and save the night window (may wrap past midnight)
+NIGHT OFF                   # disable night mode (NIGHT ON to re-enable)
 HELP
 ```
 
@@ -181,8 +204,9 @@ set at boot, the serial log warns about it and the screen shows
 ## Expected serial output
 
 ```text
-[Chrono Node] Booting chrono-node-fw v0.5.0 (1a2b3c4)
+[Chrono Node] Booting chrono-node-fw v0.6.0 (1a2b3c4)
 [SETTINGS] TZ=<+07>-7 (saved), NTP=pool.ntp.org (default)
+[SETTINGS] Brightness day 90% night 15%, night mode on 22:00-06:30
 [DISPLAY] Initialized
 [I2C] SDA=GPIO27 SCL=GPIO22 @ 100000 Hz
 [RTC] DS3231 detected at 0x68
@@ -221,12 +245,13 @@ src/settings.*                  NVS-backed settings (timezone, NTP server)
 src/net_manager.*               Wi-Fi task: connect/backoff, WiFiManager portal, mDNS, SNTP
 src/clock_sync.*                DS3231 <-> system clock <-> NTP discipline
 src/display_manager.*           UI: status bar, rolling digits, minute bar, date, notices, SHOT
-src/ui_theme.*                  palette and time-of-day accent colour
+src/ui_theme.*                  day/night UI colours and time-of-day gradient palettes
+src/backlight.*                 gamma-corrected PWM backlight with fades
 src/fonts/*.h                   generated Inter smooth fonts (do not edit)
 tools/gen_fonts.py              font generator (FreeType -> TFT_eSPI VLW arrays)
 tools/screenshot.py             screen capture over USB serial
 tools/fonts/                    Inter variable font + OFL licence
-src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/SHOT/HELP development commands
+src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/BRIGHT/NIGHT/SHOT/TEST/HELP commands
 ```
 
 ## Troubleshooting

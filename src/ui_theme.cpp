@@ -1,5 +1,6 @@
 #include "ui_theme.h"
 
+#include <math.h>
 #include <stddef.h>
 
 namespace theme {
@@ -15,12 +16,13 @@ struct Stop {
   Rgb bottom;
 };
 
-// Saturated colours: pastels look washed out on the CYD's IPS panel.
-constexpr Rgb kNightTop = {40, 110, 255}, kNightBottom = {170, 50, 255};      // blue -> violet
+// Saturated colours: pastels look washed out on the CYD's IPS panel. Chosen
+// on the device from side-by-side candidates (TEST PALETTE).
+constexpr Rgb kNightTop = {255, 70, 150}, kNightBottom = {220, 0, 200};       // hot pink -> magenta
 constexpr Rgb kSunriseTop = {255, 200, 0}, kSunriseBottom = {255, 40, 80};    // gold -> red-pink
 constexpr Rgb kDayTop = {255, 225, 0}, kDayBottom = {255, 90, 0};             // yellow -> orange
 constexpr Rgb kSunsetTop = {255, 120, 0}, kSunsetBottom = {235, 0, 130};      // orange -> magenta
-constexpr Rgb kEveningTop = {190, 40, 255}, kEveningBottom = {40, 70, 255};   // purple -> blue
+constexpr Rgb kEveningTop = {0, 220, 255}, kEveningBottom = {40, 90, 255};    // cyan -> blue
 
 constexpr Stop kStops[] = {
     {0, kNightTop, kNightBottom},
@@ -29,7 +31,8 @@ constexpr Stop kStops[] = {
     {9 * 60, kDayTop, kDayBottom},
     {16 * 60, kDayTop, kDayBottom},
     {18 * 60 + 30, kSunsetTop, kSunsetBottom},
-    {20 * 60 + 30, kEveningTop, kEveningBottom},
+    {20 * 60, kEveningTop, kEveningBottom},
+    {21 * 60 + 15, kEveningTop, kEveningBottom},
     {22 * 60, kNightTop, kNightBottom},
     {24 * 60, kNightTop, kNightBottom},
 };
@@ -41,9 +44,43 @@ constexpr Rgb kNamed[][2] = {{kNightTop, kNightBottom},
                              {kSunsetTop, kSunsetBottom},
                              {kEveningTop, kEveningBottom}};
 
+struct Hsv {
+  float h, s, v;  // h in degrees 0-360, s and v 0-1
+};
+
+Hsv toHsv(const Rgb& c) {
+  float r = c.r / 255.0f, g = c.g / 255.0f, b = c.b / 255.0f;
+  float mx = fmaxf(r, fmaxf(g, b)), mn = fminf(r, fminf(g, b)), d = mx - mn;
+  float h = 0;
+  if (d > 0) {
+    if (mx == r) h = 60 * fmodf((g - b) / d + 6, 6);
+    else if (mx == g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+  }
+  return {h, mx > 0 ? d / mx : 0, mx};
+}
+
+uint16_t fromHsv(const Hsv& c) {
+  float k[3] = {5, 3, 1};
+  uint8_t out[3];
+  for (int i = 0; i < 3; ++i) {
+    float t = fmodf(k[i] + c.h / 60, 6);
+    float f = c.v - c.v * c.s * fmaxf(0, fminf(fminf(t, 4 - t), 1));
+    out[i] = static_cast<uint8_t>(f * 255 + 0.5f);
+  }
+  return rgb(out[0], out[1], out[2]);
+}
+
+// Blends in HSV along the shorter hue arc: RGB blending between distant hues
+// passes through grey, which looks washed out on the panel.
 uint16_t blend(const Rgb& a, const Rgb& b, int num, int den) {
-  auto l = [&](uint8_t x, uint8_t y) { return uint8_t(x + (int(y) - int(x)) * num / den); };
-  return rgb(l(a.r, b.r), l(a.g, b.g), l(a.b, b.b));
+  Hsv x = toHsv(a), y = toHsv(b);
+  float t = static_cast<float>(num) / den;
+  float dh = y.h - x.h;
+  if (dh > 180) dh -= 360;
+  if (dh < -180) dh += 360;
+  float h = fmodf(x.h + dh * t + 360, 360);
+  return fromHsv({h, x.s + (y.s - x.s) * t, x.v + (y.v - x.v) * t});
 }
 
 }  // namespace
@@ -62,6 +99,8 @@ Palette paletteForMinute(int minuteOfDay) {
   }
   return {blend(kStops[0].top, kStops[0].top, 0, 1), blend(kStops[0].bottom, kStops[0].bottom, 0, 1)};
 }
+
+Palette nightPalette() { return {blend(kNightTop, kNightTop, 0, 1), blend(kNightBottom, kNightBottom, 0, 1)}; }
 
 int namedPaletteCount() { return sizeof(kNamed) / sizeof(kNamed[0]); }
 

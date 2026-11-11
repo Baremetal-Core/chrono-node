@@ -57,10 +57,11 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - XPT2046 driver with a calibration routine stored in NVS.
 - Screens: Clock → Weather → Info/Settings. Swipe/tap navigation, on-device settings (12/24h, theme, brightness).
 
-## M7 – Brightness & night mode
-- LEDC PWM backlight with smooth fades.
-- Auto-brightness from the LDR (GPIO34) with smoothing and hysteresis.
-- Night schedule: dim plus a red/low-contrast theme between configurable hours.
+## M7 – Brightness & night mode ✅
+- LEDC PWM backlight with gamma correction and smooth fades.
+- Day and night brightness levels plus a night schedule, saved in NVS.
+- Night theme: black background, pink→magenta digits and dim pink text, switched behind a fade.
+- Auto-brightness dropped: the on-board LDR (GPIO34) reads 0 under any light on this unit.
 
 ## M8 – Weather
 - Open-Meteo API (free, no API key): current conditions + hourly/daily forecast, HTTPS + ArduinoJson.
@@ -82,6 +83,7 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 
 ## M12 – Sensors & smart-home (optional)
 - An I2C environment sensor (SHT4x/BME280/SCD41) on the existing GPIO27/22 bus next to the DS3231.
+- Optional I2C light sensor (e.g. BH1750) on the same bus for auto-brightness (the CYD LDR is unusable).
 - Indoor climate display and history graph. MQTT with Home Assistant auto-discovery.
 
 ---

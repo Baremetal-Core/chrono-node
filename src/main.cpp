@@ -8,6 +8,7 @@
 
 #include <Arduino.h>
 
+#include "backlight.h"
 #include "clock_sync.h"
 #include "config.h"
 #include "display_manager.h"
@@ -16,7 +17,6 @@
 #include "serial_console.h"
 #include "settings.h"
 #include "time_utils.h"
-#include "ui_theme.h"
 
 namespace {
 
@@ -34,6 +34,36 @@ uint32_t lastTempMs = 0;
 int lastSecond = -1;
 bool hasTemp = false;
 float tempC = 0;
+
+// Night mode: switched behind a backlight fade so the repaint is never seen.
+enum class NightPhase { Idle, FadingOut };
+NightPhase nightPhase = NightPhase::Idle;
+bool nightKnown = false;
+bool nightActive = false;
+
+uint8_t brightnessFor(bool night) {
+  return night ? settings::brightnessNight() : settings::brightnessDay();
+}
+
+// Called every second with the local time, before the frame is drawn.
+void updateNight(const struct tm& local) {
+  const bool want = settings::isNightAt(local.tm_hour * 60 + local.tm_min);
+  if (!nightKnown) {
+    // First frame after boot: pick the mode, then fade the backlight in.
+    nightKnown = true;
+    nightActive = want;
+    display.setNightMode(want);
+    backlight::fadeTo(brightnessFor(want), config::kNightFadeInMs);
+    if (want) Serial.println("[NIGHT] Night mode");
+    return;
+  }
+  if (want != nightActive && nightPhase == NightPhase::Idle) {
+    nightActive = want;
+    nightPhase = NightPhase::FadingOut;
+    backlight::fadeTo(0, config::kNightFadeOutMs);
+    Serial.println(want ? "[NIGHT] Night mode" : "[NIGHT] Day mode");
+  }
+}
 
 void logTime(const DateTime& utc) {
   char local[32];
@@ -78,13 +108,13 @@ void updateStatus() {
   display.setStatus(st);
 
   if (rtcLostPower) {
-    display.setNotice("RTC lost power - waiting for NTP or SET", theme::kError);
+    display.setNotice("RTC lost power - waiting for NTP or SET", DisplayManager::NoticeKind::Error);
   } else if (net::state() == net::State::Portal) {
     char text[64];
     snprintf(text, sizeof(text), "Join Wi-Fi \"%s\" to set up", net::portalSsid());
-    display.setNotice(text, theme::kSetup);
+    display.setNotice(text, DisplayManager::NoticeKind::Setup);
   } else {
-    display.setNotice(nullptr, theme::kBackground);
+    display.setNotice(nullptr, DisplayManager::NoticeKind::Setup);
   }
 }
 
@@ -138,6 +168,7 @@ void pollRtc(bool forceLog = false) {
 
   struct tm local;
   time_utils::utcToLocal(utc, local);
+  updateNight(local);
   display.showTime(local);
   updateStatus();
   if (forceLog || config::kLogEverySecond) logTime(utc);
@@ -164,6 +195,7 @@ void setup() {
   } else {
     Serial.println("[DISPLAY] ERROR: initialization failed");
   }
+  backlight::begin(0);  // faded in once the first frame is drawn
 
   rtcState = RtcState::Missing;
   if (rtc.begin()) {
@@ -175,12 +207,24 @@ void setup() {
     display.showError("RTC ERROR", "DS3231 not detected (SDA=27 SCL=22)");
   }
 
+  if (!nightKnown) backlight::fadeTo(settings::brightnessDay(), config::kNightFadeInMs);
+
   // Wi-Fi starts after the first clock frame so the time is visible immediately.
   net::begin();
   serialConsolePrintHelp();
 }
 
 void loop() {
+  backlight::loop();
+  if (nightPhase == NightPhase::FadingOut && !backlight::isFading()) {
+    // Screen is dark: switch colours, repaint, then fade back in.
+    display.setNightMode(nightActive);
+    lastSecond = -1;
+    pollRtc();
+    backlight::fadeTo(brightnessFor(nightActive), config::kNightFadeInMs);
+    nightPhase = NightPhase::Idle;
+  }
+
   if (clock_sync::loop(rtc)) {
     // DS3231 rewritten from NTP: this also clears its lost-power flag.
     rtcLostPower = rtc.lostPower();
@@ -190,9 +234,13 @@ void loop() {
   display.tick();
 
   if (serialConsolePoll(rtc, display)) {
-    // Time or timezone changed: re-read the oscillator-stop flag and redraw.
+    // Time, timezone, brightness or schedule changed: re-read the
+    // oscillator-stop flag, apply the brightness and redraw.
     rtcLostPower = rtc.lostPower();
     lastSecond = -1;
+    if (nightPhase == NightPhase::Idle && nightKnown) {
+      backlight::fadeTo(brightnessFor(nightActive), config::kBrightnessFadeMs);
+    }
   }
 
   const uint32_t nowMs = millis();

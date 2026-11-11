@@ -11,6 +11,8 @@
 //   NTP                       NTP sync status
 //   NTP SYNC                  sync with the NTP server now
 //   NTP SERVER <host>         set and save the NTP server, then sync
+//   BRIGHT [DAY|NIGHT <0-100>] show or set backlight levels (saved)
+//   NIGHT [ON|OFF|HH:MM HH:MM] show or set the night mode schedule (saved)
 //   TEST                      colour test pattern for 20 s (panel variant check)
 //   TEST PALETTE              the five day-cycle palettes side by side for 30 s
 //   SHOT                      dump the screen (tools/screenshot.py turns it into a PNG)
@@ -20,7 +22,8 @@
 class DisplayManager;
 class RtcManager;
 
-// Non-blocking; call from loop(). Returns true if the RTC time or timezone changed.
+// Non-blocking; call from loop(). Returns true if the RTC time, timezone,
+// brightness or night schedule changed.
 bool serialConsolePoll(RtcManager& rtc, DisplayManager& display);
 
 void serialConsolePrintHelp();

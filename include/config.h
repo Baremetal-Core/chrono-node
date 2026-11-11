@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.5.0";
+constexpr const char* kFirmwareVersion = "0.6.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -36,6 +36,19 @@ constexpr uint8_t kDs3231Address = 0x68;
 constexpr int kLedRedPin = 4;
 constexpr int kLedGreenPin = 16;
 constexpr int kLedBluePin = 17;
+
+// ---- Backlight and night mode ----
+constexpr uint8_t kBacklightPin = 21;  // same as TFT_BL
+constexpr uint8_t kBacklightPwmChannel = 7;
+constexpr uint32_t kBacklightPwmHz = 5000;
+constexpr uint8_t kBacklightPwmBits = 12;
+constexpr uint8_t kDefaultBrightnessDay = 90;    // percent
+constexpr uint8_t kDefaultBrightnessNight = 15;  // percent
+constexpr uint16_t kDefaultNightStart = 22 * 60;     // minutes after midnight
+constexpr uint16_t kDefaultNightEnd = 6 * 60 + 30;
+constexpr uint32_t kNightFadeOutMs = 600;
+constexpr uint32_t kNightFadeInMs = 1500;
+constexpr uint32_t kBrightnessFadeMs = 400;
 
 // DS3231 die temperature (shown in the status bar) is read this often.
 constexpr uint32_t kTemperatureIntervalMs = 60000;
