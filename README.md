@@ -159,8 +159,12 @@ connecting, scanning and the portal never pause the clock.
 Credentials are stored in ESP32 NVS by the Wi-Fi stack, never in the repository.
 
 Behaviour:
-- If the first connection after boot fails, the portal opens for 180 s, in case the
-  network changed. Afterwards the clock retries with backoff (10 s, doubling up to 5 min).
+- Before each attempt the clock scans and connects to the **strongest** access point for the
+  saved network, by BSSID. Office networks broadcast one name from many access points, and
+  the ESP-IDF's own choice was often a distant one. After two failed attempts on an access
+  point it moves on to the next strongest.
+- The first 3 attempts are 2 s apart. After that the retry delay is 10 s, doubling up to
+  5 min. The portal opens for 180 s only if the saved network isn't in range after boot.
 - If credentials just entered in the portal fail, the portal reopens.
 - A dropped connection is retried automatically with the same backoff.
 - The portal has no firmware-update page, because the setup AP is open.
@@ -180,6 +184,7 @@ INFO                        # firmware/git revision, heap, partition, DS3231 tem
 WIFI                        # Wi-Fi state, SSID, IP, RSSI
 WIFI PORTAL                 # open the setup portal (closes after 180 s if credentials exist)
 WIFI FORGET                 # erase saved Wi-Fi credentials and open the portal
+WIFI SCAN                   # visible 2.4 GHz networks: BSSID, channel, RSSI, security
 NTP                         # server, last sync age, last measured DS3231 offset
 NTP SYNC                    # sync now (busy pool servers may answer only after a retry, ~15 s)
 NTP SERVER time.google.com  # set and save the NTP server (default pool.ntp.org), then sync
@@ -256,8 +261,18 @@ src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/BRIGHT/NIGHT/SHOT/TEST/
 
 ## Troubleshooting
 
-- **Clock never joins Wi-Fi:** the ESP32 supports 2.4 GHz only. Check `WIFI` on the serial
-  console for the failure reason code, then run `WIFI PORTAL` to re-enter credentials.
+- **Clock never joins Wi-Fi:** the ESP32 supports 2.4 GHz only. Run `WIFI SCAN` to see
+  whether the network is visible and how it's secured. The log shows a reason code for each
+  failure:
+  `2` auth expired (the access point didn't answer), `15`/`202` wrong password,
+  `201` network not found, `203` association rejected, `204` handshake timeout.
+  WPA2-Enterprise (802.1X, e.g. `Axon_Corp`) isn't supported. Run `WIFI PORTAL` to
+  re-enter credentials.
+- **Office Wi-Fi with many access points (e.g. `Axon_Open`):** connecting works, but some
+  access points often ignore the ESP32's authentication (reason 2) even at −50 dBm, so a
+  connection can take a few retries (~10–90 s). If it never connects, ask IT whether the
+  network uses MAC allow-listing or client exclusion. The clock's Wi-Fi MAC is shown by
+  `esptool` at upload (e.g. `48:af:f3:70:57:a0`).
 - **Time is off by whole hours after upgrading from v0.1.0:** v0.1.0 stored local time in
   the DS3231. Run `SET` once with the current local time.
 - **White background, wrong or washed-out colours:** CYD batches use different panels. This

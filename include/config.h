@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.6.0";
+constexpr const char* kFirmwareVersion = "0.6.1";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -68,6 +68,10 @@ constexpr const char* kHostname = "chrono-node";
 // Setup portal SSID prefix; the last two MAC bytes are appended, e.g. Chrono-Node-1A2B.
 constexpr const char* kPortalSsidPrefix = "Chrono-Node-";
 constexpr uint32_t kWifiConnectTimeoutMs = 20000;
+// Enterprise APs often reject a single attempt (e.g. stale association from
+// before a reset), so a few quick retries come before the setup portal / backoff.
+constexpr uint32_t kWifiQuickRetries = 3;
+constexpr uint32_t kWifiQuickRetryMs = 2000;
 constexpr uint32_t kWifiRetryMinMs = 10000;
 constexpr uint32_t kWifiRetryMaxMs = 300000;
 // Portal auto-closes after this long when credentials exist (0 = stay open).
