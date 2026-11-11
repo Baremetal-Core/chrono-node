@@ -23,6 +23,17 @@ constexpr const char* kKeyLat = "wx_lat";
 constexpr const char* kKeyLon = "wx_lon";
 constexpr const char* kKeyPlace = "wx_place";
 constexpr const char* kKeyWxCycle = "wx_cycle";
+constexpr const char* kKeyRecent = "wx_recent";
+constexpr const char* kKeyHour12 = "hour12";
+
+struct RecentLocation {
+  char name[config::kPlaceMaxLen + 1];
+  float lat;
+  float lon;
+};
+RecentLocation recents[settings::kMaxRecentLocations] = {};
+int recentCount = 0;
+bool use12h = false;
 
 float lat = config::kDefaultLatitude;
 float lon = config::kDefaultLongitude;
@@ -88,6 +99,14 @@ void begin() {
     }
     if (prefs.isKey(kKeyPlace)) prefs.getString(kKeyPlace, placeName, sizeof(placeName));
     wxCycle = prefs.getBool(kKeyWxCycle, wxCycle);
+    use12h = prefs.getBool(kKeyHour12, use12h);
+    if (prefs.isKey(kKeyRecent)) {
+      size_t len = prefs.getBytesLength(kKeyRecent);
+      if (len % sizeof(RecentLocation) == 0 && len <= sizeof(recents)) {
+        prefs.getBytes(kKeyRecent, recents, len);
+        recentCount = len / sizeof(RecentLocation);
+      }
+    }
     prefs.end();
   }
   bool tzFromNvs = looksLikePosixTz(tz);
@@ -97,6 +116,12 @@ void begin() {
   Serial.printf("[SETTINGS] TZ=%s (%s), NTP=%s (%s)\n", currentTz,
                 tzFromNvs ? "saved" : "default", currentNtp, ntpFromNvs ? "saved" : "default");
   if (placeName[0] == '\0') strlcpy(placeName, config::kDefaultPlace, sizeof(placeName));
+  if (recentCount == 0) {
+    strlcpy(recents[0].name, placeName, sizeof(recents[0].name));
+    recents[0].lat = lat;
+    recents[0].lon = lon;
+    recentCount = 1;
+  }
   Serial.printf("[SETTINGS] Weather %s (%.3f, %.3f), forecast screen %s\n", placeName, lat, lon,
                 wxCycle ? "on" : "off");
   Serial.printf("[SETTINGS] Brightness day %u%% night %u%%, night mode %s %02u:%02u-%02u:%02u\n",
@@ -169,7 +194,7 @@ float latitude() { return lat; }
 float longitude() { return lon; }
 const char* place() { return placeName; }
 
-bool setLocation(float newLat, float newLon, const char* name) {
+bool setLocation(float newLat, float newLon, const char* name, bool remember) {
   if (newLat < -90 || newLat > 90 || newLon < -180 || newLon > 180) return false;
   char n[sizeof(placeName)];
   if (name && *name) {
@@ -186,6 +211,42 @@ bool setLocation(float newLat, float newLon, const char* name) {
     lon = newLon;
     strlcpy(placeName, n, sizeof(placeName));
   }
+  if (ok && remember) {
+    // Move (or insert) this location to the front of the recent list.
+    RecentLocation entry = {};
+    strlcpy(entry.name, n, sizeof(entry.name));
+    entry.lat = newLat;
+    entry.lon = newLon;
+    int keep = 0;
+    RecentLocation next[kMaxRecentLocations];
+    next[keep++] = entry;
+    for (int i = 0; i < recentCount && keep < kMaxRecentLocations; ++i) {
+      if (strcmp(recents[i].name, n) != 0) next[keep++] = recents[i];
+    }
+    memcpy(recents, next, sizeof(RecentLocation) * keep);
+    recentCount = keep;
+    save([&](Preferences& p) {
+      return p.putBytes(kKeyRecent, recents, sizeof(RecentLocation) * recentCount) > 0;
+    });
+  }
+  return ok;
+}
+
+int recentLocationCount() { return recentCount; }
+
+bool recentLocation(int index, char* name, size_t nameLen, float& outLat, float& outLon) {
+  if (index < 0 || index >= recentCount) return false;
+  strlcpy(name, recents[index].name, nameLen);
+  outLat = recents[index].lat;
+  outLon = recents[index].lon;
+  return true;
+}
+
+bool hour12() { return use12h; }
+
+bool setHour12(bool enabled) {
+  bool ok = save([&](Preferences& p) { return p.putBool(kKeyHour12, enabled) > 0; });
+  if (ok) use12h = enabled;
   return ok;
 }
 

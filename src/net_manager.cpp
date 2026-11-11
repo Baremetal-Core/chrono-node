@@ -386,6 +386,14 @@ void ssid(char* buf, size_t len) {
 
 int rssi() { return current == State::Connected ? WiFi.RSSI() : 0; }
 
+void ip(char* buf, size_t len) {
+  if (current == State::Connected) {
+    strlcpy(buf, WiFi.localIP().toString().c_str(), len);
+  } else if (len) {
+    buf[0] = '\0';
+  }
+}
+
 const char* portalSsid() { return apSsid; }
 
 void printStatus() {

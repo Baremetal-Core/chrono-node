@@ -5,13 +5,17 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <algorithm>
+
 #include "clock_sync.h"
 #include "config.h"
 #include "display_manager.h"
 #include "net_manager.h"
 #include "rtc_manager.h"
+#include "screens.h"
 #include "settings.h"
 #include "time_utils.h"
+#include "touch.h"
 #include "weather.h"
 
 namespace {
@@ -71,6 +75,71 @@ bool handleTz(RtcManager& rtc, const char* args) {
   Serial.printf("[SETTINGS] TZ=%s (saved)\n", settings::timezone());
   printRtcTime(rtc);
   return true;
+}
+
+// Interactive touch calibration with on-screen crosshairs (blocking, ~20 s).
+// Waits for a press and returns the median position while held. A press that
+// is too short to measure is ignored and the next one is used instead.
+bool readHeld(uint16_t& rx, uint16_t& ry, uint32_t timeoutMs) {
+  constexpr int kMax = 64;
+  uint16_t xs[kMax], ys[kMax];
+  uint16_t x, y, z;
+  const uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    while (touch::readRaw(x, y, z)) delay(10);  // wait for release
+    while (!touch::readRaw(x, y, z)) {
+      if (millis() - start >= timeoutMs) return false;
+      delay(10);
+    }
+    int n = 0;
+    const uint32_t t0 = millis();
+    while (millis() - t0 < 1200 && touch::readRaw(x, y, z)) {
+      if (millis() - t0 > 120 && n < kMax) {  // skip the landing
+        xs[n] = x;
+        ys[n] = y;
+        ++n;
+      }
+      delay(15);
+    }
+    if (n >= 3) {
+      std::sort(xs, xs + n);
+      std::sort(ys, ys + n);
+      rx = xs[n / 2];
+      ry = ys[n / 2];
+      return true;
+    }
+  }
+  return false;
+}
+
+void calibrateTouch(DisplayManager& display) {
+  const int16_t tx[4] = {20, 300, 300, 20};
+  const int16_t ty[4] = {20, 20, 220, 220};
+  uint16_t rx[4], ry[4];
+  for (int i = 0; i < 4; ++i) {
+    char text[48];
+    snprintf(text, sizeof(text), "Touch and hold the cross (%d/4)", i + 1);
+    display.showCalibrationTarget(tx[i], ty[i], text);
+    if (!readHeld(rx[i], ry[i], 30000)) {
+      Serial.println("[TOUCH] Calibration cancelled (no touch)");
+      return;
+    }
+    Serial.printf("[TOUCH] Point %d: raw %u,%u\n", i + 1, rx[i], ry[i]);
+  }
+  touch::Point screen[4];
+  for (int i = 0; i < 4; ++i) screen[i] = {tx[i], ty[i]};
+  touch::Calibration c;
+  if (!touch::fitCalibration(screen, rx, ry, 4, c)) {
+    Serial.println("[TOUCH] Calibration failed (points are degenerate)");
+    return;
+  }
+  touch::setCalibration(c);
+  Serial.printf("[TOUCH] Calibrated (saved): x = %.5f*rx %+.5f*ry %+.1f, y = %.5f*rx %+.5f*ry %+.1f\n",
+                c.ax, c.bx, c.cx, c.ay, c.by, c.cy);
+  for (int i = 0; i < 4; ++i) {
+    touch::Point m = touch::map(rx[i], ry[i]);
+    Serial.printf("[TOUCH]   target %3d,%3d -> %3d,%3d\n", tx[i], ty[i], m.x, m.y);
+  }
 }
 
 void printBrightness() {
@@ -182,6 +251,31 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
+  } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
+    if (!requestScreenByName(text + 7)) {
+      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|INFO|SETTINGS");
+    }
+  } else if (strcasecmp(text, "TOUCH CAL") == 0) {
+    calibrateTouch(display);
+    return true;
+  } else if (strcasecmp(text, "FORMAT 12") == 0 || strcasecmp(text, "FORMAT 24") == 0) {
+    settings::setHour12(strcasecmp(text, "FORMAT 12") == 0);
+    Serial.printf("[SETTINGS] %s-hour clock (saved)\n", settings::hour12() ? "12" : "24");
+    return true;
+  } else if (strcasecmp(text, "TOUCH") == 0) {
+    // Prints readings for 10 s (blocking; development only).
+    Serial.println("[TOUCH] Touch the screen; printing for 10 s");
+    const uint32_t until = millis() + 10000;
+    uint32_t lastPrint = 0;
+    while ((int32_t)(millis() - until) < 0) {
+      uint16_t rx, ry, z;
+      if (millis() - lastPrint >= 100 && touch::readRaw(rx, ry, z)) {
+        lastPrint = millis();
+        touch::Point p = touch::map(rx, ry);
+        Serial.printf("[TOUCH] raw %4u,%4u z %4u -> %3d,%3d\n", rx, ry, z, p.x, p.y);
+      }
+      delay(10);
+    }
   } else if (strcasecmp(text, "INFO") == 0) {
     printInfo(rtc);
     printBrightness();
@@ -219,7 +313,8 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | WEATHER [...] | SHOT | TEST [PALETTE] | HELP");
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | TOUCH [CAL] | SCREEN name | SHOT | "
+      "TEST [PALETTE] | HELP");
 }
 
 bool serialConsolePoll(RtcManager& rtc, DisplayManager& display) {

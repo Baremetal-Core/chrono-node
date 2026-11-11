@@ -18,6 +18,10 @@
 //   WEATHER CITY <name>       look up and save a location (Open-Meteo geocoding)
 //   WEATHER LOC <lat> <lon> [name]  save a location by coordinates
 //   WEATHER CYCLE ON|OFF      periodic forecast screen
+//   FORMAT 12|24              12- or 24-hour clock (saved)
+//   TOUCH                     print touch readings for 10 s
+//   TOUCH CAL                 on-screen touch calibration (saved)
+//   SCREEN <name>             go to CLOCK, FORECAST, INFO or SETTINGS
 //   TEST                      colour test pattern for 20 s (panel variant check)
 //   TEST PALETTE              the five day-cycle palettes side by side for 30 s
 //   SHOT                      dump the screen (tools/screenshot.py turns it into a PNG)

@@ -24,6 +24,7 @@ bool isConnected();
 // Connected network name (empty when not connected) and signal strength.
 void ssid(char* buf, size_t len);
 int rssi();
+void ip(char* buf, size_t len);  // empty when not connected
 
 // Name of the setup portal network, e.g. "Chrono-Node-57A1".
 const char* portalSsid();
