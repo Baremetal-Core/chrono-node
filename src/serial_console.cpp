@@ -170,6 +170,8 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     net::requestNtpSync();
   } else if (strcasecmp(text, "WIFI") == 0) {
     net::printStatus();
+  } else if (strcasecmp(text, "WIFI SCAN") == 0) {
+    net::requestScan();
   } else if (strcasecmp(text, "WIFI PORTAL") == 0) {
     net::requestPortal();
   } else if (strcasecmp(text, "WIFI FORGET") == 0) {
