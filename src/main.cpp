@@ -17,6 +17,7 @@
 #include "serial_console.h"
 #include "settings.h"
 #include "time_utils.h"
+#include "weather.h"
 
 namespace {
 
@@ -35,11 +36,20 @@ int lastSecond = -1;
 bool hasTemp = false;
 float tempC = 0;
 
-// Night mode: switched behind a backlight fade so the repaint is never seen.
-enum class NightPhase { Idle, FadingOut };
-NightPhase nightPhase = NightPhase::Idle;
+// Night mode and the forecast screen are switched behind a backlight fade so
+// the repaint is never seen: fade out, switch, repaint, fade in.
+bool transitioning = false;
+uint32_t transitionFadeInMs = 0;
 bool nightKnown = false;
 bool nightActive = false;
+bool weatherWanted = false;   // target of the current/next transition
+bool weatherOnScreen = false;
+
+void startTransition(uint32_t fadeOutMs, uint32_t fadeInMs) {
+  transitioning = true;
+  transitionFadeInMs = fadeInMs;
+  backlight::fadeTo(0, fadeOutMs);
+}
 
 uint8_t brightnessFor(bool night) {
   return night ? settings::brightnessNight() : settings::brightnessDay();
@@ -57,11 +67,32 @@ void updateNight(const struct tm& local) {
     if (want) Serial.println("[NIGHT] Night mode");
     return;
   }
-  if (want != nightActive && nightPhase == NightPhase::Idle) {
+  if (want != nightActive && !transitioning) {
     nightActive = want;
-    nightPhase = NightPhase::FadingOut;
-    backlight::fadeTo(0, config::kNightFadeOutMs);
+    startTransition(config::kNightFadeOutMs, config::kNightFadeInMs);
     Serial.println(want ? "[NIGHT] Night mode" : "[NIGHT] Day mode");
+  }
+}
+
+// Forecast screen: on request, or periodically when enabled (never at night
+// or while a notice needs to be seen).
+bool shouldShowWeather(const struct tm& local, bool hasData) {
+  if (!hasData) return false;
+  if ((int32_t)(millis() - weather::screenRequestedUntil()) < 0) return true;
+  if (nightActive || !settings::weatherCycle() || rtcLostPower ||
+      net::state() == net::State::Portal) {
+    return false;
+  }
+  return local.tm_min % config::kWeatherCycleMinutes == 0 &&
+         local.tm_sec >= config::kWeatherShowAtSecond &&
+         local.tm_sec < config::kWeatherShowAtSecond + (int)config::kWeatherShowS;
+}
+
+void updateWeatherScreen(const struct tm& local, bool hasData) {
+  const bool want = shouldShowWeather(local, hasData);
+  if (want != weatherOnScreen && !transitioning) {
+    weatherWanted = want;
+    startTransition(config::kScreenFadeOutMs, config::kScreenFadeInMs);
   }
 }
 
@@ -103,9 +134,14 @@ void updateStatus() {
   st.rssi = st.rssi > -60 ? -50 : st.rssi > -72 ? -65 : st.rssi < 0 ? -80 : 0;
   clock_sync::statusText(st.ntpText, sizeof(st.ntpText));
   st.ntpWarn = clock_sync::isStale();
-  st.hasTemp = hasTemp;
+  // The DS3231 die temperature is only a fallback when there is no weather.
+  weather::Data wx;
+  const bool hasWeather = weather::get(wx);
+  st.hasTemp = hasTemp && !hasWeather;
   st.tempC = static_cast<int8_t>(lroundf(tempC));
   display.setStatus(st);
+  const uint32_t age = weather::ageSeconds();
+  display.setWeather(hasWeather ? &wx : nullptr, age != UINT32_MAX && age > config::kWeatherStaleS);
 
   if (rtcLostPower) {
     display.setNotice("RTC lost power - waiting for NTP or SET", DisplayManager::NoticeKind::Error);
@@ -169,8 +205,11 @@ void pollRtc(bool forceLog = false) {
   struct tm local;
   time_utils::utcToLocal(utc, local);
   updateNight(local);
-  display.showTime(local);
-  updateStatus();
+  updateWeatherScreen(local, weather::version() != 0);
+  if (!weatherOnScreen) {
+    display.showTime(local);
+    updateStatus();
+  }
   if (forceLog || config::kLogEverySecond) logTime(utc);
 }
 
@@ -197,6 +236,8 @@ void setup() {
   }
   backlight::begin(0);  // faded in once the first frame is drawn
 
+  weather::begin();
+
   rtcState = RtcState::Missing;
   if (rtc.begin()) {
     onRtcDetected();
@@ -216,13 +257,21 @@ void setup() {
 
 void loop() {
   backlight::loop();
-  if (nightPhase == NightPhase::FadingOut && !backlight::isFading()) {
-    // Screen is dark: switch colours, repaint, then fade back in.
+  if (transitioning && !backlight::isFading()) {
+    // Screen is dark: switch colours/screen, repaint, then fade back in.
     display.setNightMode(nightActive);
+    weather::Data wx;
+    if (weatherWanted && weather::get(wx)) {
+      display.showWeatherScreen(wx, weather::ageSeconds());
+      weatherOnScreen = true;
+    } else {
+      display.endWeatherScreen();
+      weatherOnScreen = false;
+    }
+    transitioning = false;
     lastSecond = -1;
     pollRtc();
-    backlight::fadeTo(brightnessFor(nightActive), config::kNightFadeInMs);
-    nightPhase = NightPhase::Idle;
+    backlight::fadeTo(brightnessFor(nightActive), transitionFadeInMs);
   }
 
   if (clock_sync::loop(rtc)) {
@@ -238,7 +287,7 @@ void loop() {
     // oscillator-stop flag, apply the brightness and redraw.
     rtcLostPower = rtc.lostPower();
     lastSecond = -1;
-    if (nightPhase == NightPhase::Idle && nightKnown) {
+    if (!transitioning && nightKnown) {
       backlight::fadeTo(brightnessFor(nightActive), config::kBrightnessFadeMs);
     }
   }

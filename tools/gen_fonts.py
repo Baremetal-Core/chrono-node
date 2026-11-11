@@ -30,7 +30,8 @@ DIGITS = "0123456789"
 FONTS = [
     ("font_time", 104, 700, 32, DIGITS + ":"),
     ("font_seconds", 26, 700, 24, DIGITS),
-    ("font_date", 20, 500, 20, ASCII + "\u00b7"),
+    ("font_date", 20, 500, 20, ASCII + "\u00b0\u00b7"),
+    ("font_temp", 54, 700, 32, DIGITS + "-\u00b0"),
     ("font_small", 15, 500, 14, ASCII + "\u00b0\u00b7"),
 ]
 

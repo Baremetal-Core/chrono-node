@@ -12,6 +12,7 @@
 #include <time.h>
 
 #include "ui_theme.h"
+#include "weather.h"
 
 struct StatusInfo {
   enum class Wifi : uint8_t { Offline, Connecting, Connected, Setup };
@@ -41,6 +42,16 @@ class DisplayManager {
   // Bottom notice line; nullptr clears it. Redrawn only when changed.
   void setNotice(const char* text, NoticeKind kind);
 
+  // Weather shown on the clock face's bottom line when there is no notice.
+  // Pass nullptr to clear. `stale` dims it and marks it as old.
+  void setWeather(const weather::Data* data, bool stale);
+
+  // Full-screen forecast; the clock face returns on the next showTime() after
+  // clearing it with endWeatherScreen().
+  void showWeatherScreen(const weather::Data& data, uint32_t ageS);
+  void endWeatherScreen();
+  bool weatherScreenActive() const { return mode_ == Mode::Weather; }
+
   // Night mode: black background, dim red UI and the night palette. The
   // screen is repainted on the next showTime(); hide it behind a backlight fade.
   void setNightMode(bool night);
@@ -60,7 +71,7 @@ class DisplayManager {
   void screenshot(Print& out);
 
  private:
-  enum class Mode { None, Clock, Error, Test };
+  enum class Mode { None, Clock, Error, Test, Weather };
   struct Roll {
     char from = ' ';
     char to = ' ';
@@ -71,6 +82,7 @@ class DisplayManager {
   void enterMode(Mode mode);
   void drawStatusBar();
   void drawNotice();
+  void drawWeatherLine();
   void drawDate(const struct tm& local);
   void drawColon();
   void drawBigDigit(int index, float progress);
@@ -104,6 +116,9 @@ class DisplayManager {
   char notice_[64] = "";
   NoticeKind noticeKind_ = NoticeKind::Setup;
   bool night_ = false;
+  weather::Data weather_;
+  bool weatherStale_ = false;
+  uint32_t weatherKey_ = 0;
   char lastError_[96] = "";
   uint32_t testUntilMs_ = 0;
 };

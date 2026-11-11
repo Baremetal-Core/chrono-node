@@ -13,6 +13,11 @@
 //   NTP SERVER <host>         set and save the NTP server, then sync
 //   BRIGHT [DAY|NIGHT <0-100>] show or set backlight levels (saved)
 //   NIGHT [ON|OFF|HH:MM HH:MM] show or set the night mode schedule (saved)
+//   WEATHER                   weather status and forecast
+//   WEATHER UPDATE|SHOW       fetch now / show the forecast screen for 30 s
+//   WEATHER CITY <name>       look up and save a location (Open-Meteo geocoding)
+//   WEATHER LOC <lat> <lon> [name]  save a location by coordinates
+//   WEATHER CYCLE ON|OFF      periodic forecast screen
 //   TEST                      colour test pattern for 20 s (panel variant check)
 //   TEST PALETTE              the five day-cycle palettes side by side for 30 s
 //   SHOT                      dump the screen (tools/screenshot.py turns it into a PNG)

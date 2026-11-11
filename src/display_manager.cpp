@@ -8,7 +8,9 @@
 #include "fonts/font_date.h"
 #include "fonts/font_seconds.h"
 #include "fonts/font_small.h"
+#include "fonts/font_temp.h"
 #include "fonts/font_time.h"
+#include "weather_icons.h"
 
 namespace {
 
@@ -435,10 +437,173 @@ void DisplayManager::setNightMode(bool night) {
 
 void DisplayManager::drawNotice() {
   if (mode_ != Mode::Clock) return;
+  if (notice_[0] == '\0' && weather_.valid) {
+    drawWeatherLine();
+    return;
+  }
   drawLine(kNoticeTop, kNoticeH, font_small, [&](TFT_eSprite& s) {
     s.setTextColor(noticeKind_ == NoticeKind::Error ? C->error : C->setup, C->bg);
     s.setTextDatum(MC_DATUM);
     s.drawString(notice_, kScreenW / 2, kNoticeH / 2);
+  });
+}
+
+void DisplayManager::setWeather(const weather::Data* data, bool stale) {
+  // Redraw only when something visible changes.
+  uint32_t key = 0;
+  if (data && data->valid) {
+    key = (uint32_t)lroundf(data->temp * 10) * 2654435761u ^ data->code * 40503u ^
+          (data->dayCount ? (data->days[0].tmax << 8 | (uint8_t)data->days[0].tmin) : 0) ^
+          (data->isDay ? 0x10000u : 0) ^ (stale ? 0x20000u : 0) ^ 1u;
+  }
+  if (key == weatherKey_) return;
+  weatherKey_ = key;
+  if (data) {
+    weather_ = *data;
+  } else {
+    weather_.valid = false;
+  }
+  weatherStale_ = stale;
+  drawNotice();
+}
+
+void DisplayManager::drawWeatherLine() {
+  const weather::Data& w = weather_;
+  char temp[8];
+  snprintf(temp, sizeof(temp), "%d\xC2\xB0", (int)lroundf(w.temp));
+  char detail[48];
+  if (w.dayCount) {
+    snprintf(detail, sizeof(detail), "%s  \xC2\xB7  %d\xC2\xB0 / %d\xC2\xB0%s", weather::describe(w.code),
+             w.days[0].tmax, w.days[0].tmin, weatherStale_ ? "  \xC2\xB7  old" : "");
+  } else {
+    snprintf(detail, sizeof(detail), "%s", weather::describe(w.code));
+  }
+  drawLine(kNoticeTop, kNoticeH, font_date, [&](TFT_eSprite& s) {
+    const int16_t iconW = 26;
+    const int16_t tempW = s.textWidth(temp);
+    s.unloadFont();
+    s.loadFont(font_small);
+    const int16_t detailW = s.textWidth(detail);
+    int16_t x = (kScreenW - (iconW + 4 + tempW + 10 + detailW)) / 2;
+
+    weather_icons::draw(s, x + iconW / 2, kNoticeH / 2, 22, weather::iconFor(w.code), w.isDay,
+                        night_ || weatherStale_, C->dim);
+    x += iconW + 4;
+    s.setTextDatum(ML_DATUM);
+    s.setTextColor(C->dim, C->bg);
+    s.drawString(detail, x + tempW + 10, kNoticeH / 2);
+    s.unloadFont();
+    s.loadFont(font_date);
+    s.setTextColor(weatherStale_ ? C->dim : C->text, C->bg);
+    s.drawString(temp, x, kNoticeH / 2);
+  });
+}
+
+void DisplayManager::endWeatherScreen() {
+  if (mode_ == Mode::Weather) mode_ = Mode::None;  // next showTime() repaints the clock
+}
+
+void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
+  enterMode(Mode::Weather);
+  const uint16_t accent = pal_.top;
+  auto deg = [](char* buf, size_t n, int t) { snprintf(buf, n, "%d\xC2\xB0", t); };
+
+  // Header: place and data age.
+  drawLine(0, 28, font_small, [&](TFT_eSprite& s) {
+    s.setTextDatum(ML_DATUM);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(w.place, 10, 15);
+    char age[32];
+    if (ageS == UINT32_MAX) age[0] = '\0';
+    else if (ageS < 120) snprintf(age, sizeof(age), "Updated just now");
+    else if (ageS < 7200) snprintf(age, sizeof(age), "Updated %lu min ago", (unsigned long)(ageS / 60));
+    else snprintf(age, sizeof(age), "Updated %lu h ago", (unsigned long)(ageS / 3600));
+    s.setTextDatum(MR_DATUM);
+    s.setTextColor(ageS > config::kWeatherStaleS ? C->warn : C->dim, C->bg);
+    s.drawString(age, kScreenW - 10, 15);
+  });
+
+  // Now: big icon, temperature, condition, details.
+  drawLine(28, 88, font_temp, [&](TFT_eSprite& s) {
+    weather_icons::draw(s, 54, 44, 74, weather::iconFor(w.code), w.isDay);
+    char t[8];
+    deg(t, sizeof(t), (int)lroundf(w.temp));
+    s.setTextDatum(L_BASELINE);
+    s.setTextColor(accent, C->bg);
+    s.drawString(t, 102, 58);
+    s.unloadFont();
+    s.loadFont(font_date);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(weather::describe(w.code), 102, 84);
+    s.unloadFont();
+    s.loadFont(font_small);
+    char line[24];
+    s.setTextColor(C->dim, C->bg);
+    snprintf(line, sizeof(line), "Feels %d\xC2\xB0", (int)lroundf(w.feels));
+    s.drawString(line, 216, 22);
+    snprintf(line, sizeof(line), "Humidity %u%%", w.humidity);
+    s.drawString(line, 216, 41);
+    if (w.dayCount) {
+      snprintf(line, sizeof(line), "Rain %u%%", w.days[0].pop);
+      s.drawString(line, 216, 60);
+    }
+  });
+
+  // Next hours, every 3 h.
+  drawLine(116, 58, font_small, [&](TFT_eSprite& s) {
+    const int cols = 6;
+    const int16_t colW = kScreenW / cols;
+    for (int c = 0; c < cols; ++c) {
+      const int i = 1 + c * 3;
+      if (i >= w.hourCount) break;
+      const weather::Hour& h = w.hours[i];
+      const int16_t cx = c * colW + colW / 2;
+      struct tm t;
+      time_t tt = h.time;
+      localtime_r(&tt, &t);
+      char label[8];
+      snprintf(label, sizeof(label), "%02d:00", t.tm_hour);
+      s.setTextDatum(MC_DATUM);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(label, cx, 8);
+      weather_icons::draw(s, cx, 29, 26, weather::iconFor(h.code), h.isDay);
+      char tv[8];
+      deg(tv, sizeof(tv), h.temp);
+      s.setTextColor(C->text, C->bg);
+      s.drawString(tv, cx, 50);
+    }
+  });
+
+  // Next days.
+  drawLine(174, 66, font_small, [&](TFT_eSprite& s) {
+    s.drawFastHLine(10, 0, kScreenW - 20, C->faint);
+    const int16_t colW = kScreenW / weather::kDays;
+    static const char* const kShortDays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    for (int i = 0; i < w.dayCount; ++i) {
+      const weather::Day& d = w.days[i];
+      const int16_t cx = i * colW + colW / 2;
+      struct tm t;
+      time_t tt = d.time + 12 * 3600;  // midday: safe against timezone offsets
+      localtime_r(&tt, &t);
+      s.setTextDatum(MC_DATUM);
+      s.setTextColor(i == 0 ? accent : C->text, C->bg);
+      s.drawString(i == 0 ? "Today" : kShortDays[t.tm_wday % 7], cx, 14);
+      weather_icons::draw(s, cx - 13, 34, 22, weather::iconFor(d.code), true);
+      char pop[8];
+      snprintf(pop, sizeof(pop), "%u%%", d.pop);
+      s.setTextDatum(ML_DATUM);
+      s.setTextColor(d.pop >= 50 ? theme::rgb(0, 190, 255) : C->dim, C->bg);
+      s.drawString(pop, cx + 2, 34);
+      char hi[8], lo[8];
+      deg(hi, sizeof(hi), d.tmax);
+      deg(lo, sizeof(lo), d.tmin);
+      const int16_t hw = s.textWidth(hi), lw = s.textWidth(lo);
+      const int16_t x0 = cx - (hw + 6 + lw) / 2;
+      s.setTextColor(C->text, C->bg);
+      s.drawString(hi, x0, 54);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(lo, x0 + hw + 6, 54);
+    }
   });
 }
 

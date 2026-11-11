@@ -12,6 +12,7 @@
 #include "rtc_manager.h"
 #include "settings.h"
 #include "time_utils.h"
+#include "weather.h"
 
 namespace {
 
@@ -150,6 +151,35 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     printBrightness();
     return true;
   }
+  if (strncasecmp(text, "WEATHER", 7) == 0 && (text[7] == '\0' || text[7] == ' ')) {
+    const char* arg = text + 7;
+    while (*arg == ' ') ++arg;
+    float lat, lon;
+    int consumed = 0;
+    if (*arg == '\0') {
+      weather::printStatus();
+    } else if (strcasecmp(arg, "UPDATE") == 0) {
+      weather::requestUpdate();
+    } else if (strcasecmp(arg, "SHOW") == 0) {
+      weather::requestScreen(30000);
+    } else if (strncasecmp(arg, "CITY ", 5) == 0 && arg[5]) {
+      weather::requestCity(arg + 5);
+    } else if (strncasecmp(arg, "LOC ", 4) == 0 &&
+               sscanf(arg + 4, "%f %f %n", &lat, &lon, &consumed) == 2) {
+      if (settings::setLocation(lat, lon, arg + 4 + consumed)) {
+        Serial.printf("[WEATHER] Location %s (%.3f, %.3f) saved\n", settings::place(), lat, lon);
+        weather::requestUpdate();
+      } else {
+        Serial.println("[CONSOLE] ERROR: invalid coordinates");
+      }
+    } else if (strcasecmp(arg, "CYCLE ON") == 0 || strcasecmp(arg, "CYCLE OFF") == 0) {
+      settings::setWeatherCycle(strcasecmp(arg, "CYCLE ON") == 0);
+      weather::printStatus();
+    } else {
+      Serial.println("[CONSOLE] Usage: WEATHER [UPDATE|SHOW|CITY name|LOC lat lon [name]|CYCLE ON|OFF]");
+    }
+    return false;
+  }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
   } else if (strcasecmp(text, "INFO") == 0) {
@@ -189,7 +219,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | SHOT | TEST [PALETTE] | HELP");
+      "NIGHT [ON|OFF|HH:MM HH:MM] | WEATHER [...] | SHOT | TEST [PALETTE] | HELP");
 }
 
 bool serialConsolePoll(RtcManager& rtc, DisplayManager& display) {

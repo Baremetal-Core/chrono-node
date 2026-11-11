@@ -63,11 +63,11 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - Night theme: black background, pink→magenta digits and dim pink text, switched behind a fade.
 - Auto-brightness dropped: the on-board LDR (GPIO34) reads 0 under any light on this unit.
 
-## M8 – Weather
-- Open-Meteo API (free, no API key): current conditions + hourly/daily forecast, HTTPS + ArduinoJson.
-- Location: lat/lon setting, or auto via IP geolocation once.
-- Weather icons (bitmap set in LittleFS), temperature, high/low, rain probability, sunrise/sunset.
-  Refresh every 15–30 min. Show cached data plus its age when offline.
+## M8 – Weather ✅
+- Open-Meteo API (free, no API key): current conditions, 24 h and 4 days, verified HTTPS + ArduinoJson.
+- Location: city lookup (Open-Meteo geocoding) or lat/lon, saved in NVS; default Ho Chi Minh City.
+- Weather line on the clock face plus a periodic forecast screen; icons drawn with AA primitives.
+  Refresh every 15 min; cached data shown with its age when offline.
 
 ## M9 – Web configuration UI
 - A small web page at `chrono-node.local` for all settings, Wi-Fi reset, status/diagnostics (heap, RSSI, drift, uptime).
