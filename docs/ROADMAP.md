@@ -56,6 +56,8 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 ## M6 – Touch & screens
 - XPT2046 driver with a calibration routine stored in NVS.
 - Screens: Clock → Weather → Info/Settings. Swipe/tap navigation, on-device settings (12/24h, theme, brightness).
+- Weather location on the device: pick from recently used locations (no typing on the
+  resistive screen; new locations are added via the web UI, M9).
 
 ## M7 – Brightness & night mode ✅
 - LEDC PWM backlight with gamma correction and smooth fades.
@@ -72,6 +74,19 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 ## M9 – Web configuration UI
 - A small web page at `chrono-node.local` for all settings, Wi-Fi reset, status/diagnostics (heap, RSSI, drift, uptime).
 - JSON API (`/api/status`, `/api/settings`) for future integrations.
+- Weather location:
+  - City search box backed by Open-Meteo geocoding. It shows the top ~5 matches with
+    province, country and population so ambiguous names can't resolve silently, biased to
+    Vietnam (`countryCode=VN`) but not limited to it. Picking a match saves it.
+  - "Paste coordinates" field for exact spots (e.g. a Google Maps pin), with an optional name.
+  - City-level precision is enough: forecasts are computed on a ~1–11 km grid (with an
+    elevation correction), so street-level coordinates add almost nothing.
+  - Decided against:
+    - A hardcoded list of Vietnamese cities: needs maintenance and doesn't work abroad.
+    - IP geolocation: corporate networks often exit the internet elsewhere, so the place is
+      wrong.
+    - Browser GPS: the browser only allows it on HTTPS pages, and the clock serves plain
+      HTTP.
 
 ## M10 – OTA updates & releases
 - Firmware upload from the web UI (and ArduinoOTA for dev).
