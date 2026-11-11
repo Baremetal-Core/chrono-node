@@ -1,0 +1,32 @@
+// Chrono Node - firmware updates over the network with rollback.
+//
+// Uploads go to the inactive OTA slot. Because the web UI has no password, an
+// upload needs a one-time PIN that is shown on the clock's screen (proof of
+// physical presence). A freshly installed image stays "pending" until it has
+// run for kConfirmAfterMs; if it crashes or resets before that, the bootloader
+// rolls back to the previous firmware.
+#pragma once
+
+#include <stddef.h>
+#include <stdint.h>
+
+namespace ota {
+
+// Main task.
+void begin();
+void loop();
+
+// Network task: create a new PIN (valid 2 min). Returns it for logging.
+uint32_t newPin();
+// Any task: current PIN, or 0 when none is active.
+uint32_t activePin();
+// Consumes the PIN if it matches (single use).
+bool checkPin(uint32_t pin);
+
+// Upload progress, written by the network task: -1 idle, else 0-100.
+void setProgress(int percent);
+int progress();
+
+void printStatus();
+
+}  // namespace ota

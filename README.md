@@ -3,13 +3,14 @@
 Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 ("Cheap Yellow Display", CYD) with an external DS3231 RTC as its time source.
 
-**Current state (M6, M8, M9):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
+**Current state (M6, M8, M9, M10):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
 local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal, mDNS
 (`chrono-node.local`) and NTP that keeps the DS3231 accurate. The UI uses bold anti-aliased
 gradient digits, rolling transitions and colours that follow the time of day, plus a dimmed
 night mode on a schedule, weather from Open-Meteo, and touch navigation between the clock,
 forecast, info and settings screens, plus a settings page in the browser at
-`http://chrono-node.local`. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
+`http://chrono-node.local`, and firmware updates over Wi-Fi with automatic rollback. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
 
 | Clock with weather | Forecast screen |
 |--------------------|-----------------|
@@ -106,6 +107,8 @@ stays in one task.
 | `GET /api/settings` | All settings, including recent locations |
 | `GET /api/geocode?q=<name>[&country=VN]` | Up to 5 location matches |
 | `POST /api/command` | Body (`text/plain`): one console command. Returns `202 {"queued":true}` |
+| `POST /api/ota/pin` | Shows a one-time update PIN on the clock (2 min) |
+| `POST /api/ota?pin=NNNN` | Multipart firmware upload. Returns `200`, `403` (PIN) or `500` (image) |
 
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`.
@@ -114,6 +117,52 @@ Blocking or diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Exampl
 ```bash
 curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-node.local/api/command
 ```
+
+## Firmware updates (OTA) and releases
+
+**From the web page** (*Firmware* section):
+
+1. Click **Show PIN on the clock**. A 4-digit PIN appears at the bottom of the clock's
+   screen for 2 minutes. The page has no password, so the PIN proves someone is standing
+   at the clock before firmware can be replaced.
+2. Enter the PIN, choose `chrono-node-fw.bin` from a release (or `.pio/build/cyd/` after
+   `pio run`) and click **Install**. The upload goes to the inactive OTA slot (about 35 s
+   over Wi-Fi), with progress shown on the clock and in the page, and then the clock reboots.
+
+From a terminal (the PIN still has to be read off the clock):
+
+```bash
+curl -X POST http://chrono-node.local/api/ota/pin
+curl -F firmware=@.pio/build/cyd/chrono-node-fw.bin "http://chrono-node.local/api/ota?pin=1234"
+```
+
+**Rollback:** a newly installed image starts as *pending verify* and is confirmed after
+60 s of normal running (`[OTA] New firmware confirmed`). If it crashes or resets before
+that, the bootloader returns to the previous firmware on the next boot. `OTA` on the serial
+console shows the running slot and its state.
+
+To test rollback, build an image that crashes after 20 s, install it over OTA, and check
+that the clock comes back on the previous slot:
+
+```bash
+PLATFORMIO_BUILD_FLAGS="-DCHRONO_CRASH_AFTER_MS=20000" pio run
+```
+
+**Releases:** pushing a tag `vX.Y.Z` that matches `kFirmwareVersion` in `include/config.h`
+runs `.github/workflows/release.yml`, which builds and publishes a GitHub release with:
+
+| File | Use |
+|------|-----|
+| `chrono-node-fw.bin` | OTA image for the web page |
+| `chrono-node-fw-full.bin` | Complete image for a new or recovered board |
+| `SHA256SUMS` | Checksums |
+
+```bash
+git tag v0.10.0 && git push origin v0.10.0
+esptool.py --chip esp32 --port /dev/cu.usbserial-XXXX write_flash 0x0 chrono-node-fw-full.bin
+```
+
+A USB upload (`pio run -t upload`) always resets the boot slot to `app0`.
 
 ## Weather
 
@@ -315,6 +364,7 @@ TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
 SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web page)
 REBOOT                      # restart the clock
+OTA                         # running slot, OTA state (pending/valid), next slot
 HELP
 ```
 
@@ -377,6 +427,8 @@ src/touch.*                     XPT2046 driver, affine calibration, tap/swipe ge
 src/screens.h                   screen navigation requests (SCREEN command)
 src/web_server.*                LAN web server and JSON API (network task)
 src/web_page.h                  the embedded settings page (HTML/CSS/JS)
+src/ota.*                       update PIN, upload progress, rollback confirmation
+.github/workflows/release.yml   tag -> GitHub release with OTA and full flash images
 src/certs/ca_bundle.h           generated Mozilla root CA bundle (do not edit)
 tools/gen_ca_bundle.py          CA bundle generator
 src/fonts/*.h                   generated Inter smooth fonts (do not edit)

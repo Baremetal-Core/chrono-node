@@ -24,6 +24,7 @@
 //   SCREEN <name>             go to CLOCK, FORECAST, INFO or SETTINGS
 //   SETEPOCH <unix>           set the DS3231 from a UTC Unix time (used by the web UI)
 //   REBOOT                    restart the clock
+//   OTA                       firmware partitions and update state
 //   TEST                      colour test pattern for 20 s (panel variant check)
 //   TEST PALETTE              the five day-cycle palettes side by side for 30 s
 //   SHOT                      dump the screen (tools/screenshot.py turns it into a PNG)

@@ -73,10 +73,12 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - A small web page at `chrono-node.local` for all settings, Wi-Fi reset, status/diagnostics (heap, RSSI, drift, uptime).
 - JSON API (`/api/status`, `/api/settings`) for future integrations.
 
-## M10 – OTA updates & releases
-- Firmware upload from the web UI (and ArduinoOTA for dev).
-- GitHub Actions: tag `v*` → release with `chrono-node-fw.bin`. Optional: the device checks GitHub releases.
-- Rollback on boot failure (app-rollback partition flag).
+## M10 – OTA updates & releases ✅
+- Firmware upload from the web UI, authorised by a one-time PIN shown on the clock.
+- GitHub Actions: tag `v*` → release with `chrono-node-fw.bin` (OTA) and `chrono-node-fw-full.bin`.
+- Rollback: new images are confirmed after 60 s of normal running.
+- Not done: ArduinoOTA (another open port), and a device-side release check (the repo is private,
+  so the device would need a token).
 
 ## M11 – Alarms & sound (optional)
 - Alarms stored in NVS and edited via touch/web; speaker on GPIO26 (tones/DAC), snooze by tap.

@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.9.0";
+constexpr const char* kFirmwareVersion = "0.10.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -77,6 +77,10 @@ constexpr uint32_t kScreenIdleMs = 30000;
 constexpr uint32_t kNightTapBoostMs = 10000;
 constexpr uint32_t kScreenFadeOutMs = 150;
 constexpr uint32_t kScreenFadeInMs = 300;
+
+// ---- Firmware updates ----
+constexpr uint32_t kOtaConfirmAfterMs = 60000;  // run this long before confirming a new image
+constexpr uint32_t kOtaPinValidMs = 120000;
 
 // DS3231 die temperature (shown in the status bar) is read this often.
 constexpr uint32_t kTemperatureIntervalMs = 60000;

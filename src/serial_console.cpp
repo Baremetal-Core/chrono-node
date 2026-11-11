@@ -11,6 +11,7 @@
 #include "config.h"
 #include "display_manager.h"
 #include "net_manager.h"
+#include "ota.h"
 #include "rtc_manager.h"
 #include "screens.h"
 #include "settings.h"
@@ -298,6 +299,8 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
       }
       delay(10);
     }
+  } else if (strcasecmp(text, "OTA") == 0) {
+    ota::printStatus();
   } else if (strcasecmp(text, "INFO") == 0) {
     printInfo(rtc);
     printBrightness();
@@ -341,7 +344,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | TOUCH [CAL] | SCREEN name | SETEPOCH n | REBOOT | SHOT | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | TOUCH [CAL] | SCREEN name | SETEPOCH n | REBOOT | OTA | SHOT | "
       "TEST [PALETTE] | HELP");
 }
 

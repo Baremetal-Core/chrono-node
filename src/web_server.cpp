@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
+#include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -14,6 +15,7 @@
 #include "clock_sync.h"
 #include "config.h"
 #include "net_manager.h"
+#include "ota.h"
 #include "settings.h"
 #include "weather.h"
 #include "web_page.h"
@@ -219,6 +221,76 @@ void handleCommand() {
   server->send(202, "application/json", "{\"queued\":true}");
 }
 
+// Firmware upload: PIN check, then stream into the inactive OTA slot.
+bool uploadOk = false;
+bool uploadAuthorized = false;
+String uploadError;
+size_t uploadTotal = 0;
+
+void handleOtaPin() {
+  uint32_t p = ota::newPin();
+  Serial.printf("[OTA] Update PIN %04lu requested from %s (valid 2 min)\n", (unsigned long)p,
+                server->client().remoteIP().toString().c_str());
+  server->send(200, "application/json", "{\"pin_shown_on_clock\":true}");
+}
+
+void handleOtaUpload() {
+  HTTPUpload& up = server->upload();
+  switch (up.status) {
+    case UPLOAD_FILE_START: {
+      uploadOk = false;
+      uploadError = "";
+      uploadTotal = server->hasHeader("Content-Length") ? server->header("Content-Length").toInt() : 0;
+      uploadAuthorized = ota::checkPin(strtoul(server->arg("pin").c_str(), nullptr, 10));
+      if (!uploadAuthorized) {
+        uploadError = "wrong or expired PIN";
+        return;
+      }
+      Serial.printf("[OTA] Receiving %s\n", up.filename.c_str());
+      ota::setProgress(0);
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) uploadError = Update.errorString();
+      break;
+    }
+    case UPLOAD_FILE_WRITE:
+      if (!uploadAuthorized || uploadError.length()) return;
+      if (Update.write(up.buf, up.currentSize) != up.currentSize) {
+        uploadError = Update.errorString();
+        Update.abort();
+      } else if (uploadTotal > 0) {
+        ota::setProgress(min<int>(99, Update.progress() * 100 / uploadTotal));
+      }
+      break;
+    case UPLOAD_FILE_END:
+      if (!uploadAuthorized || uploadError.length()) return;
+      if (Update.end(true)) {
+        uploadOk = true;
+        Serial.printf("[OTA] Received %u bytes, image verified\n", up.totalSize);
+      } else {
+        uploadError = Update.errorString();
+      }
+      break;
+    case UPLOAD_FILE_ABORTED:
+      Update.abort();
+      uploadError = "upload aborted";
+      break;
+  }
+}
+
+void handleOtaDone() {
+  ota::setProgress(-1);
+  if (!uploadOk) {
+    Serial.printf("[OTA] Update failed: %s\n", uploadError.c_str());
+    String body = "{\"error\":\"" + uploadError + "\"}";
+    server->send(uploadAuthorized ? 500 : 403, "application/json", body);
+    return;
+  }
+  server->send(200, "application/json", "{\"ok\":true,\"rebooting\":true}");
+  Serial.println("[OTA] Rebooting into the new firmware");
+  Serial.flush();
+  delay(500);
+  ESP.restart();
+}
+
 }  // namespace
 
 void start() {
@@ -230,6 +302,10 @@ void start() {
   server->on("/api/settings", HTTP_GET, handleSettings);
   server->on("/api/geocode", HTTP_GET, handleGeocode);
   server->on("/api/command", HTTP_POST, handleCommand);
+  server->on("/api/ota/pin", HTTP_POST, handleOtaPin);
+  server->on("/api/ota", HTTP_POST, handleOtaDone, handleOtaUpload);
+  static const char* headers[] = {"Content-Length"};
+  server->collectHeaders(headers, 1);
   server->onNotFound([] { server->send(404, "text/plain", "Not found"); });
   server->begin();
   MDNS.addService("http", "tcp", 80);

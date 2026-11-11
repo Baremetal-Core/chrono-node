@@ -57,7 +57,13 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div class="row"><button id="portal">Open Wi-Fi setup portal</button><button class="danger" id="forget">Forget Wi-Fi</button><button class="danger" id="reboot">Reboot</button></div>
 <div class="muted">The setup portal disconnects the clock from this network; join "Chrono-Node-XXXX" to continue.</div>
 </section>
-<div class="muted">This page has no password: anyone on this network can change settings.</div>
+<section><h2>Firmware</h2><div class="muted" id="fwcur"></div>
+<div class="row"><button id="otapin">1. Show PIN on the clock</button><input id="otapinv" placeholder="PIN" size="5" inputmode="numeric">
+<input type="file" id="otafile" accept=".bin" style="flex:2 1 200px"><button class="primary" id="otago">2. Install</button></div>
+<progress id="otaprog" max="100" value="0" style="width:100%;display:none"></progress>
+<div class="muted">Use <b>chrono-node-fw.bin</b> from a release (not the -full image). The PIN appears at the bottom of the clock's screen for 2 minutes.
+If the new firmware fails within its first minute, the clock returns to the current one automatically.</div></section>
+<div class="muted">This page has no password: anyone on this network can change settings. Firmware updates need the PIN shown on the clock.</div>
 </main><div id="toast"></div>
 <script>
 const TZ=[["Asia/Ho_Chi_Minh","<+07>-7"],["Asia/Bangkok","<+07>-7"],["Asia/Jakarta","WIB-7"],["Asia/Singapore","<+08>-8"],
@@ -75,7 +81,7 @@ if(r.ok){toast(msg||"Saved");setTimeout(loadSettings,500);setTimeout(loadStatus,
 function ago(s){return s<90?"just now":s<5400?Math.round(s/60)+" min ago":Math.round(s/3600)+" h ago"}
 function up(s){const d=Math.floor(s/86400),h=Math.floor(s/3600)%24,m=Math.floor(s/60)%60;return(d?d+"d ":"")+h+"h "+m+"m"}
 async function loadStatus(){try{const s=await(await fetch("/api/status")).json();
-$("time").textContent=s.local_time.slice(11);$("sub").textContent="Firmware "+s.firmware+" ("+s.revision+") \u00b7 "+s.wifi.host;
+$("time").textContent=s.local_time.slice(11);$("fwcur").textContent="Installed: v"+s.firmware+" ("+s.revision+")";$("sub").textContent="Firmware "+s.firmware+" ("+s.revision+") \u00b7 "+s.wifi.host;
 const w=s.weather?`${s.weather.temp_c}\u00b0C ${s.weather.condition}, ${s.weather.place} (${ago(s.weather.age_s)})`:"no data yet";
 const rows=[["Date",s.local_time.slice(0,10)],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
 ["RTC",s.rtc.present?("DS3231"+(s.rtc.temp_c!==undefined?`, ${s.rtc.temp_c}\u00b0C`:"")+(s.rtc.lost_power?", LOST POWER":"")):"not detected"],
@@ -113,5 +119,13 @@ cmd(`WEATHER LOC ${la} ${lo} ${$("lname").value.trim()}`.trim(),"Location saved"
 $("portal").onclick=()=>confirm("Open the setup portal? The clock leaves this network until set up again.")&&cmd("WIFI PORTAL","Portal opening");
 $("forget").onclick=()=>confirm("Erase the saved Wi-Fi network?")&&cmd("WIFI FORGET","Wi-Fi forgotten");
 $("reboot").onclick=()=>confirm("Reboot the clock?")&&cmd("REBOOT","Rebooting...");
+$("otapin").onclick=async()=>{const r=await fetch("/api/ota/pin",{method:"POST"});toast(r.ok?"Enter the PIN shown on the clock":"Could not create a PIN");$("otapinv").focus()};
+$("otago").onclick=()=>{const f=$("otafile").files[0],pin=$("otapinv").value.trim();
+if(!f){toast("Choose a .bin file");return}if(!/^\d{4}$/.test(pin)){toast("Enter the 4-digit PIN from the clock");return}
+const fd=new FormData();fd.append("firmware",f,f.name);const x=new XMLHttpRequest(),p=$("otaprog");p.style.display="block";p.value=0;
+x.upload.onprogress=e=>{if(e.lengthComputable)p.value=Math.round(e.loaded*100/e.total)};
+x.onload=()=>{let d={};try{d=JSON.parse(x.responseText)}catch(e){}
+if(x.status===200){toast("Installed. Rebooting...");setTimeout(()=>location.reload(),25000)}else{p.style.display="none";toast("Update failed: "+(d.error||x.status))}};
+x.onerror=()=>{p.style.display="none";toast("Upload interrupted")};x.open("POST","/api/ota?pin="+pin);x.send(fd)};
 loadSettings();loadStatus();setInterval(loadStatus,5000);
 </script></body></html>)HTML";

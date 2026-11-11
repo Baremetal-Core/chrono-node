@@ -13,6 +13,7 @@
 #include "config.h"
 #include "display_manager.h"
 #include "net_manager.h"
+#include "ota.h"
 #include "rtc_manager.h"
 #include "screens.h"
 #include "serial_console.h"
@@ -370,7 +371,16 @@ void updateStatus() {
   const uint32_t age = weather::ageSeconds();
   display.setWeather(hasWeather ? &wx : nullptr, age != UINT32_MAX && age > config::kWeatherStaleS);
 
-  if (rtcLostPower) {
+  const int otaProgress = ota::progress();
+  if (otaProgress >= 0) {
+    char text[48];
+    snprintf(text, sizeof(text), "Updating firmware... %d%%", otaProgress);
+    display.setNotice(text, DisplayManager::NoticeKind::Setup);
+  } else if (ota::activePin()) {
+    char text[48];
+    snprintf(text, sizeof(text), "Firmware update PIN: %04lu", (unsigned long)ota::activePin());
+    display.setNotice(text, DisplayManager::NoticeKind::Setup);
+  } else if (rtcLostPower) {
     display.setNotice("RTC lost power - waiting for NTP or SET", DisplayManager::NoticeKind::Error);
   } else if (net::state() == net::State::Portal) {
     char text[64];
@@ -488,6 +498,7 @@ void setup() {
 
   weather::begin();
   touch::begin();
+  ota::begin();
 
   rtcState = RtcState::Missing;
   if (rtc.begin()) {
@@ -509,6 +520,11 @@ void setup() {
 
 void loop() {
   backlight::loop();
+  ota::loop();
+#ifdef CHRONO_CRASH_AFTER_MS
+  // Rollback test image only (see README): crash before the image is confirmed.
+  if (millis() > CHRONO_CRASH_AFTER_MS) abort();
+#endif
   if (transitioning && !backlight::isFading()) finishTransition();
 
   handleTouch();

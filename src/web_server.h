@@ -10,6 +10,8 @@
 //   GET  /api/settings     current settings (JSON)
 //   GET  /api/geocode?q=   top 5 location matches from Open-Meteo (JSON)
 //   POST /api/command      body: one whitelisted console command (text/plain)
+//   POST /api/ota/pin      show a one-time update PIN on the clock's screen
+//   POST /api/ota?pin=NNNN multipart firmware upload (chrono-node-fw.bin)
 #pragma once
 
 #include <stddef.h>
