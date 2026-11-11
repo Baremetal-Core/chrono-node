@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.8.0";
+constexpr const char* kFirmwareVersion = "0.9.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;

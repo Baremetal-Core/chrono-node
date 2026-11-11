@@ -22,6 +22,8 @@
 //   TOUCH                     print touch readings for 10 s
 //   TOUCH CAL                 on-screen touch calibration (saved)
 //   SCREEN <name>             go to CLOCK, FORECAST, INFO or SETTINGS
+//   SETEPOCH <unix>           set the DS3231 from a UTC Unix time (used by the web UI)
+//   REBOOT                    restart the clock
 //   TEST                      colour test pattern for 20 s (panel variant check)
 //   TEST PALETTE              the five day-cycle palettes side by side for 30 s
 //   SHOT                      dump the screen (tools/screenshot.py turns it into a PNG)
@@ -34,5 +36,8 @@ class RtcManager;
 // Non-blocking; call from loop(). Returns true if the RTC time, timezone,
 // brightness or night schedule changed.
 bool serialConsolePoll(RtcManager& rtc, DisplayManager& display);
+
+// Runs one command line as if typed (used by the web UI). Main task only.
+bool serialConsoleExecute(RtcManager& rtc, DisplayManager& display, const char* command);
 
 void serialConsolePrintHelp();

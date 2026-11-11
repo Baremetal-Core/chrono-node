@@ -3,13 +3,13 @@
 Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 ("Cheap Yellow Display", CYD) with an external DS3231 RTC as its time source.
 
-**Current state (M6 + M8):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
+**Current state (M6, M8, M9):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
 local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal, mDNS
 (`chrono-node.local`) and NTP that keeps the DS3231 accurate. The UI uses bold anti-aliased
 gradient digits, rolling transitions and colours that follow the time of day, plus a dimmed
 night mode on a schedule, weather from Open-Meteo, and touch navigation between the clock,
-forecast, info and settings screens. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming
-milestones.
+forecast, info and settings screens, plus a settings page in the browser at
+`http://chrono-node.local`. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
 
 | Clock with weather | Forecast screen |
 |--------------------|-----------------|
@@ -72,6 +72,48 @@ milestones.
   against the display, which is the case on this unit. The result is saved in NVS. Until
   calibrated, a generic mapping is used, which can be ~15 px off near the edges.
   `TOUCH` prints raw and mapped readings for 10 s.
+
+## Web settings
+
+Open `http://chrono-node.local` (or the clock's IP, shown on the Info screen) from a device
+on the same network. The page shows live status and changes every setting while the clock
+stays online:
+
+- **Status:** time, Wi-Fi, IP, NTP sync, RTC, weather, current screen, uptime, memory.
+- **Display:** day/night brightness, night mode and its hours, 12/24-hour time, forecast cycle.
+- **Time:** time zone by name (common zones are mapped to POSIX strings, **Detect** uses the
+  browser's zone, or enter a custom POSIX string), NTP server, **Sync now**, and **Set clock
+  from this device** for networks without NTP (accurate to about a second).
+- **Weather location:** search a city or district (Open-Meteo geocoding, top 5 matches with
+  province, country and population, *Vietnam only* on by default), or enter coordinates, or
+  pick a recent location.
+- **Wi-Fi & device:** open the setup portal, forget the Wi-Fi network, reboot.
+
+![Web settings](docs/images/web-ui.png)
+
+The web server runs in the network task and is stopped while the setup portal is open
+(the portal needs port 80). Changes are sent as **console commands** to the main task, so
+they go through the same validation as the serial console, and all RTC and display work
+stays in one task.
+
+> **No password:** anyone on the same network can change settings (an open question; see #18).
+
+### JSON API
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/status` | Live status: time, Wi-Fi, NTP, RTC, weather, screen, uptime, memory |
+| `GET /api/settings` | All settings, including recent locations |
+| `GET /api/geocode?q=<name>[&country=VN]` | Up to 5 location matches |
+| `POST /api/command` | Body (`text/plain`): one console command. Returns `202 {"queued":true}` |
+
+Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
+`WEATHER LOC|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`.
+Blocking or diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
+
+```bash
+curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-node.local/api/command
+```
 
 ## Weather
 
@@ -271,6 +313,8 @@ FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
 SCREEN SETTINGS             # go to CLOCK, FORECAST, INFO or SETTINGS
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
+SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web page)
+REBOOT                      # restart the clock
 HELP
 ```
 
@@ -331,6 +375,8 @@ src/weather.*                   Open-Meteo fetch/parse (HTTPS + ArduinoJson), ge
 src/weather_icons.*             weather icons from anti-aliased primitives
 src/touch.*                     XPT2046 driver, affine calibration, tap/swipe gestures
 src/screens.h                   screen navigation requests (SCREEN command)
+src/web_server.*                LAN web server and JSON API (network task)
+src/web_page.h                  the embedded settings page (HTML/CSS/JS)
 src/certs/ca_bundle.h           generated Mozilla root CA bundle (do not edit)
 tools/gen_ca_bundle.py          CA bundle generator
 src/fonts/*.h                   generated Inter smooth fonts (do not edit)

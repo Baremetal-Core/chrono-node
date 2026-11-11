@@ -69,7 +69,7 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - Weather line on the clock face plus a periodic forecast screen; icons drawn with AA primitives.
   Refresh every 15 min; cached data shown with its age when offline.
 
-## M9 – Web configuration UI
+## M9 – Web configuration UI ✅
 - A small web page at `chrono-node.local` for all settings, Wi-Fi reset, status/diagnostics (heap, RSSI, drift, uptime).
 - JSON API (`/api/status`, `/api/settings`) for future integrations.
 

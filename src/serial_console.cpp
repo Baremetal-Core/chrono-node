@@ -171,6 +171,28 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   if (*text == '\0') return false;
 
   if (strncasecmp(text, "SET ", 4) == 0) return handleSet(rtc, text + 4);
+  if (strncasecmp(text, "SETEPOCH ", 9) == 0) {
+    char* end = nullptr;
+    unsigned long epoch = strtoul(text + 9, &end, 10);
+    DateTime utc(static_cast<uint32_t>(epoch));
+    if (!end || *end != '\0' || epoch < 1577836800UL || !utc.isValid() || utc.year() > 2099) {
+      Serial.println("[CONSOLE] Usage: SETEPOCH <unix time, UTC>");
+      return false;
+    }
+    if (!rtc.isPresent() || !rtc.setTime(utc)) {
+      Serial.println("[RTC] ERROR: could not set time");
+      return false;
+    }
+    Serial.println("[RTC] Time set");
+    printRtcTime(rtc);
+    return true;
+  }
+  if (strcasecmp(text, "REBOOT") == 0) {
+    Serial.println("[CONSOLE] Rebooting");
+    Serial.flush();
+    delay(200);
+    ESP.restart();
+  }
   if (strcasecmp(text, "TZ") == 0 || strncasecmp(text, "TZ ", 3) == 0) {
     return handleTz(rtc, text + 2);
   }
@@ -309,11 +331,17 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
 
 }  // namespace
 
+bool serialConsoleExecute(RtcManager& rtc, DisplayManager& display, const char* command) {
+  char buf[kLineMax];
+  strlcpy(buf, command, sizeof(buf));
+  return handleLine(rtc, display, buf);
+}
+
 void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | TOUCH [CAL] | SCREEN name | SHOT | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | TOUCH [CAL] | SCREEN name | SETEPOCH n | REBOOT | SHOT | "
       "TEST [PALETTE] | HELP");
 }
 

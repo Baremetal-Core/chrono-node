@@ -20,6 +20,7 @@
 #include "time_utils.h"
 #include "touch.h"
 #include "weather.h"
+#include "web_server.h"
 
 namespace {
 
@@ -437,6 +438,16 @@ void pollRtc(bool forceLog) {
     updateStatus();
   }
   if (forceLog || config::kLogEverySecond) logTime(utc);
+
+  web::ClockState cs = {};
+  cs.rtcPresent = rtc.isPresent();
+  cs.rtcLostPower = rtcLostPower;
+  cs.hasTemp = hasTemp;
+  cs.tempC = tempC;
+  cs.night = nightActive;
+  static const char* const kScreenNames[] = {"clock", "forecast", "info", "settings"};
+  strlcpy(cs.screen, kScreenNames[static_cast<int>(screenOn)], sizeof(cs.screen));
+  web::publishClockState(cs);
 }
 
 }  // namespace
@@ -521,7 +532,12 @@ void loop() {
 
   display.tick();
 
-  if (serialConsolePoll(rtc, display)) {
+  bool changed = serialConsolePoll(rtc, display);
+  char webCommand[96];
+  while (web::nextCommand(webCommand, sizeof(webCommand))) {
+    changed |= serialConsoleExecute(rtc, display, webCommand);
+  }
+  if (changed) {
     // Time, timezone, brightness or schedule changed: re-read the
     // oscillator-stop flag, apply the brightness and redraw.
     rtcLostPower = rtc.lostPower();

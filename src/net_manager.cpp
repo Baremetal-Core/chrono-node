@@ -14,6 +14,7 @@
 #include "config.h"
 #include "settings.h"
 #include "weather.h"
+#include "web_server.h"
 
 namespace net {
 namespace {
@@ -145,6 +146,7 @@ void scheduleRetry() {
 }
 
 void openPortal(uint32_t timeoutS) {
+  web::stop();  // the portal needs port 80
   clearEvents();
   WiFi.disconnect();
   wm.setConfigPortalTimeout(timeoutS);
@@ -183,6 +185,7 @@ void onConnected() {
     if (mdnsStarted) Serial.printf("[WIFI] mDNS: %s.local\n", config::kHostname);
   }
   startNtp();
+  web::start();
 }
 
 void onAttemptFailed(const char* why) {
@@ -341,7 +344,10 @@ void step() {
       break;
 
     case State::Connected:
-      if (!evtDisconnected) weather::service();
+      if (!evtDisconnected) {
+        web::loop();
+        weather::service();
+      }
       if (evtDisconnected) {
         Serial.printf("[WIFI] Disconnected (reason %u)\n", evtReason);
         clearEvents();
