@@ -62,8 +62,12 @@ bool removeBanner(int index);
 bool clearBanners();
 bool bannerEnabled();
 bool setBannerEnabled(bool enabled);
-uint8_t bannerEveryMinutes();  // 0 = continuous
-bool setBannerEveryMinutes(uint8_t minutes);
+// Each message's period in minutes (0 = continuous). Index -1 is the default
+// for new messages; setting it also sets every message.
+uint8_t bannerEveryMinutes(int index = -1);
+bool setBannerEveryMinutes(int index, uint8_t minutes);
+// Changes whenever the messages or their periods change.
+uint32_t bannerVersion();
 uint8_t bannerSpeed();         // pixels per second
 bool setBannerSpeed(uint8_t pxPerSecond);
 

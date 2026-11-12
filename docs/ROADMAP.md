@@ -82,7 +82,8 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 
 ## M11 – Custom scrolling banner ✅
 - Up to 5 user messages (Vietnamese diacritics supported) scroll across the clock face's
-  bottom line, one per period (every N minutes, or continuously), in the time-of-day colours.
+  bottom line in the time-of-day colours. Each message has its own timer (every N minutes or
+  non-stop); messages due together scroll one after another.
 - Set from the web page and the serial console; saved in NVS; shown at night too (dimmed).
 
 ## M12 – Photo slideshow ✅

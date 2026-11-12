@@ -145,19 +145,25 @@ void calibrateTouch(DisplayManager& display) {
 }
 
 void printBanners() {
-  Serial.printf("[BANNER] %s, every %u min%s, %u px/s, %d message(s)\n",
-                settings::bannerEnabled() ? "on" : "off", settings::bannerEveryMinutes(),
-                settings::bannerEveryMinutes() == 0 ? " (continuous)" : "", settings::bannerSpeed(),
-                settings::bannerCount());
+  Serial.printf("[BANNER] %s, %u px/s, %d message(s), new ones every %u min\n",
+                settings::bannerEnabled() ? "on" : "off", settings::bannerSpeed(),
+                settings::bannerCount(), settings::bannerEveryMinutes());
   for (int i = 0; i < settings::bannerCount(); ++i) {
-    Serial.printf("[BANNER]   %d: %s\n", i + 1, settings::bannerText(i));
+    const uint8_t every = settings::bannerEveryMinutes(i);
+    char when[16];
+    if (every == 0) {
+      strlcpy(when, "continuous", sizeof(when));
+    } else {
+      snprintf(when, sizeof(when), "every %u min", every);
+    }
+    Serial.printf("[BANNER]   %d (%s): %s\n", i + 1, when, settings::bannerText(i));
   }
 }
 
 bool handleBanner(const char* arg) {
   while (*arg == ' ') ++arg;
   bool ok = true;
-  int n = 0, consumed = 0;
+  int n = 0, m = 0, consumed = 0;
   if (*arg == '\0') {
     printBanners();
     return false;
@@ -172,15 +178,19 @@ bool handleBanner(const char* arg) {
     ok = settings::clearBanners();
   } else if (strcasecmp(arg, "ON") == 0 || strcasecmp(arg, "OFF") == 0) {
     ok = settings::setBannerEnabled(strcasecmp(arg, "ON") == 0);
-  } else if (strncasecmp(arg, "EVERY ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1 && n >= 0) {
-    ok = settings::setBannerEveryMinutes(n);
+  } else if (strncasecmp(arg, "EVERY ", 6) == 0 && (consumed = sscanf(arg + 6, "%d %d", &n, &m)) >= 1) {
+    // "EVERY min" sets all messages; "EVERY n min" sets message n.
+    const int index = consumed == 2 ? n - 1 : -1;
+    const int minutes = consumed == 2 ? m : n;
+    ok = minutes >= 0 && minutes <= 60 && (index >= 0 || consumed == 1) &&
+         settings::setBannerEveryMinutes(index, minutes);
   } else if (strncasecmp(arg, "SPEED ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1 && n > 0) {
     ok = n <= 255 && settings::setBannerSpeed(n);
   } else if (strcasecmp(arg, "SHOW") == 0) {
     requestBannerNow();
     return false;
   } else {
-    Serial.println("[CONSOLE] Usage: BANNER [ADD text|SET n text|DEL n|CLEAR|ON|OFF|EVERY min|"
+    Serial.println("[CONSOLE] Usage: BANNER [ADD text|SET n text|DEL n|CLEAR|ON|OFF|EVERY [n] min|"
                    "SPEED px/s|SHOW]");
     return false;
   }

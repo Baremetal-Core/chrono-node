@@ -26,13 +26,16 @@ constexpr const char* kKeyWxCycle = "wx_cycle";
 constexpr const char* kKeyRecent = "wx_recent";
 constexpr const char* kKeyHour12 = "hour12";
 constexpr const char* kKeyBannerOn = "bn_on";
-constexpr const char* kKeyBannerEvery = "bn_every";
+constexpr const char* kKeyBannerEvery = "bn_every";  // default for new messages
+constexpr const char* kKeyBannerEvs = "bn_evs";      // per-message period, one byte each
 constexpr const char* kKeyBannerSpeed = "bn_speed";
 constexpr const char* kKeyBannerText = "bn_text";  // all messages, '\n'-separated
 constexpr const char* kKeyPhotoEvery = "ph_every";
 
 char banners[config::kBannerMaxMessages][config::kBannerMaxLen + 1] = {};
+uint8_t bannerEvs[config::kBannerMaxMessages] = {};
 int bannerN = 0;
+uint32_t bannerVer = 1;
 bool bannerOn = true;
 uint8_t bannerEvery = config::kDefaultBannerEveryMin;
 uint8_t bannerPxPerS = config::kDefaultBannerSpeed;
@@ -136,6 +139,12 @@ void begin() {
     if (prefs.isKey(kKeyBannerText)) {
       String joined = prefs.getString(kKeyBannerText, "");
       splitBanners(joined.c_str());
+    }
+    // Before per-message periods, one period applied to all messages.
+    for (int i = 0; i < bannerN; ++i) bannerEvs[i] = bannerEvery;
+    if (prefs.isKey(kKeyBannerEvs) && prefs.getBytesLength(kKeyBannerEvs) == (size_t)bannerN) {
+      prefs.getBytes(kKeyBannerEvs, bannerEvs, bannerN);
+      for (int i = 0; i < bannerN; ++i) bannerEvs[i] = min<uint8_t>(bannerEvs[i], 60);
     }
     if (prefs.isKey(kKeyRecent)) {
       size_t len = prefs.getBytesLength(kKeyRecent);
@@ -297,8 +306,14 @@ bool saveBanners() {
     if (i) joined += '\n';
     joined += banners[i];
   }
+  ++bannerVer;
   return save([&](Preferences& p) {
-    return joined.length() ? p.putString(kKeyBannerText, joined) > 0 : p.remove(kKeyBannerText) || true;
+    if (!joined.length()) {
+      p.remove(kKeyBannerText);
+      p.remove(kKeyBannerEvs);
+      return true;
+    }
+    return p.putString(kKeyBannerText, joined) > 0 && p.putBytes(kKeyBannerEvs, bannerEvs, bannerN) > 0;
   });
 }
 
@@ -310,6 +325,7 @@ const char* bannerText(int index) { return index >= 0 && index < bannerN ? banne
 
 bool addBanner(const char* text) {
   if (bannerN >= config::kBannerMaxMessages || !validBanner(text)) return false;
+  bannerEvs[bannerN] = bannerEvery;
   strlcpy(banners[bannerN++], text, sizeof(banners[0]));
   return saveBanners();
 }
@@ -322,7 +338,10 @@ bool setBanner(int index, const char* text) {
 
 bool removeBanner(int index) {
   if (index < 0 || index >= bannerN) return false;
-  for (int i = index; i < bannerN - 1; ++i) memcpy(banners[i], banners[i + 1], sizeof(banners[0]));
+  for (int i = index; i < bannerN - 1; ++i) {
+    memcpy(banners[i], banners[i + 1], sizeof(banners[0]));
+    bannerEvs[i] = bannerEvs[i + 1];
+  }
   --bannerN;
   return saveBanners();
 }
@@ -340,14 +359,25 @@ bool setBannerEnabled(bool enabled) {
   return ok;
 }
 
-uint8_t bannerEveryMinutes() { return bannerEvery; }
-
-bool setBannerEveryMinutes(uint8_t minutes) {
-  if (minutes > 60) return false;
-  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyBannerEvery, minutes) > 0; });
-  if (ok) bannerEvery = minutes;
-  return ok;
+uint8_t bannerEveryMinutes(int index) {
+  return index >= 0 && index < bannerN ? bannerEvs[index] : bannerEvery;
 }
+
+bool setBannerEveryMinutes(int index, uint8_t minutes) {
+  if (minutes > 60 || index >= bannerN) return false;
+  if (index >= 0) {
+    bannerEvs[index] = minutes;
+    return saveBanners();
+  }
+  // All messages, and the default for new ones.
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyBannerEvery, minutes) > 0; });
+  if (!ok) return false;
+  bannerEvery = minutes;
+  for (int i = 0; i < bannerN; ++i) bannerEvs[i] = minutes;
+  return saveBanners();
+}
+
+uint32_t bannerVersion() { return bannerVer; }
 
 uint8_t photoEveryMinutes() { return photoEvery; }
 

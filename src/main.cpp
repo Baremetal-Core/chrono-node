@@ -67,8 +67,11 @@ uint32_t photoPausedUntilMs = 0;  // after a photo failed to decode
 uint32_t lastTouchMs = 0;
 uint32_t lastInfoMs = 0;
 
-// Scrolling banner: rotates through the messages, periodically or continuously.
-int bannerIndex = 0;
+// Scrolling banner. Each message has its own period: messages that come due
+// together scroll one after another; continuous ones fill the time between.
+int bannerIndex = 0;          // next message for SHOW and the continuous rotation
+uint32_t bannerDue = 0;       // bit i: message i is due
+uint32_t bannerSeenVer = 0;   // settings::bannerVersion() the due bits refer to
 bool bannerRequested = false;
 bool bannerWasActive = false;
 uint32_t bannerNextMs = 0;
@@ -178,20 +181,40 @@ void updateBanner(const struct tm& local) {
   if (bannerWasActive && !active) bannerNextMs = millis() + config::kBannerGapMs;
   bannerWasActive = active;
   const int count = settings::bannerCount();
-  if (active || count == 0 || (!settings::bannerEnabled() && !bannerRequested)) return;
-
-  const uint8_t every = settings::bannerEveryMinutes();
-  bool due = bannerRequested;
-  if (every == 0) {
-    due |= (int32_t)(millis() - bannerNextMs) >= 0;
-  } else {
-    due |= local.tm_sec == config::kBannerStartSecond &&
-           (local.tm_hour * 60 + local.tm_min) % every == 0;
+  if (settings::bannerVersion() != bannerSeenVer) {
+    bannerSeenVer = settings::bannerVersion();
+    bannerDue = 0;  // indices may have moved
   }
-  if (!due) return;
-  const int i = bannerIndex % count;
-  if (display.startBanner(settings::bannerText(i), settings::bannerSpeed())) {
-    bannerIndex = i + 1;
+  const bool enabled = settings::bannerEnabled();
+  if (enabled && local.tm_sec == config::kBannerStartSecond) {
+    const int minute = local.tm_hour * 60 + local.tm_min;
+    for (int i = 0; i < count; ++i) {
+      const uint8_t every = settings::bannerEveryMinutes(i);
+      if (every > 0 && minute % every == 0) bannerDue |= 1u << i;
+    }
+  }
+  if (active || count == 0 || (!enabled && !bannerRequested)) return;
+
+  int pick = -1;
+  if (bannerRequested) {
+    pick = bannerIndex % count;
+  } else if ((int32_t)(millis() - bannerNextMs) < 0) {
+    return;  // pause between messages
+  } else if (bannerDue) {
+    for (int i = 0; i < count && pick < 0; ++i) {
+      if (bannerDue & (1u << i)) pick = i;
+    }
+  } else {
+    for (int n = 0; n < count && pick < 0; ++n) {
+      const int i = (bannerIndex + n) % count;
+      if (settings::bannerEveryMinutes(i) == 0) pick = i;
+    }
+  }
+  if (pick < 0) return;
+  if (display.startBanner(settings::bannerText(pick), settings::bannerSpeed())) {
+    Serial.printf("[BANNER] Message %d%s\n", pick + 1, bannerRequested ? " (requested)" : "");
+    bannerDue &= ~(1u << pick);
+    bannerIndex = pick + 1;
     bannerRequested = false;
     bannerWasActive = true;
   }

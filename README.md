@@ -204,11 +204,12 @@ uv run --with cryptography tools/gen_ca_bundle.py
 
 Your own short messages scroll across the bottom line of the clock face.
 
-- **Messages:** up to 5, each up to 120 bytes of UTF-8. They're shown one at a time in rotation.
+- **Messages:** up to 5, each up to 120 bytes of UTF-8.
 - **Characters:** Latin and Vietnamese letters are supported (e.g. "Chúc mừng năm mới"), plus
   curly quotes, dashes, • and …. Emoji and other scripts aren't in the font, so they're skipped.
-- **Timing:** by default a message scrolls every minute, starting at second 15. You can choose
-  every 2–60 minutes, or continuously (one after another with a 2 s pause).
+- **Timing:** each message has its own timer: every 1–60 minutes (at second 15), or non-stop.
+  Messages due in the same minute scroll one after another with a 2 s pause. Non-stop
+  messages take turns in between. New messages start at every minute.
 - **Speed:** slow (45 px/s), normal (70 px/s) or fast (110 px/s). The text uses the clock's
   time-of-day colours and fades out at both edges.
 - **Sharing the screen:**
@@ -217,8 +218,8 @@ Your own short messages scroll across the bottom line of the clock face.
   - Switching screens stops the current message. This includes the forecast cycle and
     swiping.
   - The banner keeps running at night, in the night colours.
-- **Web page:** the Banner section turns it on or off, sets how often and how fast, and edits
-  the messages. **Save messages** replaces the whole list; **Show now** scrolls the next
+- **Web page:** the Banner section turns it on or off, sets the speed, and edits the messages
+  and each one's timer. **Save messages** replaces the whole list; **Show now** scrolls the next
   message immediately.
 - **Serial console:** `BANNER` commands (listed below).
 
@@ -441,7 +442,8 @@ BANNER ADD Chúc mừng năm mới!   # add a message (up to 5, 120 bytes each)
 BANNER SET 2 Họp lúc 10:00  # replace message 2
 BANNER DEL 2                # delete message 2 (BANNER CLEAR deletes all)
 BANNER ON                   # enable the banner (BANNER OFF to disable)
-BANNER EVERY 5              # scroll every 5 min (0 = continuously, 1-60)
+BANNER EVERY 2 5            # message 2 every 5 min (0 = non-stop, 1-60)
+BANNER EVERY 5              # every message (and new ones) every 5 min
 BANNER SPEED 70             # scroll speed in px/s (20-200)
 BANNER SHOW                 # scroll the next message now
 PHOTO                       # stored photos, sizes, slideshow period, storage use

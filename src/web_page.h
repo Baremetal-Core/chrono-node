@@ -46,13 +46,10 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 
 <section><h2>Banner</h2>
 <div class="row"><label>Scrolling banner</label><select id="bnon"><option value="ON">On</option><option value="OFF">Off</option></select></div>
-<div class="row"><label>How often</label><select id="bnevery"><option value="0">Continuously</option><option value="1">Every minute</option>
-<option value="2">Every 2 min</option><option value="5">Every 5 min</option><option value="10">Every 10 min</option><option value="15">Every 15 min</option>
-<option value="30">Every 30 min</option><option value="60">Every hour</option></select></div>
 <div class="row"><label>Speed</label><select id="bnspeed"><option value="45">Slow</option><option value="70">Normal</option><option value="110">Fast</option></select></div>
 <div id="bnlist"></div>
 <div class="row"><button id="bnadd">+ Add message</button><button class="primary" id="bnsave">Save messages</button><button id="bnshow">Show now</button></div>
-<div class="muted">Up to 5 messages, shown one at a time in rotation. Latin and Vietnamese letters are supported (e.g. "Ch&uacute;c m&#7915;ng n&#259;m m&#7899;i"); emoji are not.</div>
+<div class="muted">Up to 5 messages, each with its own timer: messages due at the same time scroll one after another, and non-stop ones fill the time in between. Latin and Vietnamese letters are supported (e.g. "Ch&uacute;c m&#7915;ng n&#259;m m&#7899;i"); emoji are not.</div>
 </section>
 
 <section><h2>Photos</h2>
@@ -136,8 +133,8 @@ $("bday").value=S.brightness_day;$("bdayv").textContent=S.brightness_day+"%";$("
 $("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("cyc").value=S.forecast_cycle?"ON":"OFF";
 const known=TZ.find(z=>z[1]===S.timezone);$("tz").value=known?known[0]:"custom";$("tzcustom").value=S.timezone;$("tzcustomrow").style.display=known?"none":"flex";
 $("ntp").value=S.ntp_server;
-const B=S.banner;$("bnon").value=B.enabled?"ON":"OFF";selVal("bnevery",B.every_min,"Every "+B.every_min+" min");selVal("bnspeed",B.speed,B.speed+" px/s");
-if(!document.activeElement||!document.activeElement.classList.contains("bnmsg")){$("bnlist").innerHTML="";B.messages.forEach(m=>bnRow(m));if(!B.messages.length)bnRow("")}phList(S.photos);$("loccur").textContent=`Current: ${S.location.name} (${S.location.lat}, ${S.location.lon})`;
+const B=S.banner;$("bnon").value=B.enabled?"ON":"OFF";selVal("bnspeed",B.speed,B.speed+" px/s");
+if(!document.activeElement||!document.activeElement.closest(".bnrow")){$("bnlist").innerHTML="";B.messages.forEach(m=>bnRow(m.text,m.every_min));if(!B.messages.length)bnRow("",B.every_min)}phList(S.photos);$("loccur").textContent=`Current: ${S.location.name} (${S.location.lat}, ${S.location.lon})`;
 $("recent").innerHTML=S.recent_locations.map(r=>`<button data-c="${r.lat} ${r.lon} ${esc(r.name)}">${esc(r.name)} <small>${r.lat}, ${r.lon}</small></button>`).join("");}
 let phSig="";
 function phList(P){selVal("phevery",P.every_min,"Every "+P.every_min+" min");const n=P.items.length;
@@ -179,15 +176,20 @@ const fd=new FormData();fd.append("photo",b,"photo.jpg");$("phup").disabled=true
 try{const r=await fetch("/api/photo",{method:"POST",body:fd});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);
 $("phedit").style.display="none";ph.img=null;await post("PHOTO SHOW "+d.slot);toast(`Saved (${Math.round(b.size/1024)} KB), showing it on the clock`);setTimeout(loadSettings,600)}
 catch(e){toast("Upload failed: "+e.message)}finally{$("phup").disabled=false}};
-function bnRow(t){const d=document.createElement("div");d.className="row";d.innerHTML='<input class="bnmsg" maxlength="120" style="flex:1 1 260px"><button class="danger">&#x2715;</button>';
-d.querySelector("input").value=t||"";d.querySelector("button").onclick=()=>d.remove();$("bnlist").appendChild(d)}
+const BNEV=[[0,"Non-stop"],[1,"Every minute"],[2,"Every 2 min"],[5,"Every 5 min"],[10,"Every 10 min"],[15,"Every 15 min"],[30,"Every 30 min"],[60,"Every hour"]];
+function bnRow(t,ev){const d=document.createElement("div");d.className="row bnrow";
+d.innerHTML='<input class="bnmsg" maxlength="120" style="flex:1 1 220px"><select class="bnev">'+BNEV.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("")+'</select><button class="danger">&#x2715;</button>';
+d.querySelector("input").value=t||"";const s=d.querySelector("select"),v=String(ev??5);
+if(![...s.options].some(o=>o.value===v))s.add(new Option("Every "+v+" min",v));s.value=v;
+d.querySelector("button").onclick=()=>d.remove();$("bnlist").appendChild(d)}
 async function post(c){const r=await fetch("/api/command",{method:"POST",headers:{"Content-Type":"text/plain"},body:c});if(!r.ok)throw new Error((await r.json()).error||r.status)}
-$("bnadd").onclick=()=>{if(document.querySelectorAll(".bnmsg").length<5)bnRow("");else toast("Up to 5 messages")};
-$("bnsave").onclick=async()=>{const msgs=[...document.querySelectorAll(".bnmsg")].map(i=>i.value.trim()).filter(Boolean);
-const enc=new TextEncoder();if(msgs.some(m=>enc.encode(m).length>120)){toast("A message is too long (120 bytes max)");return}
-try{await post("BANNER CLEAR");for(const m of msgs)await post("BANNER ADD "+m);toast("Banner saved");setTimeout(loadSettings,600)}catch(e){toast("Error: "+e.message)}};
+$("bnadd").onclick=()=>{if(document.querySelectorAll(".bnmsg").length<5)bnRow("",S.banner.every_min);else toast("Up to 5 messages")};
+$("bnsave").onclick=async()=>{const msgs=[...document.querySelectorAll(".bnrow")].map(r=>({t:r.querySelector(".bnmsg").value.trim(),e:r.querySelector(".bnev").value})).filter(m=>m.t);
+const enc=new TextEncoder();if(msgs.some(m=>enc.encode(m.t).length>120)){toast("A message is too long (120 bytes max)");return}
+try{await post("BANNER CLEAR");for(const[i,m]of msgs.entries()){await post("BANNER ADD "+m.t);await post(`BANNER EVERY ${i+1} ${m.e}`)}
+toast("Banner saved");setTimeout(loadSettings,600)}catch(e){toast("Error: "+e.message)}};
 $("bnshow").onclick=()=>cmd("BANNER SHOW","Scrolling now");
-$("bnon").onchange=e=>cmd("BANNER "+e.target.value);$("bnevery").onchange=e=>cmd("BANNER EVERY "+e.target.value);$("bnspeed").onchange=e=>cmd("BANNER SPEED "+e.target.value);
+$("bnon").onchange=e=>cmd("BANNER "+e.target.value);$("bnspeed").onchange=e=>cmd("BANNER SPEED "+e.target.value);
 $("tz").innerHTML=TZ.map(z=>`<option value="${z[0]}">${z[0].replace("_"," ")}</option>`).join("")+'<option value="custom">Custom POSIX string...</option>';
 $("bday").oninput=e=>$("bdayv").textContent=e.target.value+"%";$("bnight").oninput=e=>$("bnightv").textContent=e.target.value+"%";
 $("bday").onchange=e=>cmd("BRIGHT DAY "+e.target.value);$("bnight").onchange=e=>cmd("BRIGHT NIGHT "+e.target.value);

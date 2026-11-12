@@ -138,10 +138,14 @@ void handleSettings() {
   doc["forecast_cycle"] = settings::weatherCycle();
   JsonObject banner = doc["banner"].to<JsonObject>();
   banner["enabled"] = settings::bannerEnabled();
-  banner["every_min"] = settings::bannerEveryMinutes();
+  banner["every_min"] = settings::bannerEveryMinutes();  // default for new messages
   banner["speed"] = settings::bannerSpeed();
   JsonArray msgs = banner["messages"].to<JsonArray>();
-  for (int i = 0; i < settings::bannerCount(); ++i) msgs.add(settings::bannerText(i));
+  for (int i = 0; i < settings::bannerCount(); ++i) {
+    JsonObject m = msgs.add<JsonObject>();
+    m["text"] = settings::bannerText(i);
+    m["every_min"] = settings::bannerEveryMinutes(i);
+  }
   JsonObject ph = doc["photos"].to<JsonObject>();
   ph["available"] = photos::available();
   ph["every_min"] = settings::photoEveryMinutes();
