@@ -37,6 +37,17 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div class="row"><label>Forecast screen every 2 min</label><select id="cyc"><option value="ON">On</option><option value="OFF">Off</option></select></div>
 </section>
 
+<section><h2>Banner</h2>
+<div class="row"><label>Scrolling banner</label><select id="bnon"><option value="ON">On</option><option value="OFF">Off</option></select></div>
+<div class="row"><label>How often</label><select id="bnevery"><option value="0">Continuously</option><option value="1">Every minute</option>
+<option value="2">Every 2 min</option><option value="5">Every 5 min</option><option value="10">Every 10 min</option><option value="15">Every 15 min</option>
+<option value="30">Every 30 min</option><option value="60">Every hour</option></select></div>
+<div class="row"><label>Speed</label><select id="bnspeed"><option value="45">Slow</option><option value="70">Normal</option><option value="110">Fast</option></select></div>
+<div id="bnlist"></div>
+<div class="row"><button id="bnadd">+ Add message</button><button class="primary" id="bnsave">Save messages</button><button id="bnshow">Show now</button></div>
+<div class="muted">Up to 5 messages, shown one at a time in rotation. Latin and Vietnamese letters are supported (e.g. "Ch&uacute;c m&#7915;ng n&#259;m m&#7899;i"); emoji are not.</div>
+</section>
+
 <section><h2>Time</h2>
 <div class="row"><label>Time zone</label><select id="tz"></select><button id="tzdetect">Detect</button></div>
 <div class="row" id="tzcustomrow"><label>POSIX TZ string</label><input id="tzcustom" placeholder="e.g. <+07>-7"><button id="tzsave">Save</button></div>
@@ -75,6 +86,7 @@ const TZ=[["Asia/Ho_Chi_Minh","<+07>-7"],["Asia/Bangkok","<+07>-7"],["Asia/Jakar
 ["America/Chicago","CST6CDT,M3.2.0,M11.1.0"],["America/Denver","MST7MDT,M3.2.0,M11.1.0"],["America/Phoenix","MST7"],
 ["America/Los_Angeles","PST8PDT,M3.2.0,M11.1.0"],["America/Sao_Paulo","<-03>3"],["UTC","UTC0"]];
 const $=id=>document.getElementById(id);
+const selVal=(id,v,label)=>{const e=$(id);v=String(v);if(![...e.options].some(o=>o.value===v))e.add(new Option(label,v));e.value=v};
 function toast(t){const e=$("toast");e.textContent=t;e.classList.add("show");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("show"),2200)}
 async function cmd(c,msg){const r=await fetch("/api/command",{method:"POST",headers:{"Content-Type":"text/plain"},body:c});
 if(r.ok){toast(msg||"Saved");setTimeout(loadSettings,500);setTimeout(loadStatus,700)}else{toast("Error: "+((await r.json()).error||r.status))}}
@@ -93,8 +105,19 @@ async function loadSettings(){S=await(await fetch("/api/settings")).json();
 $("bday").value=S.brightness_day;$("bdayv").textContent=S.brightness_day+"%";$("bnight").value=S.brightness_night;$("bnightv").textContent=S.brightness_night+"%";
 $("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("cyc").value=S.forecast_cycle?"ON":"OFF";
 const known=TZ.find(z=>z[1]===S.timezone);$("tz").value=known?known[0]:"custom";$("tzcustom").value=S.timezone;$("tzcustomrow").style.display=known?"none":"flex";
-$("ntp").value=S.ntp_server;$("loccur").textContent=`Current: ${S.location.name} (${S.location.lat}, ${S.location.lon})`;
+$("ntp").value=S.ntp_server;
+const B=S.banner;$("bnon").value=B.enabled?"ON":"OFF";selVal("bnevery",B.every_min,"Every "+B.every_min+" min");selVal("bnspeed",B.speed,B.speed+" px/s");
+if(!document.activeElement||!document.activeElement.classList.contains("bnmsg")){$("bnlist").innerHTML="";B.messages.forEach(m=>bnRow(m));if(!B.messages.length)bnRow("")}$("loccur").textContent=`Current: ${S.location.name} (${S.location.lat}, ${S.location.lon})`;
 $("recent").innerHTML=S.recent_locations.map(r=>`<button data-c="${r.lat} ${r.lon} ${esc(r.name)}">${esc(r.name)} <small>${r.lat}, ${r.lon}</small></button>`).join("");}
+function bnRow(t){const d=document.createElement("div");d.className="row";d.innerHTML='<input class="bnmsg" maxlength="120" style="flex:1 1 260px"><button class="danger">&#x2715;</button>';
+d.querySelector("input").value=t||"";d.querySelector("button").onclick=()=>d.remove();$("bnlist").appendChild(d)}
+async function post(c){const r=await fetch("/api/command",{method:"POST",headers:{"Content-Type":"text/plain"},body:c});if(!r.ok)throw new Error((await r.json()).error||r.status)}
+$("bnadd").onclick=()=>{if(document.querySelectorAll(".bnmsg").length<5)bnRow("");else toast("Up to 5 messages")};
+$("bnsave").onclick=async()=>{const msgs=[...document.querySelectorAll(".bnmsg")].map(i=>i.value.trim()).filter(Boolean);
+const enc=new TextEncoder();if(msgs.some(m=>enc.encode(m).length>120)){toast("A message is too long (120 bytes max)");return}
+try{await post("BANNER CLEAR");for(const m of msgs)await post("BANNER ADD "+m);toast("Banner saved");setTimeout(loadSettings,600)}catch(e){toast("Error: "+e.message)}};
+$("bnshow").onclick=()=>cmd("BANNER SHOW","Scrolling now");
+$("bnon").onchange=e=>cmd("BANNER "+e.target.value);$("bnevery").onchange=e=>cmd("BANNER EVERY "+e.target.value);$("bnspeed").onchange=e=>cmd("BANNER SPEED "+e.target.value);
 $("tz").innerHTML=TZ.map(z=>`<option value="${z[0]}">${z[0].replace("_"," ")}</option>`).join("")+'<option value="custom">Custom POSIX string...</option>';
 $("bday").oninput=e=>$("bdayv").textContent=e.target.value+"%";$("bnight").oninput=e=>$("bnightv").textContent=e.target.value+"%";
 $("bday").onchange=e=>cmd("BRIGHT DAY "+e.target.value);$("bnight").onchange=e=>cmd("BRIGHT NIGHT "+e.target.value);

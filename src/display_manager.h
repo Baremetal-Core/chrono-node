@@ -64,6 +64,12 @@ class DisplayManager {
   // Bottom notice line; nullptr clears it. Redrawn only when changed.
   void setNotice(const char* text, NoticeKind kind);
 
+  // Scrolls `text` (UTF-8) once across the clock face's bottom line in the
+  // time-of-day colours. Returns false if it can't start now (another screen,
+  // or a notice is showing). Animated by tick().
+  bool startBanner(const char* text, uint8_t pxPerSecond);
+  bool bannerActive() const { return bannerActive_; }
+
   // Weather shown on the clock face's bottom line when there is no notice.
   // Pass nullptr to clear. `stale` dims it and marks it as old.
   void setWeather(const weather::Data* data, bool stale);
@@ -116,6 +122,7 @@ class DisplayManager {
   void drawStatusBar();
   void drawNotice();
   void drawWeatherLine();
+  void drawBanner(uint32_t now);
   void drawDate(const struct tm& local);
   void drawColon();
   void drawBigDigit(int index, float progress);
@@ -160,5 +167,11 @@ class DisplayManager {
   uint32_t testUntilMs_ = 0;
   bool hour12_ = false;
   int16_t timeOffset_ = 0;
+  bool bannerOk_ = false;
+  bool bannerActive_ = false;
+  char bannerText_[128] = "";
+  int16_t bannerW_ = 0;
+  uint8_t bannerSpeed_ = 70;
+  uint32_t bannerStartMs_ = 0;
   bool pm_ = false;
 };

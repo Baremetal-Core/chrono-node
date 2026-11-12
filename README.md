@@ -194,6 +194,32 @@ A USB upload (`pio run -t upload`) always resets the boot slot to `app0`.
 uv run --with cryptography tools/gen_ca_bundle.py
 ```
 
+## Scrolling banner
+
+![Banner on the clock face](docs/images/banner.png)
+
+Your own short messages scroll across the bottom line of the clock face.
+
+- **Messages:** up to 5, each up to 120 bytes of UTF-8. They're shown one at a time in rotation.
+- **Characters:** Latin and Vietnamese letters are supported (e.g. "Chúc mừng năm mới"), plus
+  curly quotes, dashes, • and …. Emoji and other scripts aren't in the font, so they're skipped.
+- **Timing:** by default a message scrolls every minute, starting at second 15. You can choose
+  every 2–60 minutes, or continuously (one after another with a 2 s pause).
+- **Speed:** slow (45 px/s), normal (70 px/s) or fast (110 px/s). The text uses the clock's
+  time-of-day colours and fades out at both edges.
+- **Sharing the screen:**
+  - While a message scrolls, it replaces the weather line.
+  - Notices (Wi-Fi setup, update PIN, RTC warnings) take priority over the banner.
+  - Switching screens stops the current message. This includes the forecast cycle and
+    swiping.
+  - The banner keeps running at night, in the night colours.
+- **Web page:** the Banner section turns it on or off, sets how often and how fast, and edits
+  the messages. **Save messages** replaces the whole list; **Show now** scrolls the next
+  message immediately.
+- **Serial console:** `BANNER` commands (listed below).
+
+![Banner section of the web page](docs/images/web-banner.png)
+
 ## Brightness and night mode
 
 - The backlight (GPIO21) is driven by 12-bit PWM with gamma correction, so 50% looks like
@@ -206,7 +232,7 @@ uv run --with cryptography tools/gen_ca_bundle.py
   in NVS (`BRIGHT`, `NIGHT` commands below).
 - There's no automatic brightness. The CYD's on-board light sensor (LDR on GPIO34) read 0
   under any light on this unit, whether covered or under a phone flashlight. An external I2C
-  light sensor could add it later (see roadmap M12).
+  light sensor could add it later (see roadmap M13).
 
 Fonts are generated from the Inter variable font (SIL Open Font License, see
 `tools/fonts/OFL.txt`) into `src/fonts/*.h` by `tools/gen_fonts.py`. The headers are
@@ -364,6 +390,14 @@ WEATHER SHOW                # show the forecast screen for 30 s
 WEATHER CITY Da Nang        # look up a city and save it as the location
 WEATHER LOC 10.82 106.63 Home   # save a location by coordinates (name optional)
 WEATHER CYCLE OFF           # stop the periodic forecast screen (ON to re-enable)
+BANNER                      # banner settings and messages
+BANNER ADD Chúc mừng năm mới!   # add a message (up to 5, 120 bytes each)
+BANNER SET 2 Họp lúc 10:00  # replace message 2
+BANNER DEL 2                # delete message 2 (BANNER CLEAR deletes all)
+BANNER ON                   # enable the banner (BANNER OFF to disable)
+BANNER EVERY 5              # scroll every 5 min (0 = continuously, 1-60)
+BANNER SPEED 70             # scroll speed in px/s (20-200)
+BANNER SHOW                 # scroll the next message now
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
 SCREEN SETTINGS             # go to CLOCK, FORECAST, INFO or SETTINGS
 TOUCH                       # print raw/mapped touch readings for 10 s
@@ -424,7 +458,7 @@ src/time_utils.*                UTC <-> local conversion using the POSIX TZ
 src/settings.*                  NVS-backed settings (timezone, NTP server)
 src/net_manager.*               Wi-Fi task: connect/backoff, WiFiManager portal, mDNS, SNTP
 src/clock_sync.*                DS3231 <-> system clock <-> NTP discipline
-src/display_manager.*           UI: status bar, rolling digits, minute bar, date, notices, SHOT
+src/display_manager.*           UI: status bar, rolling digits, minute bar, date, notices, banner, SHOT
 src/ui_theme.*                  day/night UI colours and time-of-day gradient palettes
 src/backlight.*                 gamma-corrected PWM backlight with fades
 src/weather.*                   Open-Meteo fetch/parse (HTTPS + ArduinoJson), geocoding
@@ -441,7 +475,7 @@ src/fonts/*.h                   generated Inter smooth fonts (do not edit)
 tools/gen_fonts.py              font generator (FreeType -> TFT_eSPI VLW arrays)
 tools/screenshot.py             screen capture over USB serial
 tools/fonts/                    Inter variable font + OFL licence
-src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, TOUCH, SCREEN, ...)
+src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, TOUCH, SCREEN, ...)
 ```
 
 ## Troubleshooting

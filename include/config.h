@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.10.0";
+constexpr const char* kFirmwareVersion = "0.11.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -81,6 +81,14 @@ constexpr uint32_t kScreenFadeInMs = 300;
 // ---- Firmware updates ----
 constexpr uint32_t kOtaConfirmAfterMs = 60000;  // run this long before confirming a new image
 constexpr uint32_t kOtaPinValidMs = 120000;
+
+// ---- Scrolling banner ----
+constexpr int kBannerMaxMessages = 5;
+constexpr size_t kBannerMaxLen = 120;           // bytes of UTF-8 per message
+constexpr uint8_t kDefaultBannerEveryMin = 1;   // 0 = continuous
+constexpr uint8_t kDefaultBannerSpeed = 70;     // pixels per second
+constexpr int kBannerStartSecond = 15;          // periodic banners start at this second
+constexpr uint32_t kBannerGapMs = 2000;         // pause between messages when continuous
 
 // DS3231 die temperature (shown in the status bar) is read this often.
 constexpr uint32_t kTemperatureIntervalMs = 60000;

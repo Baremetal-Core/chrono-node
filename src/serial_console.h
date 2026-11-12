@@ -19,6 +19,11 @@
 //   WEATHER LOC <lat> <lon> [name]  save a location by coordinates
 //   WEATHER CYCLE ON|OFF      periodic forecast screen
 //   FORMAT 12|24              12- or 24-hour clock (saved)
+//   BANNER                    list banner messages and settings
+//   BANNER ADD <text>         add a message (UTF-8, up to 120 bytes; max 5)
+//   BANNER SET <n> <text>     replace message n;  BANNER DEL <n>;  BANNER CLEAR
+//   BANNER ON|OFF             enable/disable;  BANNER EVERY <min> (0 = continuous)
+//   BANNER SPEED <px/s>       scroll speed (20-200);  BANNER SHOW: scroll the next one now
 //   TOUCH                     print touch readings for 10 s
 //   TOUCH CAL                 on-screen touch calibration (saved)
 //   SCREEN <name>             go to CLOCK, FORECAST, INFO or SETTINGS

@@ -53,6 +53,20 @@ bool recentLocation(int index, char* name, size_t nameLen, float& lat, float& lo
 bool hour12();
 bool setHour12(bool enabled);
 
+// Scrolling banner messages (UTF-8), shown in rotation on the clock face.
+int bannerCount();
+const char* bannerText(int index);
+bool addBanner(const char* text);
+bool setBanner(int index, const char* text);
+bool removeBanner(int index);
+bool clearBanners();
+bool bannerEnabled();
+bool setBannerEnabled(bool enabled);
+uint8_t bannerEveryMinutes();  // 0 = continuous
+bool setBannerEveryMinutes(uint8_t minutes);
+uint8_t bannerSpeed();         // pixels per second
+bool setBannerSpeed(uint8_t pxPerSecond);
+
 // Periodic forecast screen on/off.
 bool weatherCycle();
 bool setWeatherCycle(bool enabled);

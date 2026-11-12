@@ -58,6 +58,12 @@ bool autoForecast = false;  // forecast shown by the cycle or WEATHER SHOW, not 
 uint32_t lastTouchMs = 0;
 uint32_t lastInfoMs = 0;
 
+// Scrolling banner: rotates through the messages, periodically or continuously.
+int bannerIndex = 0;
+bool bannerRequested = false;
+bool bannerWasActive = false;
+uint32_t bannerNextMs = 0;
+
 // Touching the screen at night raises it to the day level for a while.
 bool nightBoost = false;
 uint32_t nightBoostUntilMs = 0;
@@ -124,6 +130,31 @@ void updateAutoScreens(const struct tm& local, bool hasData) {
   } else if (screenOn != Screen::Clock && !autoForecast &&
              millis() - lastTouchMs >= config::kScreenIdleMs) {
     requestScreen(Screen::Clock);
+  }
+}
+
+// Called every second while the clock face is showing.
+void updateBanner(const struct tm& local) {
+  const bool active = display.bannerActive();
+  if (bannerWasActive && !active) bannerNextMs = millis() + config::kBannerGapMs;
+  bannerWasActive = active;
+  const int count = settings::bannerCount();
+  if (active || count == 0 || (!settings::bannerEnabled() && !bannerRequested)) return;
+
+  const uint8_t every = settings::bannerEveryMinutes();
+  bool due = bannerRequested;
+  if (every == 0) {
+    due |= (int32_t)(millis() - bannerNextMs) >= 0;
+  } else {
+    due |= local.tm_sec == config::kBannerStartSecond &&
+           (local.tm_hour * 60 + local.tm_min) % every == 0;
+  }
+  if (!due) return;
+  const int i = bannerIndex % count;
+  if (display.startBanner(settings::bannerText(i), settings::bannerSpeed())) {
+    bannerIndex = i + 1;
+    bannerRequested = false;
+    bannerWasActive = true;
   }
 }
 
@@ -446,6 +477,7 @@ void pollRtc(bool forceLog) {
   if (screenOn == Screen::Clock && !transitioning) {
     display.showTime(local);
     updateStatus();
+    updateBanner(local);
   }
   if (forceLog || config::kLogEverySecond) logTime(utc);
 
@@ -473,6 +505,11 @@ bool requestScreenByName(const char* name) {
   lastTouchMs = millis();
   requestScreen(s);
   return true;
+}
+
+void requestBannerNow() {
+  bannerRequested = true;
+  if (screenOn != Screen::Clock) requestScreenByName("clock");
 }
 
 void setup() {
@@ -549,7 +586,7 @@ void loop() {
   display.tick();
 
   bool changed = serialConsolePoll(rtc, display);
-  char webCommand[96];
+  char webCommand[200];
   while (web::nextCommand(webCommand, sizeof(webCommand))) {
     changed |= serialConsoleExecute(rtc, display, webCommand);
   }

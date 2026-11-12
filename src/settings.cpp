@@ -25,6 +25,33 @@ constexpr const char* kKeyPlace = "wx_place";
 constexpr const char* kKeyWxCycle = "wx_cycle";
 constexpr const char* kKeyRecent = "wx_recent";
 constexpr const char* kKeyHour12 = "hour12";
+constexpr const char* kKeyBannerOn = "bn_on";
+constexpr const char* kKeyBannerEvery = "bn_every";
+constexpr const char* kKeyBannerSpeed = "bn_speed";
+constexpr const char* kKeyBannerText = "bn_text";  // all messages, '\n'-separated
+
+char banners[config::kBannerMaxMessages][config::kBannerMaxLen + 1] = {};
+int bannerN = 0;
+bool bannerOn = true;
+uint8_t bannerEvery = config::kDefaultBannerEveryMin;
+uint8_t bannerPxPerS = config::kDefaultBannerSpeed;
+
+void splitBanners(const char* joined) {
+  bannerN = 0;
+  const char* p = joined;
+  while (*p && bannerN < config::kBannerMaxMessages) {
+    const char* nl = strchr(p, '\n');
+    size_t len = nl ? (size_t)(nl - p) : strlen(p);
+    if (len > 0) {
+      size_t n = len < config::kBannerMaxLen ? len : config::kBannerMaxLen;
+      memcpy(banners[bannerN], p, n);
+      banners[bannerN][n] = '\0';
+      ++bannerN;
+    }
+    if (!nl) break;
+    p = nl + 1;
+  }
+}
 
 struct RecentLocation {
   char name[config::kPlaceMaxLen + 1];
@@ -100,6 +127,13 @@ void begin() {
     if (prefs.isKey(kKeyPlace)) prefs.getString(kKeyPlace, placeName, sizeof(placeName));
     wxCycle = prefs.getBool(kKeyWxCycle, wxCycle);
     use12h = prefs.getBool(kKeyHour12, use12h);
+    bannerOn = prefs.getBool(kKeyBannerOn, bannerOn);
+    bannerEvery = prefs.getUChar(kKeyBannerEvery, bannerEvery);
+    bannerPxPerS = prefs.getUChar(kKeyBannerSpeed, bannerPxPerS);
+    if (prefs.isKey(kKeyBannerText)) {
+      String joined = prefs.getString(kKeyBannerText, "");
+      splitBanners(joined.c_str());
+    }
     if (prefs.isKey(kKeyRecent)) {
       size_t len = prefs.getBytesLength(kKeyRecent);
       if (len % sizeof(RecentLocation) == 0 && len <= sizeof(recents)) {
@@ -240,6 +274,85 @@ bool recentLocation(int index, char* name, size_t nameLen, float& outLat, float&
   outLat = recents[index].lat;
   outLon = recents[index].lon;
   return true;
+}
+
+namespace {
+
+// Banner text may hold any printable UTF-8; control characters are rejected.
+bool validBanner(const char* text) {
+  size_t len = strlen(text);
+  if (len == 0 || len > config::kBannerMaxLen) return false;
+  for (size_t i = 0; i < len; ++i) {
+    if (static_cast<unsigned char>(text[i]) < 0x20) return false;
+  }
+  return true;
+}
+
+bool saveBanners() {
+  String joined;
+  for (int i = 0; i < bannerN; ++i) {
+    if (i) joined += '\n';
+    joined += banners[i];
+  }
+  return save([&](Preferences& p) {
+    return joined.length() ? p.putString(kKeyBannerText, joined) > 0 : p.remove(kKeyBannerText) || true;
+  });
+}
+
+}  // namespace
+
+int bannerCount() { return bannerN; }
+
+const char* bannerText(int index) { return index >= 0 && index < bannerN ? banners[index] : ""; }
+
+bool addBanner(const char* text) {
+  if (bannerN >= config::kBannerMaxMessages || !validBanner(text)) return false;
+  strlcpy(banners[bannerN++], text, sizeof(banners[0]));
+  return saveBanners();
+}
+
+bool setBanner(int index, const char* text) {
+  if (index < 0 || index >= bannerN || !validBanner(text)) return false;
+  strlcpy(banners[index], text, sizeof(banners[0]));
+  return saveBanners();
+}
+
+bool removeBanner(int index) {
+  if (index < 0 || index >= bannerN) return false;
+  for (int i = index; i < bannerN - 1; ++i) memcpy(banners[i], banners[i + 1], sizeof(banners[0]));
+  --bannerN;
+  return saveBanners();
+}
+
+bool clearBanners() {
+  bannerN = 0;
+  return saveBanners();
+}
+
+bool bannerEnabled() { return bannerOn; }
+
+bool setBannerEnabled(bool enabled) {
+  bool ok = save([&](Preferences& p) { return p.putBool(kKeyBannerOn, enabled) > 0; });
+  if (ok) bannerOn = enabled;
+  return ok;
+}
+
+uint8_t bannerEveryMinutes() { return bannerEvery; }
+
+bool setBannerEveryMinutes(uint8_t minutes) {
+  if (minutes > 60) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyBannerEvery, minutes) > 0; });
+  if (ok) bannerEvery = minutes;
+  return ok;
+}
+
+uint8_t bannerSpeed() { return bannerPxPerS; }
+
+bool setBannerSpeed(uint8_t pxPerSecond) {
+  if (pxPerSecond < 20 || pxPerSecond > 200) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyBannerSpeed, pxPerSecond) > 0; });
+  if (ok) bannerPxPerS = pxPerSecond;
+  return ok;
 }
 
 bool hour12() { return use12h; }

@@ -18,6 +18,7 @@ TFT_eSPI tft;
 const theme::Colors* C = &theme::kDayColors;  // active UI colours (day or night)
 TFT_eSprite digitSprite(&tft);   // one big digit cell, reused for every digit and the colon
 TFT_eSprite secondsSprite(&tft); // both seconds digits
+TFT_eSprite bannerSprite(&tft);  // scrolling banner on the bottom line
 
 constexpr int16_t kScreenW = 320;
 constexpr int16_t kScreenH = 240;
@@ -162,6 +163,17 @@ bool DisplayManager::begin() {
   secondsSprite.loadFont(font_seconds);
   secondsSprite.setTextColor(TFT_WHITE, TFT_BLACK);
   secondsSprite.setTextDatum(L_BASELINE);
+
+  // The banner is rendered white-on-black every frame, then tinted.
+  bannerSprite.setColorDepth(16);
+  bannerOk_ = bannerSprite.createSprite(kScreenW, kNoticeH) != nullptr;
+  if (bannerOk_) {
+    bannerSprite.loadFont(font_date);
+    bannerSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+    bannerSprite.setTextDatum(ML_DATUM);
+  } else {
+    Serial.println("[DISPLAY] WARNING: banner sprite allocation failed");
+  }
   return true;
 }
 
@@ -180,6 +192,7 @@ void DisplayManager::enterMode(Mode mode) {
   palValid_ = false;
   lastYday_ = -1;
   statusValid_ = false;
+  bannerActive_ = false;
   notice_[0] = '\0';
   lastError_[0] = '\0';
 }
@@ -279,6 +292,8 @@ void DisplayManager::tick() {
   const uint32_t now = millis();
   if (now - lastFrameMs_ < kFrameMs) return;
   lastFrameMs_ = now;
+
+  if (bannerActive_) drawBanner(now);
 
   for (int i = 0; i < 4; ++i) {
     Roll& r = bigRoll_[i];
@@ -463,6 +478,11 @@ void DisplayManager::setNightMode(bool night) {
 
 void DisplayManager::drawNotice() {
   if (mode_ != Mode::Clock) return;
+  if (notice_[0] != '\0') {
+    bannerActive_ = false;  // notices take priority
+  } else if (bannerActive_) {
+    return;  // the banner draws this line itself
+  }
   if (notice_[0] == '\0' && weather_.valid) {
     drawWeatherLine();
     return;
@@ -472,6 +492,44 @@ void DisplayManager::drawNotice() {
     s.setTextDatum(MC_DATUM);
     s.drawString(notice_, kScreenW / 2, kNoticeH / 2);
   });
+}
+
+bool DisplayManager::startBanner(const char* text, uint8_t pxPerSecond) {
+  if (!bannerOk_ || mode_ != Mode::Clock || notice_[0] != '\0' || !text || !*text) return false;
+  strlcpy(bannerText_, text, sizeof(bannerText_));
+  bannerW_ = bannerSprite.textWidth(bannerText_);
+  bannerSpeed_ = pxPerSecond ? pxPerSecond : 70;
+  bannerStartMs_ = millis();
+  bannerActive_ = true;
+  return true;
+}
+
+void DisplayManager::drawBanner(uint32_t now) {
+  // Enters from the right edge and leaves fully on the left.
+  const int32_t offset = (int32_t)((uint64_t)(now - bannerStartMs_) * bannerSpeed_ / 1000);
+  const int32_t x = kScreenW - offset;
+  if (x + bannerW_ < 0) {
+    bannerActive_ = false;
+    drawNotice();  // back to the weather line
+    return;
+  }
+  bannerSprite.fillSprite(TFT_BLACK);
+  bannerSprite.drawString(bannerText_, x, kNoticeH / 2);
+  tintSprite(bannerSprite, kScreenW, kNoticeH, pal_, 3, kNoticeH - 4);
+  // Soft fade at both edges.
+  uint16_t* px = static_cast<uint16_t*>(bannerSprite.getPointer());
+  constexpr int kFade = 24;
+  for (int16_t y = 0; y < kNoticeH; ++y) {
+    uint16_t* row = px + y * kScreenW;
+    for (int i = 0; i < kFade; ++i) {
+      const uint8_t a = 255 - i * 255 / kFade;
+      for (int16_t xx : {(int16_t)i, (int16_t)(kScreenW - 1 - i)}) {
+        const uint16_t c = swap16(row[xx]);
+        row[xx] = swap16(theme::mix(c, C->bg, a));
+      }
+    }
+  }
+  bannerSprite.pushSprite(0, kNoticeTop);
 }
 
 void DisplayManager::setWeather(const weather::Data* data, bool stale) {

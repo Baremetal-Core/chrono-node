@@ -21,7 +21,7 @@
 
 namespace {
 
-constexpr size_t kLineMax = 96;
+constexpr size_t kLineMax = 200;  // banner text is up to 120 bytes of UTF-8
 char line[kLineMax];
 size_t lineLen = 0;
 bool overflow = false;
@@ -141,6 +141,55 @@ void calibrateTouch(DisplayManager& display) {
     touch::Point m = touch::map(rx[i], ry[i]);
     Serial.printf("[TOUCH]   target %3d,%3d -> %3d,%3d\n", tx[i], ty[i], m.x, m.y);
   }
+}
+
+void printBanners() {
+  Serial.printf("[BANNER] %s, every %u min%s, %u px/s, %d message(s)\n",
+                settings::bannerEnabled() ? "on" : "off", settings::bannerEveryMinutes(),
+                settings::bannerEveryMinutes() == 0 ? " (continuous)" : "", settings::bannerSpeed(),
+                settings::bannerCount());
+  for (int i = 0; i < settings::bannerCount(); ++i) {
+    Serial.printf("[BANNER]   %d: %s\n", i + 1, settings::bannerText(i));
+  }
+}
+
+bool handleBanner(const char* arg) {
+  while (*arg == ' ') ++arg;
+  bool ok = true;
+  int n = 0, consumed = 0;
+  if (*arg == '\0') {
+    printBanners();
+    return false;
+  } else if (strncasecmp(arg, "ADD ", 4) == 0) {
+    ok = settings::addBanner(arg + 4);
+  } else if (strncasecmp(arg, "SET ", 4) == 0 && sscanf(arg + 4, "%d %n", &n, &consumed) == 1 &&
+             consumed > 0) {
+    ok = settings::setBanner(n - 1, arg + 4 + consumed);
+  } else if (strncasecmp(arg, "DEL ", 4) == 0 && sscanf(arg + 4, "%d", &n) == 1) {
+    ok = settings::removeBanner(n - 1);
+  } else if (strcasecmp(arg, "CLEAR") == 0) {
+    ok = settings::clearBanners();
+  } else if (strcasecmp(arg, "ON") == 0 || strcasecmp(arg, "OFF") == 0) {
+    ok = settings::setBannerEnabled(strcasecmp(arg, "ON") == 0);
+  } else if (strncasecmp(arg, "EVERY ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1 && n >= 0) {
+    ok = settings::setBannerEveryMinutes(n);
+  } else if (strncasecmp(arg, "SPEED ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1 && n > 0) {
+    ok = n <= 255 && settings::setBannerSpeed(n);
+  } else if (strcasecmp(arg, "SHOW") == 0) {
+    requestBannerNow();
+    return false;
+  } else {
+    Serial.println("[CONSOLE] Usage: BANNER [ADD text|SET n text|DEL n|CLEAR|ON|OFF|EVERY min|"
+                   "SPEED px/s|SHOW]");
+    return false;
+  }
+  if (!ok) {
+    Serial.printf("[CONSOLE] ERROR: rejected (max %d messages of %u bytes, every 0-60 min, "
+                  "speed 20-200 px/s)\n", config::kBannerMaxMessages, (unsigned)config::kBannerMaxLen);
+    return false;
+  }
+  printBanners();
+  return true;
 }
 
 void printBrightness() {
@@ -272,6 +321,9 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     }
     return false;
   }
+  if (strncasecmp(text, "BANNER", 6) == 0 && (text[6] == '\0' || text[6] == ' ')) {
+    return handleBanner(text + 6);
+  }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
@@ -344,7 +396,8 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | TOUCH [CAL] | SCREEN name | SETEPOCH n | REBOOT | OTA | SHOT | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | TOUCH [CAL] | "
+      "SCREEN name | SETEPOCH n | REBOOT | OTA | SHOT | "
       "TEST [PALETTE] | HELP");
 }
 
