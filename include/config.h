@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.11.0";
+constexpr const char* kFirmwareVersion = "0.12.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -89,6 +89,14 @@ constexpr uint8_t kDefaultBannerEveryMin = 1;   // 0 = continuous
 constexpr uint8_t kDefaultBannerSpeed = 70;     // pixels per second
 constexpr int kBannerStartSecond = 15;          // periodic banners start at this second
 constexpr uint32_t kBannerGapMs = 2000;         // pause between messages when continuous
+
+// ---- Photos (LittleFS) ----
+constexpr int kPhotoSlots = 5;
+constexpr size_t kPhotoMaxBytes = 64 * 1024;    // per JPEG; the web page compresses to fit
+constexpr uint8_t kDefaultPhotoEveryMin = 5;    // slideshow period, 0 = off
+constexpr int kPhotoShowAtSecond = 28;          // between the banner (15) and forecast (45)
+constexpr uint32_t kPhotoShowS = 12;
+constexpr uint32_t kPhotoRequestShowMs = 20000; // PHOTO SHOW / web "show" duration
 
 // DS3231 die temperature (shown in the status bar) is read this often.
 constexpr uint32_t kTemperatureIntervalMs = 60000;

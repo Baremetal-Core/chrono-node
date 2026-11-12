@@ -85,10 +85,17 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
   bottom line, one per period (every N minutes, or continuously), in the time-of-day colours.
 - Set from the web page and the serial console; saved in NVS; shown at night too (dimmed).
 
-## M12 – Alarms & sound (optional)
+## M12 – Photo slideshow ✅
+- Up to 5 personal photos uploaded from the web page. The browser crops (drag/zoom) and
+  compresses them to a 320×240 baseline JPEG (≤64 KB), so the device only decodes.
+- Stored in LittleFS: they survive OTA/USB firmware updates and are never in the repository.
+- Photo screen in the swipe order (tap for the next photo) and an automatic slideshow every
+  N minutes (default 5) for 12 s, never at night.
+
+## M13 – Alarms & sound (optional)
 - Alarms stored in NVS and edited via touch/web; speaker on GPIO26 (tones/DAC), snooze by tap.
 
-## M13 – Sensors & smart-home (optional)
+## M14 – Sensors & smart-home (optional)
 - An I2C environment sensor (SHT4x/BME280/SCD41) on the existing GPIO27/22 bus next to the DS3231.
 - Optional I2C light sensor (e.g. BH1750) on the same bus for auto-brightness (the CYD LDR is unusable).
 - Indoor climate display and history graph. MQTT with Home Assistant auto-discovery.
@@ -97,4 +104,4 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 
 ### Suggested order
 M2 → M3 → M4 makes it a correct internet clock. M5 makes it gorgeous. M7 makes it livable
-at night. M8 adds weather. Then M6, M9, M10, and M11 (banner) on request, and finally M12 and M13 as extras.
+at night. M8 adds weather. Then M6, M9, M10, M11 (banner) and M12 (photos) on request, and finally M13 and M14 as extras.

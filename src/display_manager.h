@@ -85,6 +85,10 @@ class DisplayManager {
   // the next showTime().
   void endOverlayScreen();
 
+  // Full-screen photo (a JPEG file in LittleFS), scaled down to fit and
+  // centred on black. Returns false if it can't be decoded.
+  bool showPhoto(const char* path);
+
   // Touch calibration target (crosshair) with an instruction line.
   void showCalibrationTarget(int16_t x, int16_t y, const char* text);
 
@@ -110,7 +114,7 @@ class DisplayManager {
   void screenshot(Print& out);
 
  private:
-  enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate };
+  enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo };
   struct Roll {
     char from = ' ';
     char to = ' ';

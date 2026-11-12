@@ -12,6 +12,7 @@
 #include "display_manager.h"
 #include "net_manager.h"
 #include "ota.h"
+#include "photos.h"
 #include "rtc_manager.h"
 #include "screens.h"
 #include "settings.h"
@@ -192,6 +193,59 @@ bool handleBanner(const char* arg) {
   return true;
 }
 
+void printPhotos() {
+  if (!photos::available()) {
+    Serial.println("[PHOTO] Storage unavailable");
+    return;
+  }
+  const uint8_t every = settings::photoEveryMinutes();
+  Serial.printf("[PHOTO] %d of %d photo(s), slideshow %s%u%s, %u of %u KB used\n", photos::count(),
+                config::kPhotoSlots, every ? "every " : "off", every ? every : 0,
+                every ? " min" : "", (unsigned)(photos::usedBytes() / 1024),
+                (unsigned)(photos::totalBytes() / 1024));
+  int slots[config::kPhotoSlots];
+  const int n = photos::list(slots, config::kPhotoSlots);
+  for (int i = 0; i < n; ++i) {
+    uint16_t w = 0, h = 0;
+    String err;
+    photos::checkJpeg(photos::path(slots[i]), w, h, err);
+    Serial.printf("[PHOTO]   %d: %ux%u, %u bytes\n", slots[i], w, h,
+                  (unsigned)photos::sizeOf(slots[i]));
+  }
+}
+
+bool handlePhoto(const char* arg) {
+  while (*arg == ' ') ++arg;
+  int n = 0;
+  if (*arg == '\0') {
+    printPhotos();
+    return false;
+  } else if (strncasecmp(arg, "DEL ", 4) == 0 && sscanf(arg + 4, "%d", &n) == 1) {
+    if (!photos::remove(n)) {
+      Serial.printf("[CONSOLE] ERROR: no photo %d\n", n);
+      return false;
+    }
+  } else if (strcasecmp(arg, "CLEAR") == 0) {
+    photos::clear();
+  } else if (strncasecmp(arg, "EVERY ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1 && n >= 0 &&
+             n <= 60) {
+    settings::setPhotoEveryMinutes(n);
+  } else if (strcasecmp(arg, "SHOW") == 0 || (strncasecmp(arg, "SHOW ", 5) == 0 &&
+                                              sscanf(arg + 5, "%d", &n) == 1)) {
+    if (photos::count() == 0 || (n && !photos::exists(n))) {
+      Serial.println("[CONSOLE] ERROR: no such photo (upload photos on the web page)");
+      return false;
+    }
+    requestPhotoNow(n);
+    return false;
+  } else {
+    Serial.println("[CONSOLE] Usage: PHOTO [DEL n|CLEAR|EVERY min|SHOW [n]]");
+    return false;
+  }
+  printPhotos();
+  return false;
+}
+
 void printBrightness() {
   Serial.printf("[NIGHT] Brightness day %u%%, night %u%%; night mode %s, %02u:%02u-%02u:%02u\n",
                 settings::brightnessDay(), settings::brightnessNight(),
@@ -321,6 +375,9 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     }
     return false;
   }
+  if (strncasecmp(text, "PHOTO", 5) == 0 && (text[5] == '\0' || text[5] == ' ')) {
+    return handlePhoto(text + 5);
+  }
   if (strncasecmp(text, "BANNER", 6) == 0 && (text[6] == '\0' || text[6] == ' ')) {
     return handleBanner(text + 6);
   }
@@ -328,7 +385,7 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     printRtcTime(rtc);
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
     if (!requestScreenByName(text + 7)) {
-      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|INFO|SETTINGS");
+      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|INFO|SETTINGS");
     }
   } else if (strcasecmp(text, "TOUCH CAL") == 0) {
     calibrateTouch(display);
@@ -396,7 +453,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | TOUCH [CAL] | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | PHOTO [...] | TOUCH [CAL] | "
       "SCREEN name | SETEPOCH n | REBOOT | OTA | SHOT | "
       "TEST [PALETTE] | HELP");
 }

@@ -29,12 +29,14 @@ constexpr const char* kKeyBannerOn = "bn_on";
 constexpr const char* kKeyBannerEvery = "bn_every";
 constexpr const char* kKeyBannerSpeed = "bn_speed";
 constexpr const char* kKeyBannerText = "bn_text";  // all messages, '\n'-separated
+constexpr const char* kKeyPhotoEvery = "ph_every";
 
 char banners[config::kBannerMaxMessages][config::kBannerMaxLen + 1] = {};
 int bannerN = 0;
 bool bannerOn = true;
 uint8_t bannerEvery = config::kDefaultBannerEveryMin;
 uint8_t bannerPxPerS = config::kDefaultBannerSpeed;
+uint8_t photoEvery = config::kDefaultPhotoEveryMin;
 
 void splitBanners(const char* joined) {
   bannerN = 0;
@@ -130,6 +132,7 @@ void begin() {
     bannerOn = prefs.getBool(kKeyBannerOn, bannerOn);
     bannerEvery = prefs.getUChar(kKeyBannerEvery, bannerEvery);
     bannerPxPerS = prefs.getUChar(kKeyBannerSpeed, bannerPxPerS);
+    photoEvery = prefs.getUChar(kKeyPhotoEvery, photoEvery);
     if (prefs.isKey(kKeyBannerText)) {
       String joined = prefs.getString(kKeyBannerText, "");
       splitBanners(joined.c_str());
@@ -343,6 +346,15 @@ bool setBannerEveryMinutes(uint8_t minutes) {
   if (minutes > 60) return false;
   bool ok = save([&](Preferences& p) { return p.putUChar(kKeyBannerEvery, minutes) > 0; });
   if (ok) bannerEvery = minutes;
+  return ok;
+}
+
+uint8_t photoEveryMinutes() { return photoEvery; }
+
+bool setPhotoEveryMinutes(uint8_t minutes) {
+  if (minutes > 60) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyPhotoEvery, minutes) > 0; });
+  if (ok) photoEvery = minutes;
   return ok;
 }
 

@@ -22,7 +22,11 @@ button{cursor:pointer;background:#1b2142}button.primary{background:var(--accent)
 button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-align:right}
 .results button,.recent button{display:block;width:100%;text-align:left;margin:6px 0}
 .results small,.recent small{color:var(--dim)}#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#1b2142;border:1px solid var(--line);padding:8px 14px;border-radius:10px;opacity:0;transition:opacity .3s}
-#toast.show{opacity:1}.big{font-size:28px;font-weight:700}.muted{color:var(--dim);font-size:13px}
+#toast.show{opacity:1}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:8px 0}.ph{position:relative}
+.ph img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px;display:block;cursor:pointer;border:1px solid var(--line);background:#000}
+.ph button{position:absolute;top:6px;right:6px;padding:2px 8px;background:#0b0f22d0}
+#phcv{width:100%;max-width:480px;aspect-ratio:4/3;border-radius:9px;touch-action:none;cursor:grab;display:block;background:#000;border:1px solid var(--line)}.big{font-size:28px;font-weight:700}.muted{color:var(--dim);font-size:13px}
 </style></head><body><main>
 <h1>Chrono <span>Node</span></h1><div class="sub" id="sub">Loading...</div>
 
@@ -46,6 +50,20 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div id="bnlist"></div>
 <div class="row"><button id="bnadd">+ Add message</button><button class="primary" id="bnsave">Save messages</button><button id="bnshow">Show now</button></div>
 <div class="muted">Up to 5 messages, shown one at a time in rotation. Latin and Vietnamese letters are supported (e.g. "Ch&uacute;c m&#7915;ng n&#259;m m&#7899;i"); emoji are not.</div>
+</section>
+
+<section><h2>Photos</h2>
+<div class="row"><label>Slideshow</label><select id="phevery"><option value="0">Off</option><option value="1">Every minute</option>
+<option value="2">Every 2 min</option><option value="5">Every 5 min</option><option value="10">Every 10 min</option><option value="15">Every 15 min</option>
+<option value="30">Every 30 min</option><option value="60">Every hour</option></select></div>
+<div class="photos" id="phlist"></div>
+<div class="row"><input type="file" id="phfile" accept="image/*" hidden><button id="phadd">+ Add photo</button><span class="muted" id="phfree"></span></div>
+<div id="phedit" style="display:none"><canvas id="phcv" width="320" height="240"></canvas>
+<div class="row"><label>Zoom</label><input type="range" id="phzoom" min="1" max="4" step="0.01" value="1"></div>
+<div class="row"><button id="phcancel">Cancel</button><button class="primary" id="phup">Upload to clock</button></div>
+<div class="muted">Drag to choose what's in the frame. This is exactly what the clock will show (320&times;240).</div></div>
+<div class="muted">Up to 5 photos, kept on the clock (they survive firmware updates). The slideshow shows one for 12 s, never at night.
+On the clock, swipe to the Photo screen and tap for the next one. Tap a thumbnail here to show it now.</div>
 </section>
 
 <section><h2>Time</h2>
@@ -107,8 +125,44 @@ $("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nen
 const known=TZ.find(z=>z[1]===S.timezone);$("tz").value=known?known[0]:"custom";$("tzcustom").value=S.timezone;$("tzcustomrow").style.display=known?"none":"flex";
 $("ntp").value=S.ntp_server;
 const B=S.banner;$("bnon").value=B.enabled?"ON":"OFF";selVal("bnevery",B.every_min,"Every "+B.every_min+" min");selVal("bnspeed",B.speed,B.speed+" px/s");
-if(!document.activeElement||!document.activeElement.classList.contains("bnmsg")){$("bnlist").innerHTML="";B.messages.forEach(m=>bnRow(m));if(!B.messages.length)bnRow("")}$("loccur").textContent=`Current: ${S.location.name} (${S.location.lat}, ${S.location.lon})`;
+if(!document.activeElement||!document.activeElement.classList.contains("bnmsg")){$("bnlist").innerHTML="";B.messages.forEach(m=>bnRow(m));if(!B.messages.length)bnRow("")}phList(S.photos);$("loccur").textContent=`Current: ${S.location.name} (${S.location.lat}, ${S.location.lon})`;
 $("recent").innerHTML=S.recent_locations.map(r=>`<button data-c="${r.lat} ${r.lon} ${esc(r.name)}">${esc(r.name)} <small>${r.lat}, ${r.lon}</small></button>`).join("");}
+let phSig="";
+function phList(P){selVal("phevery",P.every_min,"Every "+P.every_min+" min");const n=P.items.length;
+$("phadd").disabled=!P.available||n>=P.max;$("phfree").textContent=P.available?`${n} of ${P.max} \u00b7 ${P.used_kb} of ${P.total_kb} KB used`:"Photo storage unavailable";
+const sig=P.items.map(i=>i.slot+":"+i.bytes).join();if(sig===phSig)return;phSig=sig;
+$("phlist").innerHTML=P.items.map(i=>`<div class="ph"><img src="/api/photo?n=${i.slot}&v=${i.bytes}" data-show="${i.slot}" title="Show on the clock"><button class="danger" data-del="${i.slot}">&#x2715;</button></div>`).join("")}
+$("phlist").onclick=e=>{const t=e.target;if(t.dataset.show)cmd("PHOTO SHOW "+t.dataset.show,"Showing on the clock");
+else if(t.dataset.del&&confirm("Delete this photo from the clock?"))cmd("PHOTO DEL "+t.dataset.del,"Photo deleted")};
+$("phevery").onchange=e=>cmd("PHOTO EVERY "+e.target.value);
+const ph={img:null,z:1,cx:0,cy:0};
+function phScale(){return Math.max(320/ph.img.width,240/ph.img.height)*ph.z}
+function phDraw(){const i=ph.img,s=phScale(),hw=160/s,hh=120/s;
+ph.cx=Math.min(Math.max(ph.cx,hw),i.width-hw);ph.cy=Math.min(Math.max(ph.cy,hh),i.height-hh);
+const g=$("phcv").getContext("2d");g.imageSmoothingEnabled=true;g.imageSmoothingQuality="high";g.fillStyle="#000";g.fillRect(0,0,320,240);
+g.drawImage(i,ph.cx-hw,ph.cy-hh,2*hw,2*hh,0,0,320,240)}
+// Halve big photos first: one large downscale in a canvas looks jagged.
+function phSource(im){let c=im,w=im.naturalWidth,h=im.naturalHeight;
+while(w/2>=1280&&h/2>=960){w=Math.round(w/2);h=Math.round(h/2);const n=document.createElement("canvas");n.width=w;n.height=h;
+const g=n.getContext("2d");g.imageSmoothingQuality="high";g.drawImage(c,0,0,w,h);c=n}return c}
+$("phadd").onclick=()=>$("phfile").click();
+$("phfile").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)return;const im=new Image(),url=URL.createObjectURL(f);
+im.onload=()=>{URL.revokeObjectURL(url);ph.img=phSource(im);ph.z=1;$("phzoom").value=1;ph.cx=ph.img.width/2;ph.cy=ph.img.height/2;
+$("phedit").style.display="block";phDraw();$("phedit").scrollIntoView({behavior:"smooth",block:"center"})};
+im.onerror=()=>{URL.revokeObjectURL(url);toast("This browser can't open that image; try a JPEG or PNG")};im.src=url};
+$("phzoom").oninput=e=>{ph.z=parseFloat(e.target.value);phDraw()};
+{let drag=null;const c=$("phcv");
+c.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY};c.setPointerCapture(e.pointerId);c.style.cursor="grabbing"};
+c.onpointermove=e=>{if(!drag)return;const k=320/c.clientWidth/phScale();ph.cx-=(e.clientX-drag.x)*k;ph.cy-=(e.clientY-drag.y)*k;drag={x:e.clientX,y:e.clientY};phDraw()};
+c.onpointerup=c.onpointercancel=()=>{drag=null;c.style.cursor="grab"};
+c.onwheel=e=>{e.preventDefault();ph.z=Math.min(4,Math.max(1,ph.z*(e.deltaY<0?1.1:1/1.1)));$("phzoom").value=ph.z;phDraw()}}
+$("phcancel").onclick=()=>{$("phedit").style.display="none";ph.img=null};
+async function phBlob(max){for(const q of[.92,.88,.82,.75,.65,.5]){const b=await new Promise(r=>$("phcv").toBlob(r,"image/jpeg",q));if(b&&b.size<=max)return b}return null}
+$("phup").onclick=async()=>{const b=await phBlob(S.photos.max_bytes-1024);if(!b){toast("Couldn't compress the photo enough");return}
+const fd=new FormData();fd.append("photo",b,"photo.jpg");$("phup").disabled=true;
+try{const r=await fetch("/api/photo",{method:"POST",body:fd});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);
+$("phedit").style.display="none";ph.img=null;await post("PHOTO SHOW "+d.slot);toast(`Saved (${Math.round(b.size/1024)} KB), showing it on the clock`);setTimeout(loadSettings,600)}
+catch(e){toast("Upload failed: "+e.message)}finally{$("phup").disabled=false}};
 function bnRow(t){const d=document.createElement("div");d.className="row";d.innerHTML='<input class="bnmsg" maxlength="120" style="flex:1 1 260px"><button class="danger">&#x2715;</button>';
 d.querySelector("input").value=t||"";d.querySelector("button").onclick=()=>d.remove();$("bnlist").appendChild(d)}
 async function post(c){const r=await fetch("/api/command",{method:"POST",headers:{"Content-Type":"text/plain"},body:c});if(!r.ok)throw new Error((await r.json()).error||r.status)}

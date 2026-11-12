@@ -1,7 +1,9 @@
 #include "display_manager.h"
 
 #include <Arduino.h>
+#include <LittleFS.h>
 #include <TFT_eSPI.h>
+#include <TJpg_Decoder.h>
 #include <string.h>
 
 #include "config.h"
@@ -585,7 +587,7 @@ void DisplayManager::drawWeatherLine() {
 
 void DisplayManager::endOverlayScreen() {
   if (mode_ == Mode::Weather || mode_ == Mode::Info || mode_ == Mode::Settings ||
-      mode_ == Mode::Calibrate) {
+      mode_ == Mode::Calibrate || mode_ == Mode::Photo) {
     mode_ = Mode::None;  // next showTime() repaints the clock
   }
 }
@@ -753,6 +755,35 @@ SettingsAction DisplayManager::settingsHitTest(int16_t x, int16_t y) const {
       break;
   }
   return SettingsAction::None;
+}
+
+bool DisplayManager::showPhoto(const char* path) {
+  enterMode(Mode::Photo);
+  tft.fillScreen(TFT_BLACK);
+  uint16_t w = 0, h = 0;
+  if (TJpgDec.getFsJpgSize(&w, &h, path, LittleFS) != JDR_OK || w == 0 || h == 0) {
+    Serial.printf("[PHOTO] ERROR: can't read %s\n", path);
+    return false;
+  }
+  // tjpgd scales by 1/1, 1/2, 1/4 or 1/8: use the largest that fits.
+  uint8_t scale = 1;
+  while (scale < 8 && (w / scale > kScreenW || h / scale > kScreenH)) scale *= 2;
+  TJpgDec.setJpgScale(scale);
+  TJpgDec.setSwapBytes(true);
+  TJpgDec.setCallback([](int16_t x, int16_t y, uint16_t bw, uint16_t bh, uint16_t* bitmap) {
+    if (y >= kScreenH) return false;
+    tft.pushImage(x, y, bw, bh, bitmap);
+    return true;
+  });
+  const int16_t x = (kScreenW - (int16_t)(w / scale)) / 2;
+  const int16_t y = (kScreenH - (int16_t)(h / scale)) / 2;
+  const uint32_t t0 = millis();
+  tft.startWrite();
+  const JRESULT r = TJpgDec.drawFsJpg(x, y, path, LittleFS);
+  tft.endWrite();
+  Serial.printf("[PHOTO] %s %ux%u 1/%u in %lu ms%s\n", path, w, h, scale,
+                (unsigned long)(millis() - t0), r == JDR_OK ? "" : " (decode error)");
+  return r == JDR_OK;
 }
 
 void DisplayManager::showCalibrationTarget(int16_t x, int16_t y, const char* text) {

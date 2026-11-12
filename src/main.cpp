@@ -14,6 +14,7 @@
 #include "display_manager.h"
 #include "net_manager.h"
 #include "ota.h"
+#include "photos.h"
 #include "rtc_manager.h"
 #include "screens.h"
 #include "serial_console.h"
@@ -49,12 +50,19 @@ uint32_t transitionFadeInMs = 0;
 bool nightKnown = false;
 bool nightActive = false;
 
-// Screens, in swipe order. The forecast is skipped while there is no data.
-enum class Screen : uint8_t { Clock, Forecast, Info, Settings };
-constexpr int kScreenCount = 4;
+// Screens, in swipe order. The forecast is skipped while there is no data,
+// the photo screen while there are no photos.
+enum class Screen : uint8_t { Clock, Forecast, Photo, Info, Settings };
+constexpr int kScreenCount = 5;
 Screen screenOn = Screen::Clock;
 Screen screenWanted = Screen::Clock;  // target of the current/next transition
-bool autoForecast = false;  // forecast shown by the cycle or WEATHER SHOW, not by touch
+bool autoScreen = false;  // forecast/photo shown by a cycle or a SHOW command, not by touch
+// Photos: the one showing, the one to show next (0 = next in rotation) and
+// how long a PHOTO SHOW request keeps the screen up.
+int photoSlot = 0;
+int photoWanted = 0;
+uint32_t photoRequestedUntilMs = 0;
+uint32_t photoPausedUntilMs = 0;  // after a photo failed to decode
 uint32_t lastTouchMs = 0;
 uint32_t lastInfoMs = 0;
 
@@ -78,8 +86,9 @@ uint8_t brightnessFor(bool night) {
   return night && !nightBoost ? settings::brightnessNight() : settings::brightnessDay();
 }
 
-void requestScreen(Screen s) {
-  if (transitioning || (s == screenOn && s == screenWanted)) return;
+// `again` repaints the current screen behind a fade (e.g. the next photo).
+void requestScreen(Screen s, bool again = false) {
+  if (transitioning || (!again && s == screenOn && s == screenWanted)) return;
   screenWanted = s;
   startTransition(config::kScreenFadeOutMs, config::kScreenFadeInMs);
 }
@@ -117,17 +126,46 @@ bool shouldShowWeather(const struct tm& local, bool hasData) {
          local.tm_sec < config::kWeatherShowAtSecond + (int)config::kWeatherShowS;
 }
 
-// Automatic screen changes: the forecast cycle, and back to the clock after
-// a period without touch.
+// Photo slideshow: on request, or every N minutes (never at night or while
+// a notice needs to be seen).
+bool shouldShowPhoto(const struct tm& local) {
+  if (photos::count() == 0 || (int32_t)(millis() - photoPausedUntilMs) < 0) return false;
+  if ((int32_t)(millis() - photoRequestedUntilMs) < 0) return true;
+  const uint8_t every = settings::photoEveryMinutes();
+  if (nightActive || every == 0 || rtcLostPower || net::state() == net::State::Portal ||
+      ota::activePin() || ota::progress() >= 0) {
+    return false;
+  }
+  return (local.tm_hour * 60 + local.tm_min) % every == 0 &&
+         local.tm_sec >= config::kPhotoShowAtSecond &&
+         local.tm_sec < config::kPhotoShowAtSecond + (int)config::kPhotoShowS;
+}
+
+// Next photo slot in rotation after `slot` (0 if there are no photos).
+int nextPhoto(int slot) {
+  for (int i = 1; i <= config::kPhotoSlots; ++i) {
+    const int s = (slot + i - 1) % config::kPhotoSlots + 1;
+    if (photos::exists(s)) return s;
+  }
+  return 0;
+}
+
+// Automatic screen changes: the forecast and photo cycles, and back to the
+// clock after a period without touch.
 void updateAutoScreens(const struct tm& local, bool hasData) {
   if (transitioning) return;
-  const bool wantForecast = shouldShowWeather(local, hasData);
-  if (screenOn == Screen::Clock && wantForecast) {
-    autoForecast = true;
-    requestScreen(Screen::Forecast);
-  } else if (screenOn == Screen::Forecast && autoForecast && !wantForecast) {
-    requestScreen(Screen::Clock);
-  } else if (screenOn != Screen::Clock && !autoForecast &&
+  Screen want = Screen::Clock;
+  if (shouldShowWeather(local, hasData)) {
+    want = Screen::Forecast;
+  } else if (shouldShowPhoto(local)) {
+    want = Screen::Photo;
+  }
+  if (screenOn == Screen::Clock && want != Screen::Clock) {
+    autoScreen = true;
+    requestScreen(want);
+  } else if (autoScreen && screenOn != want) {
+    requestScreen(want);
+  } else if (screenOn != Screen::Clock && !autoScreen &&
              millis() - lastTouchMs >= config::kScreenIdleMs) {
     requestScreen(Screen::Clock);
   }
@@ -281,10 +319,12 @@ void applySettingsAction(SettingsAction a) {
 
 Screen neighbour(Screen from, int dir) {
   const bool hasForecast = weather::version() != 0;
+  const bool hasPhotos = photos::count() > 0;
   int i = static_cast<int>(from);
   for (int n = 0; n < kScreenCount; ++n) {
     i = (i + dir + kScreenCount) % kScreenCount;
-    if (static_cast<Screen>(i) != Screen::Forecast || hasForecast) break;
+    const Screen s = static_cast<Screen>(i);
+    if ((s != Screen::Forecast || hasForecast) && (s != Screen::Photo || hasPhotos)) break;
   }
   return static_cast<Screen>(i);
 }
@@ -310,11 +350,15 @@ void handleTouch() {
   switch (ev.gesture) {
     case touch::Gesture::SwipeLeft:
     case touch::Gesture::SwipeRight:
-      autoForecast = false;
+      autoScreen = false;
       requestScreen(neighbour(screenOn, ev.gesture == touch::Gesture::SwipeLeft ? 1 : -1));
       break;
     case touch::Gesture::Tap:
-      if (screenOn == Screen::Forecast) autoForecast = false;  // keep it while being read
+      if (screenOn == Screen::Forecast) autoScreen = false;  // keep it while being read
+      if (screenOn == Screen::Photo) {
+        autoScreen = false;  // tap: next photo, and stay
+        requestScreen(Screen::Photo, true);
+      }
       if (screenOn == Screen::Settings) applySettingsAction(display.settingsHitTest(ev.at.x, ev.at.y));
       break;
     default:
@@ -329,7 +373,20 @@ void finishTransition() {
   weather::Data wx;
   Screen next = screenWanted;
   if (next == Screen::Forecast && !weather::get(wx)) next = Screen::Clock;
+  if (next == Screen::Photo) {
+    const int slot = photoWanted && photos::exists(photoWanted) ? photoWanted : nextPhoto(photoSlot);
+    photoWanted = 0;
+    if (slot) photoSlot = slot;  // a broken photo is skipped next time
+    if (slot == 0 || !display.showPhoto(photos::path(slot).c_str())) {
+      // Don't bring the photo screen straight back in this slideshow window.
+      next = Screen::Clock;
+      photoRequestedUntilMs = millis();
+      photoPausedUntilMs = millis() + (config::kPhotoShowS + 2) * 1000;
+    }
+  }
   switch (next) {
+    case Screen::Photo:
+      break;
     case Screen::Forecast:
       display.showWeatherScreen(wx, weather::ageSeconds());
       break;
@@ -345,7 +402,7 @@ void finishTransition() {
       break;
     case Screen::Clock:
       display.endOverlayScreen();
-      autoForecast = false;
+      autoScreen = false;
       break;
   }
   screenOn = screenWanted = next;
@@ -487,7 +544,7 @@ void pollRtc(bool forceLog) {
   cs.hasTemp = hasTemp;
   cs.tempC = tempC;
   cs.night = nightActive;
-  static const char* const kScreenNames[] = {"clock", "forecast", "info", "settings"};
+  static const char* const kScreenNames[] = {"clock", "forecast", "photo", "info", "settings"};
   strlcpy(cs.screen, kScreenNames[static_cast<int>(screenOn)], sizeof(cs.screen));
   web::publishClockState(cs);
 }
@@ -498,13 +555,21 @@ bool requestScreenByName(const char* name) {
   Screen s;
   if (strcasecmp(name, "clock") == 0) s = Screen::Clock;
   else if (strcasecmp(name, "forecast") == 0) s = Screen::Forecast;
+  else if (strcasecmp(name, "photo") == 0) s = Screen::Photo;
   else if (strcasecmp(name, "info") == 0) s = Screen::Info;
   else if (strcasecmp(name, "settings") == 0) s = Screen::Settings;
   else return false;
-  autoForecast = false;
+  autoScreen = false;
   lastTouchMs = millis();
   requestScreen(s);
   return true;
+}
+
+void requestPhotoNow(int slot) {
+  photoWanted = slot;
+  photoRequestedUntilMs = millis() + config::kPhotoRequestShowMs;
+  autoScreen = true;
+  requestScreen(Screen::Photo, true);
 }
 
 void requestBannerNow() {
@@ -533,6 +598,7 @@ void setup() {
   }
   backlight::begin(0);  // faded in once the first frame is drawn
 
+  photos::begin();
   weather::begin();
   touch::begin();
   ota::begin();

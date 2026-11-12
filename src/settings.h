@@ -67,6 +67,10 @@ bool setBannerEveryMinutes(uint8_t minutes);
 uint8_t bannerSpeed();         // pixels per second
 bool setBannerSpeed(uint8_t pxPerSecond);
 
+// Photo slideshow period in minutes (0 = off).
+uint8_t photoEveryMinutes();
+bool setPhotoEveryMinutes(uint8_t minutes);
+
 // Periodic forecast screen on/off.
 bool weatherCycle();
 bool setWeatherCycle(bool enabled);

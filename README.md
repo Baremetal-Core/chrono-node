@@ -48,9 +48,9 @@ forecast, info and settings screens, plus a settings page in the browser at
 
 ## Touch and screens
 
-- **Screens**, in swipe order: Clock → Forecast → Info → Settings, then back to Clock. Swipe
-  left for the next screen and right for the previous one. The forecast is skipped until
-  weather data exists. Screen changes happen behind a quick backlight dip.
+- **Screens**, in swipe order: Clock → Forecast → Photo → Info → Settings, then back to
+  Clock. Swipe left for the next screen and right for the previous one. The forecast is
+  skipped until weather data exists, and the photo screen while there are no photos. Screen changes happen behind a quick backlight dip.
 - After 30 s without touch the clock comes back. The automatic forecast cycle (see Weather)
   still runs on the clock screen.
 - **Settings** (tap):
@@ -107,11 +107,14 @@ stays in one task.
 | `GET /api/settings` | All settings, including recent locations |
 | `GET /api/geocode?q=<name>[&country=VN]` | Up to 5 location matches |
 | `POST /api/command` | Body (`text/plain`): one console command. Returns `202 {"queued":true}` |
+| `GET /api/photo?n=<slot>` | A stored photo (JPEG) |
+| `POST /api/photo` | Multipart field `photo`: a baseline JPEG ≤ 64 KB, saved in a free slot. Returns `200 {"ok":true,"slot":n}` or `400 {"error":...}` |
 | `POST /api/ota/pin` | Shows a one-time update PIN on the clock (2 min) |
 | `POST /api/ota?pin=NNNN` | Multipart firmware upload. Returns `200`, `403` (PIN) or `500` (image) |
 
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
-`WEATHER LOC|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`.
+`WEATHER LOC|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
+`PHOTO`.
 Blocking or diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
 ```bash
@@ -220,6 +223,36 @@ Your own short messages scroll across the bottom line of the clock face.
 
 ![Banner section of the web page](docs/images/web-banner.png)
 
+## Photos
+
+Your own photos can be shown on the clock, for example a picture of someone you love.
+
+- **Adding a photo:** on the web page's Photos section, choose **+ Add photo** and pick a
+  picture (JPEG, PNG, or HEIC on an iPhone). The browser shows exactly what the clock will
+  show: drag to frame it, and use the slider or mouse wheel to zoom. **Upload to clock**
+  sends a 320×240 JPEG of at most 64 KB (usually 20–40 KB) and shows it on the clock.
+- **What's sent:** the original photo never leaves your phone or computer; only the small
+  cropped version is uploaded. Photos aren't part of the firmware or the repository.
+- **Storage:** up to 5 photos, kept in the LittleFS data partition (384 KB). Firmware
+  updates over the web or `pio run -t upload` keep them. Writing the `-full` image at 0x0
+  (see Firmware updates) erases them, like the Wi-Fi settings.
+- **On the clock:**
+  - The **Photo** screen is in the swipe order. Tap it for the next photo. It returns to the
+    clock after 30 s.
+  - The **slideshow** shows the next photo for 12 s every 5 minutes, at second 28, so it
+    doesn't collide with the banner or forecast. You can choose every 1–60 minutes, or off.
+  - The slideshow never runs at night, or while a notice is showing (setup, update PIN).
+    You can still swipe to your photos at night.
+- **Web page:** thumbnails of the stored photos. Tap one to show it on the clock now, or ✕
+  to delete it.
+- **Serial console:** `PHOTO` commands (listed below). Photos larger than the screen, for
+  example uploaded with curl, are scaled down by 1/2, 1/4 or 1/8 and centred. Progressive
+  JPEGs are rejected because the decoder (tjpgd) can't read them.
+
+```bash
+curl -F "photo=@me.jpg" http://chrono-node.local/api/photo   # baseline JPEG, max 64 KB
+```
+
 ## Brightness and night mode
 
 - The backlight (GPIO21) is driven by 12-bit PWM with gamma correction, so 50% looks like
@@ -232,7 +265,7 @@ Your own short messages scroll across the bottom line of the clock face.
   in NVS (`BRIGHT`, `NIGHT` commands below).
 - There's no automatic brightness. The CYD's on-board light sensor (LDR on GPIO34) read 0
   under any light on this unit, whether covered or under a phone flashlight. An external I2C
-  light sensor could add it later (see roadmap M13).
+  light sensor could add it later (see roadmap M14).
 
 Fonts are generated from the Inter variable font (SIL Open Font License, see
 `tools/fonts/OFL.txt`) into `src/fonts/*.h` by `tools/gen_fonts.py`. The headers are
@@ -398,8 +431,12 @@ BANNER ON                   # enable the banner (BANNER OFF to disable)
 BANNER EVERY 5              # scroll every 5 min (0 = continuously, 1-60)
 BANNER SPEED 70             # scroll speed in px/s (20-200)
 BANNER SHOW                 # scroll the next message now
+PHOTO                       # stored photos, sizes, slideshow period, storage use
+PHOTO SHOW                  # show the next photo now (PHOTO SHOW 2 for photo 2)
+PHOTO DEL 2                 # delete photo 2 (PHOTO CLEAR deletes all)
+PHOTO EVERY 5               # slideshow every 5 min (0 = off, 1-60)
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
-SCREEN SETTINGS             # go to CLOCK, FORECAST, INFO or SETTINGS
+SCREEN SETTINGS             # go to CLOCK, FORECAST, PHOTO, INFO or SETTINGS
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
 SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web page)
@@ -475,7 +512,8 @@ src/fonts/*.h                   generated Inter smooth fonts (do not edit)
 tools/gen_fonts.py              font generator (FreeType -> TFT_eSPI VLW arrays)
 tools/screenshot.py             screen capture over USB serial
 tools/fonts/                    Inter variable font + OFL licence
-src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, TOUCH, SCREEN, ...)
+src/photos.*                    photo storage in LittleFS: slots, uploads, JPEG header check
+src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)
 ```
 
 ## Troubleshooting

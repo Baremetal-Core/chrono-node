@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ESPmDNS.h>
+#include <LittleFS.h>
 #include <HTTPClient.h>
 #include <Update.h>
 #include <WebServer.h>
@@ -16,6 +17,7 @@
 #include "config.h"
 #include "net_manager.h"
 #include "ota.h"
+#include "photos.h"
 #include "settings.h"
 #include "weather.h"
 #include "web_page.h"
@@ -36,7 +38,7 @@ ClockState clockState = {};
 const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BRIGHT ",
                                 "NIGHT ",       "FORMAT ",     "WEATHER LOC ", "WEATHER CYCLE ",
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
-                                "REBOOT",       "SCREEN ",     "BANNER"};
+                                "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO"};
 
 bool allowed(const String& cmd) {
   if (cmd.length() == 0 || cmd.length() >= kCommandLen || cmd.indexOf('\n') >= 0 ||
@@ -139,6 +141,21 @@ void handleSettings() {
   banner["speed"] = settings::bannerSpeed();
   JsonArray msgs = banner["messages"].to<JsonArray>();
   for (int i = 0; i < settings::bannerCount(); ++i) msgs.add(settings::bannerText(i));
+  JsonObject ph = doc["photos"].to<JsonObject>();
+  ph["available"] = photos::available();
+  ph["every_min"] = settings::photoEveryMinutes();
+  ph["max"] = config::kPhotoSlots;
+  ph["max_bytes"] = config::kPhotoMaxBytes;
+  ph["used_kb"] = photos::usedBytes() / 1024;
+  ph["total_kb"] = photos::totalBytes() / 1024;
+  JsonArray items = ph["items"].to<JsonArray>();
+  int slots[config::kPhotoSlots];
+  const int n = photos::list(slots, config::kPhotoSlots);
+  for (int i = 0; i < n; ++i) {
+    JsonObject it = items.add<JsonObject>();
+    it["slot"] = slots[i];
+    it["bytes"] = photos::sizeOf(slots[i]);
+  }
   JsonObject loc = doc["location"].to<JsonObject>();
   loc["name"] = settings::place();
   loc["lat"] = serialized(String(settings::latitude(), 4));
@@ -227,6 +244,64 @@ void handleCommand() {
   server->send(202, "application/json", "{\"queued\":true}");
 }
 
+// Photo upload: a JPEG (already cropped and compressed by the page) goes
+// into a free slot. The page then asks the clock to show it.
+int photoSaved = 0;
+String photoError;
+
+void handlePhotoUpload() {
+  HTTPUpload& up = server->upload();
+  switch (up.status) {
+    case UPLOAD_FILE_START:
+      photoSaved = 0;
+      photoError = "";
+      photos::uploadBegin(photoError);
+      break;
+    case UPLOAD_FILE_WRITE:
+      if (photoError.length()) return;
+      photos::uploadWrite(up.buf, up.currentSize, photoError);
+      break;
+    case UPLOAD_FILE_END:
+      if (photoError.length()) return;
+      photoSaved = photos::uploadFinish(photoError);
+      break;
+    case UPLOAD_FILE_ABORTED:
+      photos::uploadAbort();
+      photoError = "upload aborted";
+      break;
+  }
+}
+
+void handlePhotoDone() {
+  JsonDocument doc;
+  if (photoSaved) {
+    doc["ok"] = true;
+    doc["slot"] = photoSaved;
+    Serial.printf("[WEB] %s: photo %d uploaded\n", server->client().remoteIP().toString().c_str(),
+                  photoSaved);
+  } else {
+    doc["error"] = photoError.length() ? photoError : String("no file received");
+  }
+  String out;
+  serializeJson(doc, out);
+  server->send(photoSaved ? 200 : 400, "application/json", out);
+  photoSaved = 0;
+  photoError = "";
+}
+
+void handlePhotoGet() {
+  const int slot = server->arg("n").toInt();
+  File f;
+  if (photos::exists(slot)) f = LittleFS.open(photos::path(slot), "r");
+  if (!f) {
+    server->send(404, "text/plain", "No such photo");
+    return;
+  }
+  server->sendHeader("Cache-Control", "no-cache");
+  server->streamFile(f, "image/jpeg");
+  f.close();
+}
+
 // Firmware upload: PIN check, then stream into the inactive OTA slot.
 bool uploadOk = false;
 bool uploadAuthorized = false;
@@ -308,6 +383,8 @@ void start() {
   server->on("/api/settings", HTTP_GET, handleSettings);
   server->on("/api/geocode", HTTP_GET, handleGeocode);
   server->on("/api/command", HTTP_POST, handleCommand);
+  server->on("/api/photo", HTTP_GET, handlePhotoGet);
+  server->on("/api/photo", HTTP_POST, handlePhotoDone, handlePhotoUpload);
   server->on("/api/ota/pin", HTTP_POST, handleOtaPin);
   server->on("/api/ota", HTTP_POST, handleOtaDone, handleOtaUpload);
   static const char* headers[] = {"Content-Length"};
