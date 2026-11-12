@@ -400,6 +400,11 @@ void ip(char* buf, size_t len) {
   }
 }
 
+void savedSsid(char* buf, size_t len) {
+  // Reads the stored station config (esp_wifi_get_config is safe from any task).
+  strlcpy(buf, wm.getWiFiSSID(true).c_str(), len);
+}
+
 const char* portalSsid() { return apSsid; }
 
 void printStatus() {

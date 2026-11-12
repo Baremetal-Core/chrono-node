@@ -587,7 +587,7 @@ void DisplayManager::drawWeatherLine() {
 
 void DisplayManager::endOverlayScreen() {
   if (mode_ == Mode::Weather || mode_ == Mode::Info || mode_ == Mode::Settings ||
-      mode_ == Mode::Calibrate || mode_ == Mode::Photo) {
+      mode_ == Mode::Calibrate || mode_ == Mode::Photo || mode_ == Mode::Confirm) {
     mode_ = Mode::None;  // next showTime() repaints the clock
   }
 }
@@ -629,21 +629,97 @@ void DisplayManager::drawScreenTitle(const char* title) {
   });
 }
 
+namespace {
+constexpr int16_t kInfoTop = 30, kInfoRowH = 20;
+constexpr int16_t kInfoBtnY = 212, kInfoBtnH = 26;
+constexpr int16_t kInfoValueX = 100;
+constexpr int16_t kInfoBarW = 110, kInfoBarH = 8;
+constexpr int16_t kConfirmBtnY = 168, kConfirmBtnH = 58;
+}  // namespace
+
 void DisplayManager::showInfoScreen(const InfoView& v) {
   if (mode_ != Mode::Info) {
     enterMode(Mode::Info);
     drawScreenTitle("Info");
-  }
-  constexpr int16_t kTop = 30, kRowH = 23;
-  for (int i = 0; i < v.count && i < 9; ++i) {
-    drawLine(kTop + i * kRowH, kRowH, font_small, [&](TFT_eSprite& s) {
-      s.setTextDatum(ML_DATUM);
-      s.setTextColor(C->dim, C->bg);
-      s.drawString(v.rows[i][0], 12, kRowH / 2);
-      s.setTextColor(C->text, C->bg);
-      s.drawString(v.rows[i][1], 100, kRowH / 2);
+    drawLine(kInfoBtnY, kInfoBtnH, font_small, [&](TFT_eSprite& s) {
+      s.fillSmoothRoundRect(10, 0, kScreenW - 20, kInfoBtnH, 8, C->faint, C->bg);
+      s.setTextDatum(MC_DATUM);
+      s.setTextColor(C->text, C->faint);
+      s.drawString("Change Wi-Fi network", kScreenW / 2, kInfoBtnH / 2 + 1);
     });
   }
+  for (int i = 0; i < v.count && i < 9; ++i) {
+    drawLine(kInfoTop + i * kInfoRowH, kInfoRowH, font_small, [&](TFT_eSprite& s) {
+      s.setTextDatum(ML_DATUM);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(v.rows[i][0], 12, kInfoRowH / 2);
+      int16_t x = kInfoValueX;
+      if (i == v.barRow && v.barTotal > 0) {
+        // Used now (accent), extra used at the peak (dimmed accent), free (faint).
+        const int16_t y = (kInfoRowH - kInfoBarH) / 2;
+        const int16_t used = (int64_t)kInfoBarW * v.barUsed / v.barTotal;
+        const int16_t peak = (int64_t)kInfoBarW * max(v.barPeak, v.barUsed) / v.barTotal;
+        s.fillSmoothRoundRect(x, y, kInfoBarW, kInfoBarH, kInfoBarH / 2, C->faint, C->bg);
+        if (peak > used) {
+          s.fillRect(x + used, y, peak - used, kInfoBarH, theme::mix(pal_.top, C->faint, 90));
+        }
+        if (used > 0) s.fillSmoothRoundRect(x, y, max<int16_t>(used, kInfoBarH), kInfoBarH,
+                                            kInfoBarH / 2, pal_.top, C->bg);
+        x += kInfoBarW + 8;
+      }
+      s.setTextColor(C->text, C->bg);
+      s.drawString(v.rows[i][1], x, kInfoRowH / 2);
+    });
+  }
+}
+
+bool DisplayManager::infoButtonHit(int16_t x, int16_t y) const {
+  // Generous: the touch mapping can be ~15 px off before calibration.
+  return mode_ == Mode::Info && y >= kInfoBtnY - 14;
+}
+
+void DisplayManager::showWifiResetScreen(const char* savedSsid, const char* portalSsid) {
+  enterMode(Mode::Confirm);
+  drawScreenTitle("Change Wi-Fi");
+  drawLine(40, 30, font_date, [&](TFT_eSprite& s) {
+    char t[64];
+    if (savedSsid && *savedSsid) {
+      snprintf(t, sizeof(t), "Forget \"%s\"?", savedSsid);
+    } else {
+      strlcpy(t, "Set up Wi-Fi?", sizeof(t));
+    }
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(t, kScreenW / 2, 15);
+  });
+  char portal[40];
+  snprintf(portal, sizeof(portal), "\"%s\"", portalSsid);
+  const char* lines[] = {"The clock will open its own setup Wi-Fi", portal,
+                         "Join it from your phone to choose", "the new network."};
+  for (int i = 0; i < 4; ++i) {
+    drawLine(76 + i * 21, 21, font_small, [&](TFT_eSprite& s) {
+      s.setTextDatum(MC_DATUM);
+      s.setTextColor(i == 1 ? pal_.top : C->dim, C->bg);
+      s.drawString(lines[i], kScreenW / 2, 10);
+    });
+  }
+  drawLine(kConfirmBtnY, kConfirmBtnH, font_date, [&](TFT_eSprite& s) {
+    s.fillSmoothRoundRect(10, 0, 140, kConfirmBtnH, 12, C->faint, C->bg);
+    s.fillSmoothRoundRect(170, 0, 140, kConfirmBtnH, 12, C->error, C->bg);
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->text, C->faint);
+    s.drawString("Cancel", 80, kConfirmBtnH / 2 + 1);
+    s.setTextColor(theme::rgb(0, 0, 0), C->error);
+    s.drawString("Forget", 240, kConfirmBtnH / 2 + 1);
+  });
+}
+
+DisplayManager::ConfirmHit DisplayManager::confirmHitTest(int16_t x, int16_t y) const {
+  if (mode_ != Mode::Confirm || y < kConfirmBtnY - 24) return ConfirmHit::None;
+  // A gap in the middle so a touch between the buttons does nothing.
+  if (x < 150) return ConfirmHit::Cancel;
+  if (x >= 170) return ConfirmHit::Confirm;
+  return ConfirmHit::None;
 }
 
 namespace {

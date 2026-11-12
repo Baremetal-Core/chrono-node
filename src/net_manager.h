@@ -26,6 +26,9 @@ void ssid(char* buf, size_t len);
 int rssi();
 void ip(char* buf, size_t len);  // empty when not connected
 
+// Saved network name, even when not connected (empty if none).
+void savedSsid(char* buf, size_t len);
+
 // Name of the setup portal network, e.g. "Chrono-Node-57A1".
 const char* portalSsid();
 

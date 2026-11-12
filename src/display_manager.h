@@ -17,6 +17,11 @@
 struct InfoView {
   char rows[9][2][40];  // label, value
   int count = 0;
+  // Optional usage bar drawn in this row before its value text.
+  int barRow = -1;
+  uint32_t barTotal = 0;
+  uint32_t barUsed = 0;  // in use now
+  uint32_t barPeak = 0;  // most ever in use (>= barUsed)
 };
 
 struct SettingsView {
@@ -80,6 +85,13 @@ class DisplayManager {
   void showInfoScreen(const InfoView& view);
   void showSettingsScreen(const SettingsView& view);
   SettingsAction settingsHitTest(int16_t x, int16_t y) const;
+  // The info screen's "Change Wi-Fi network" button.
+  bool infoButtonHit(int16_t x, int16_t y) const;
+
+  // Confirmation before forgetting the Wi-Fi network: Cancel / Forget.
+  void showWifiResetScreen(const char* savedSsid, const char* portalSsid);
+  enum class ConfirmHit : uint8_t { None, Cancel, Confirm };
+  ConfirmHit confirmHitTest(int16_t x, int16_t y) const;
 
   // Leaves the forecast/info/settings screen; the clock face is repainted on
   // the next showTime().
@@ -114,7 +126,7 @@ class DisplayManager {
   void screenshot(Print& out);
 
  private:
-  enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo };
+  enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo, Confirm };
   struct Roll {
     char from = ' ';
     char to = ' ';

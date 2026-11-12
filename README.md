@@ -61,7 +61,9 @@ forecast, info and settings screens, plus a settings page in the browser at
   - weather location, chosen from the last 5 used locations (`<` / `>`). New locations are
     added with `WEATHER CITY`/`WEATHER LOC`, and later from the web UI (M9).
 - **Info** shows firmware, Wi-Fi and signal, IP, host name, NTP sync, weather age, uptime,
-  memory and the RTC. It refreshes every 2 s.
+  RAM and the RTC. It refreshes every 2 s. RAM is a bar: used now, the extra used at the
+  peak since boot (dimmed), and free. **Change Wi-Fi network** at the bottom forgets the
+  saved network after a confirmation (see Wi-Fi setup).
 - **At night**, any touch raises the backlight to the day level for 10 s.
 - **12-hour mode** shows AM/PM before the minute bar. Hours 1–9 drop the leading digit and
   the time stays centred.
@@ -381,6 +383,16 @@ connecting, scanning and the portal never pause the clock.
 
 Credentials are stored in ESP32 NVS by the Wi-Fi stack, never in the repository.
 
+**Moving to another place:**
+- **Automatic:** after a reboot where the saved network isn't in range, the portal opens on
+  its own for 180 s.
+- **On the clock:** swipe to **Info**, tap **Change Wi-Fi network**, then tap **Forget**. A
+  confirmation screen names the saved network and the setup network before anything is
+  erased; Cancel or 30 s without touch leaves everything as it was.
+- **Web page or serial console:** **Forget Wi-Fi**, or `WIFI FORGET`, does the same.
+
+![Change Wi-Fi confirmation](docs/images/screen-wifi-reset.png)
+
 Behaviour:
 - Before each attempt the clock scans and connects to the **strongest** access point for the
   saved network, by BSSID. Office networks broadcast one name from many access points, and
@@ -438,7 +450,7 @@ PHOTO SHOW                  # show the next photo now (PHOTO SHOW 2 for photo 2)
 PHOTO DEL 2                 # delete photo 2 (PHOTO CLEAR deletes all)
 PHOTO EVERY 5               # slideshow every 5 min (0 = off, 1-60)
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
-SCREEN SETTINGS             # go to CLOCK, FORECAST, PHOTO, INFO or SETTINGS
+SCREEN SETTINGS             # go to CLOCK, FORECAST, PHOTO, INFO, SETTINGS or WIFI-RESET
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
 SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web page)

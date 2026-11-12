@@ -51,8 +51,9 @@ bool nightKnown = false;
 bool nightActive = false;
 
 // Screens, in swipe order. The forecast is skipped while there is no data,
-// the photo screen while there are no photos.
-enum class Screen : uint8_t { Clock, Forecast, Photo, Info, Settings };
+// the photo screen while there are no photos. WifiReset (the confirmation
+// opened from Info) isn't in the swipe order.
+enum class Screen : uint8_t { Clock, Forecast, Photo, Info, Settings, WifiReset };
 constexpr int kScreenCount = 5;
 Screen screenOn = Screen::Clock;
 Screen screenWanted = Screen::Clock;  // target of the current/next transition
@@ -251,7 +252,11 @@ void buildInfoView(InfoView& v) {
   const uint32_t up = millis() / 1000;
   add("Uptime", "%lud %02lu:%02lu:%02lu", (unsigned long)(up / 86400),
       (unsigned long)(up / 3600 % 24), (unsigned long)(up / 60 % 60), (unsigned long)(up % 60));
-  add("Memory", "%u KB free (min %u KB)", ESP.getFreeHeap() / 1024, ESP.getMinFreeHeap() / 1024);
+  v.barRow = v.count;
+  v.barTotal = ESP.getHeapSize();
+  v.barUsed = v.barTotal - ESP.getFreeHeap();
+  v.barPeak = v.barTotal - ESP.getMinFreeHeap();
+  add("Memory", "%u KB free", ESP.getFreeHeap() / 1024);
   if (hasTemp) {
     add("RTC", "DS3231, %.1f \xC2\xB0" "C%s", tempC, rtcLostPower ? ", lost power" : "");
   } else {
@@ -318,6 +323,7 @@ void applySettingsAction(SettingsAction a) {
 }
 
 Screen neighbour(Screen from, int dir) {
+  if (from == Screen::WifiReset) return Screen::Info;
   const bool hasForecast = weather::version() != 0;
   const bool hasPhotos = photos::count() > 0;
   int i = static_cast<int>(from);
@@ -360,6 +366,23 @@ void handleTouch() {
         requestScreen(Screen::Photo, true);
       }
       if (screenOn == Screen::Settings) applySettingsAction(display.settingsHitTest(ev.at.x, ev.at.y));
+      if (screenOn == Screen::Info && display.infoButtonHit(ev.at.x, ev.at.y)) {
+        requestScreen(Screen::WifiReset);
+      }
+      if (screenOn == Screen::WifiReset) {
+        switch (display.confirmHitTest(ev.at.x, ev.at.y)) {
+          case DisplayManager::ConfirmHit::Cancel:
+            requestScreen(Screen::Info);
+            break;
+          case DisplayManager::ConfirmHit::Confirm:
+            Serial.println("[WIFI] Forget requested on the screen");
+            net::requestForget();
+            requestScreen(Screen::Clock);  // shows "Join Wi-Fi ... to set up"
+            break;
+          case DisplayManager::ConfirmHit::None:
+            break;
+        }
+      }
       break;
     default:
       break;
@@ -400,6 +423,12 @@ void finishTransition() {
     case Screen::Settings:
       showSettings();
       break;
+    case Screen::WifiReset: {
+      char saved[33];
+      net::savedSsid(saved, sizeof(saved));
+      display.showWifiResetScreen(saved, net::portalSsid());
+      break;
+    }
     case Screen::Clock:
       display.endOverlayScreen();
       autoScreen = false;
@@ -544,7 +573,8 @@ void pollRtc(bool forceLog) {
   cs.hasTemp = hasTemp;
   cs.tempC = tempC;
   cs.night = nightActive;
-  static const char* const kScreenNames[] = {"clock", "forecast", "photo", "info", "settings"};
+  static const char* const kScreenNames[] = {"clock", "forecast", "photo", "info", "settings",
+                                             "wifi-reset"};
   strlcpy(cs.screen, kScreenNames[static_cast<int>(screenOn)], sizeof(cs.screen));
   web::publishClockState(cs);
 }
@@ -558,6 +588,7 @@ bool requestScreenByName(const char* name) {
   else if (strcasecmp(name, "photo") == 0) s = Screen::Photo;
   else if (strcasecmp(name, "info") == 0) s = Screen::Info;
   else if (strcasecmp(name, "settings") == 0) s = Screen::Settings;
+  else if (strcasecmp(name, "wifi-reset") == 0) s = Screen::WifiReset;
   else return false;
   autoScreen = false;
   lastTouchMs = millis();

@@ -385,7 +385,7 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     printRtcTime(rtc);
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
     if (!requestScreenByName(text + 7)) {
-      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|INFO|SETTINGS");
+      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|INFO|SETTINGS|WIFI-RESET");
     }
   } else if (strcasecmp(text, "TOUCH CAL") == 0) {
     calibrateTouch(display);
