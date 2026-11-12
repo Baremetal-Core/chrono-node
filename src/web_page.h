@@ -26,6 +26,9 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:8px 0}.ph{position:relative}
 .ph img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px;display:block;cursor:pointer;border:1px solid var(--line);background:#000}
 .ph button{position:absolute;top:6px;right:6px;padding:2px 8px;background:#0b0f22d0}
+.ph .cap{position:absolute;left:6px;bottom:6px;font-size:12px;background:#0b0f22d0;border-radius:6px;padding:1px 7px;pointer-events:none}
+.bar{display:flex;height:12px;border-radius:6px;background:#0b0f22;border:1px solid var(--line);overflow:hidden;margin:4px 0}.bar i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--dim)}.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 #phcv{width:100%;max-width:480px;aspect-ratio:4/3;border-radius:9px;touch-action:none;cursor:grab;display:block;background:#000;border:1px solid var(--line)}.big{font-size:28px;font-weight:700}.muted{color:var(--dim);font-size:13px}
 </style></head><body><main>
 <h1>Chrono <span>Node</span></h1><div class="sub" id="sub">Loading...</div>
@@ -57,6 +60,7 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <option value="2">Every 2 min</option><option value="5">Every 5 min</option><option value="10">Every 10 min</option><option value="15">Every 15 min</option>
 <option value="30">Every 30 min</option><option value="60">Every hour</option></select></div>
 <div class="photos" id="phlist"></div>
+<div id="phstore"></div>
 <div class="row"><input type="file" id="phfile" accept="image/*" hidden><button id="phadd">+ Add photo</button><span class="muted" id="phfree"></span></div>
 <div id="phedit" style="display:none"><canvas id="phcv" width="320" height="240"></canvas>
 <div class="row"><label>Zoom</label><input type="range" id="phzoom" min="1" max="4" step="0.01" value="1"></div>
@@ -115,8 +119,16 @@ $("time").textContent=s.local_time.slice(11);$("fwcur").textContent="Installed: 
 const w=s.weather?`${s.weather.temp_c}\u00b0C ${s.weather.condition}, ${s.weather.place} (${ago(s.weather.age_s)})`:"no data yet";
 const rows=[["Date",s.local_time.slice(0,10)],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
 ["RTC",s.rtc.present?("DS3231"+(s.rtc.temp_c!==undefined?`, ${s.rtc.temp_c}\u00b0C`:"")+(s.rtc.lost_power?", LOST POWER":"")):"not detected"],
-["Weather",w],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)],["Memory",Math.round(s.heap_free/1024)+" KB free"]];
-$("status").innerHTML=rows.map(r=>`<div>${r[0]}</div><div>${esc(String(r[1]))}</div>`).join("")}catch(e){$("sub").textContent="Clock not reachable"}}
+["Weather",w],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)],["Memory",{html:memBar(s)}]];
+$("status").innerHTML=rows.map(r=>`<div>${r[0]}</div><div>${r[1].html||esc(String(r[1]))}</div>`).join("")}catch(e){$("sub").textContent="Clock not reachable"}}
+const kb=b=>(b<10240?(b/1024).toFixed(1):Math.round(b/1024))+" KB";
+// Stacked bar: parts [{v,c,t}] out of total, then a legend with the same colours.
+function bar(parts,total,free){return`<div class="bar">${parts.map(p=>`<i style="width:${Math.max(0,100*p.v/total).toFixed(2)}%;background:${p.c}" title="${esc(p.t)}"></i>`).join("")}</div>
+<div class="legend">${parts.concat([{c:"#0b0f22;border:1px solid var(--line)",t:"Free "+kb(free)}]).map(p=>`<span><span class="sw" style="background:${p.c}"></span>${esc(p.t)}</span>`).join("")}</div>`}
+// RAM: in use now, plus the extra that was in use at the lowest point since boot.
+function memBar(s){const t=s.heap_total,used=t-s.heap_free,peak=t-s.heap_min;
+return bar([{v:used,c:"var(--accent)",t:"Used "+kb(used)},{v:peak-used,c:"#ff9a1f55",t:"Peak used "+kb(peak)}],t,s.heap_free)+`<div class="muted">${kb(t)} total</div>`}
+const PHC=["#ff9a1f","#ff5fa2","#8b7bff","#2ec5ff","#3ddc97"];
 function esc(t){return t.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 let S;
 async function loadSettings(){S=await(await fetch("/api/settings")).json();
@@ -129,9 +141,13 @@ if(!document.activeElement||!document.activeElement.classList.contains("bnmsg"))
 $("recent").innerHTML=S.recent_locations.map(r=>`<button data-c="${r.lat} ${r.lon} ${esc(r.name)}">${esc(r.name)} <small>${r.lat}, ${r.lon}</small></button>`).join("");}
 let phSig="";
 function phList(P){selVal("phevery",P.every_min,"Every "+P.every_min+" min");const n=P.items.length;
-$("phadd").disabled=!P.available||n>=P.max;$("phfree").textContent=P.available?`${n} of ${P.max} \u00b7 ${P.used_kb} of ${P.total_kb} KB used`:"Photo storage unavailable";
+$("phadd").disabled=!P.available||n>=P.max;$("phfree").textContent=P.available?`${n} of ${P.max} photos`:"Photo storage unavailable";
+// Files use whole 4 KB blocks; the rest of "used" is file-system overhead.
+const parts=P.items.map(i=>({v:i.bytes,c:PHC[(i.slot-1)%5],t:`Photo ${i.slot} ${kb(i.bytes)}`})),sum=P.items.reduce((a,i)=>a+i.bytes,0);
+parts.push({v:Math.max(0,P.used_bytes-sum),c:"#4a5072",t:"File system "+kb(Math.max(0,P.used_bytes-sum))});
+$("phstore").innerHTML=P.available?`<div class="muted">Storage: ${kb(P.used_bytes)} of ${kb(P.total_bytes)} used</div>`+bar(parts,P.total_bytes,P.total_bytes-P.used_bytes):"";
 const sig=P.items.map(i=>i.slot+":"+i.bytes).join();if(sig===phSig)return;phSig=sig;
-$("phlist").innerHTML=P.items.map(i=>`<div class="ph"><img src="/api/photo?n=${i.slot}&v=${i.bytes}" data-show="${i.slot}" title="Show on the clock"><button class="danger" data-del="${i.slot}">&#x2715;</button></div>`).join("")}
+$("phlist").innerHTML=P.items.map(i=>`<div class="ph"><img src="/api/photo?n=${i.slot}&v=${i.bytes}" data-show="${i.slot}" title="Show on the clock"><span class="cap"><span class="sw" style="background:${PHC[(i.slot-1)%5]}"></span>Photo ${i.slot} \u00b7 ${kb(i.bytes)}</span><button class="danger" data-del="${i.slot}">&#x2715;</button></div>`).join("")}
 $("phlist").onclick=e=>{const t=e.target;if(t.dataset.show)cmd("PHOTO SHOW "+t.dataset.show,"Showing on the clock");
 else if(t.dataset.del&&confirm("Delete this photo from the clock?"))cmd("PHOTO DEL "+t.dataset.del,"Photo deleted")};
 $("phevery").onchange=e=>cmd("PHOTO EVERY "+e.target.value);

@@ -68,6 +68,7 @@ void handleStatus() {
   doc["firmware"] = config::kFirmwareVersion;
   doc["revision"] = config::kGitRevision;
   doc["uptime_s"] = millis() / 1000;
+  doc["heap_total"] = ESP.getHeapSize();
   doc["heap_free"] = ESP.getFreeHeap();
   doc["heap_min"] = ESP.getMinFreeHeap();
 
@@ -146,8 +147,8 @@ void handleSettings() {
   ph["every_min"] = settings::photoEveryMinutes();
   ph["max"] = config::kPhotoSlots;
   ph["max_bytes"] = config::kPhotoMaxBytes;
-  ph["used_kb"] = photos::usedBytes() / 1024;
-  ph["total_kb"] = photos::totalBytes() / 1024;
+  ph["used_bytes"] = photos::usedBytes();
+  ph["total_bytes"] = photos::totalBytes();
   JsonArray items = ph["items"].to<JsonArray>();
   int slots[config::kPhotoSlots];
   const int n = photos::list(slots, config::kPhotoSlots);
