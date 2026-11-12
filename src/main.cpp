@@ -255,8 +255,7 @@ void buildInfoView(InfoView& v) {
   v.barRow = v.count;
   v.barTotal = ESP.getHeapSize();
   v.barUsed = v.barTotal - ESP.getFreeHeap();
-  v.barPeak = v.barTotal - ESP.getMinFreeHeap();
-  add("Memory", "%u KB free", ESP.getFreeHeap() / 1024);
+  add("Memory", "%u / %u KB", v.barUsed / 1024, v.barTotal / 1024);
   if (hasTemp) {
     add("RTC", "DS3231, %.1f \xC2\xB0" "C%s", tempC, rtcLostPower ? ", lost power" : "");
   } else {

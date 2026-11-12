@@ -61,8 +61,7 @@ forecast, info and settings screens, plus a settings page in the browser at
   - weather location, chosen from the last 5 used locations (`<` / `>`). New locations are
     added with `WEATHER CITY`/`WEATHER LOC`, and later from the web UI (M9).
 - **Info** shows firmware, Wi-Fi and signal, IP, host name, NTP sync, weather age, uptime,
-  RAM and the RTC. It refreshes every 2 s. RAM is a bar: used now, the extra used at the
-  peak since boot (dimmed), and free. **Change Wi-Fi network** at the bottom forgets the
+  RAM and the RTC. It refreshes every 2 s. RAM is a bar with used / total. **Change Wi-Fi network** at the bottom forgets the
   saved network after a confirmation (see Wi-Fi setup).
 - **At night**, any touch raises the backlight to the day level for 10 s.
 - **12-hour mode** shows AM/PM before the minute bar. Hours 1–9 drop the leading digit and

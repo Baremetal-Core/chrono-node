@@ -655,16 +655,14 @@ void DisplayManager::showInfoScreen(const InfoView& v) {
       s.drawString(v.rows[i][0], 12, kInfoRowH / 2);
       int16_t x = kInfoValueX;
       if (i == v.barRow && v.barTotal > 0) {
-        // Used now (accent), extra used at the peak (dimmed accent), free (faint).
+        // Used (accent) over the whole capacity (faint).
         const int16_t y = (kInfoRowH - kInfoBarH) / 2;
-        const int16_t used = (int64_t)kInfoBarW * v.barUsed / v.barTotal;
-        const int16_t peak = (int64_t)kInfoBarW * max(v.barPeak, v.barUsed) / v.barTotal;
+        const int16_t used = min<int64_t>(kInfoBarW, (int64_t)kInfoBarW * v.barUsed / v.barTotal);
         s.fillSmoothRoundRect(x, y, kInfoBarW, kInfoBarH, kInfoBarH / 2, C->faint, C->bg);
-        if (peak > used) {
-          s.fillRect(x + used, y, peak - used, kInfoBarH, theme::mix(pal_.top, C->faint, 90));
+        if (used > 0) {
+          s.fillSmoothRoundRect(x, y, max<int16_t>(used, kInfoBarH), kInfoBarH, kInfoBarH / 2,
+                                pal_.top, C->faint);
         }
-        if (used > 0) s.fillSmoothRoundRect(x, y, max<int16_t>(used, kInfoBarH), kInfoBarH,
-                                            kInfoBarH / 2, pal_.top, C->bg);
         x += kInfoBarW + 8;
       }
       s.setTextColor(C->text, C->bg);

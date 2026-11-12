@@ -17,11 +17,10 @@
 struct InfoView {
   char rows[9][2][40];  // label, value
   int count = 0;
-  // Optional usage bar drawn in this row before its value text.
+  // Optional usage bar (used of total) drawn in this row before its value text.
   int barRow = -1;
   uint32_t barTotal = 0;
-  uint32_t barUsed = 0;  // in use now
-  uint32_t barPeak = 0;  // most ever in use (>= barUsed)
+  uint32_t barUsed = 0;
 };
 
 struct SettingsView {
