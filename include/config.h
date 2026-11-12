@@ -98,6 +98,11 @@ constexpr int kPhotoShowAtSecond = 28;          // between the banner (15) and f
 constexpr uint32_t kPhotoShowS = 12;
 constexpr uint32_t kPhotoRequestShowMs = 20000; // PHOTO SHOW / web "show" duration
 
+// Task watchdog. A TLS handshake with open-meteo.com takes ~7 s, most of it one
+// uninterruptible CPU-bound step (software ECDSA P-384 certificate checks), which
+// starves core 0's idle task beyond the 5 s default and resets the clock.
+constexpr uint32_t kTaskWatchdogS = 15;
+
 // DS3231 die temperature (shown in the status bar) is read this often.
 constexpr uint32_t kTemperatureIntervalMs = 60000;
 

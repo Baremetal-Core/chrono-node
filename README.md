@@ -545,6 +545,10 @@ src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BA
   connection can take a few retries (~10–90 s). If it never connects, ask IT whether the
   network uses MAC allow-listing or client exclusion. The clock's Wi-Fi MAC is shown by
   `esptool` at upload (e.g. `48:af:f3:70:57:a0`).
+- **Clock restarts a few seconds after joining Wi-Fi (`task_wdt: IDLE0`):** fixed in v0.12.
+  A TLS handshake with Open-Meteo takes ~7 s on the ESP32, mostly one CPU-bound step
+  (software ECDSA P-384 certificate checks). With the default 5 s task watchdog this reset
+  the clock on every weather update. The watchdog now allows 15 s (`kTaskWatchdogS`).
 - **Time is off by whole hours after upgrading from v0.1.0:** v0.1.0 stored local time in
   the DS3231. Run `SET` once with the current local time.
 - **White background, wrong or washed-out colours:** CYD batches use different panels. This

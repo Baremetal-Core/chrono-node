@@ -21,6 +21,7 @@
 #include "settings.h"
 #include "weather.h"
 #include "web_page.h"
+#include "yield_stream.h"
 
 namespace web {
 namespace {
@@ -220,7 +221,8 @@ void handleGeocode() {
     f[k] = true;
   }
   JsonDocument in;
-  DeserializationError err = deserializeJson(in, http.getStream(), DeserializationOption::Filter(filter));
+  YieldingStream body(http.getStream());
+  DeserializationError err = deserializeJson(in, body, DeserializationOption::Filter(filter));
   http.end();
   if (err) {
     server->send(502, "application/json", "{\"error\":\"bad geocoding response\"}");

@@ -13,6 +13,7 @@
 #include "certs/ca_bundle.h"
 #include "config.h"
 #include "settings.h"
+#include "yield_stream.h"
 
 namespace weather {
 namespace {
@@ -74,7 +75,8 @@ bool fetch() {
   if (!httpsGet(client, http, url)) return false;
 
   JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, http.getStream());
+  YieldingStream body(http.getStream());
+  DeserializationError err = deserializeJson(doc, body);
   http.end();
   if (err) {
     snprintf(lastError, sizeof(lastError), "JSON: %s", err.c_str());
@@ -145,7 +147,8 @@ void geocode() {
     return;
   }
   JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, http.getStream());
+  YieldingStream body(http.getStream());
+  DeserializationError err = deserializeJson(doc, body);
   http.end();
   JsonObject r = doc["results"][0];
   if (err || r.isNull()) {

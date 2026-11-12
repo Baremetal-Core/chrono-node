@@ -7,6 +7,7 @@
 // written at boot; without network use the serial console "SET" command.
 
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 
 #include "backlight.h"
 #include "clock_sync.h"
@@ -631,6 +632,8 @@ void requestBannerNow() {
 }
 
 void setup() {
+  esp_task_wdt_init(config::kTaskWatchdogS, true);  // reconfigures the running watchdog
+
   // The CYD RGB LED is active-low and glows dimly if left floating: switch it off.
   for (int pin : {config::kLedRedPin, config::kLedGreenPin, config::kLedBluePin}) {
     pinMode(pin, OUTPUT);
