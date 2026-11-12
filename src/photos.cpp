@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <sys/stat.h>
 
 #include <atomic>
 
@@ -21,6 +22,12 @@ std::atomic<uint32_t> inUse{0};  // bit n set: slot n has a photo (read by both 
 File upload;
 size_t uploadLen = 0;
 
+// LittleFS.exists() logs an error for every missing file on this core; stat() doesn't.
+bool fileExists(const String& p) {
+  struct stat st;
+  return stat((String("/littlefs") + p).c_str(), &st) == 0;
+}
+
 int readByte(File& f) { return f.available() ? f.read() : -1; }
 
 int readU16(File& f) {
@@ -36,13 +43,13 @@ bool begin() {
     Serial.println("[PHOTO] ERROR: LittleFS mount failed");
     return false;
   }
-  if (!LittleFS.exists(kDir)) LittleFS.mkdir(kDir);
+  if (!fileExists(kDir)) LittleFS.mkdir(kDir);
   uint32_t mask = 0;
   for (int s = 1; s <= config::kPhotoSlots; ++s) {
-    if (LittleFS.exists(path(s))) mask |= 1u << s;
+    if (fileExists(path(s))) mask |= 1u << s;
   }
   inUse = mask;
-  if (LittleFS.exists(kUploadPath)) LittleFS.remove(kUploadPath);  // interrupted upload
+  if (fileExists(kUploadPath)) LittleFS.remove(kUploadPath);  // interrupted upload
   Serial.printf("[PHOTO] %d photo(s), %u of %u KB used\n", count(), usedBytes() / 1024,
                 totalBytes() / 1024);
   return true;
@@ -215,7 +222,7 @@ int uploadFinish(String& err) {
 
 void uploadAbort() {
   if (upload) upload.close();
-  if (mounted && LittleFS.exists(kUploadPath)) LittleFS.remove(kUploadPath);
+  if (mounted && fileExists(kUploadPath)) LittleFS.remove(kUploadPath);
   uploadLen = 0;
 }
 
