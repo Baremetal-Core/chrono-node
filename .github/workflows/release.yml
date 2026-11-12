@@ -3,7 +3,8 @@ name: Release
 # Push a tag like v0.10.0 (matching kFirmwareVersion in include/config.h) to
 # build and publish a GitHub release with:
 #   chrono-node-fw.bin       OTA image, for the web page's Firmware section
-#   chrono-node-fw-full.bin  complete flash image, write with esptool at 0x0
+#   chrono-node-fw-full.bin  complete flash image for new/recovered boards, write
+#                            with esptool at 0x0 (erases settings, incl. Wi-Fi)
 on:
   push:
     tags: ["v*"]

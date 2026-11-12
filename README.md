@@ -154,13 +154,19 @@ runs `.github/workflows/release.yml`, which builds and publishes a GitHub releas
 | File | Use |
 |------|-----|
 | `chrono-node-fw.bin` | OTA image for the web page |
-| `chrono-node-fw-full.bin` | Complete image for a new or recovered board |
+| `chrono-node-fw-full.bin` | Complete image for a **new or recovered** board. **Erases all settings, including Wi-Fi** |
 | `SHA256SUMS` | Checksums |
 
 ```bash
 git tag v0.10.0 && git push origin v0.10.0
 esptool.py --chip esp32 --port /dev/cu.usbserial-XXXX write_flash 0x0 chrono-node-fw-full.bin
 ```
+
+> **Warning:** the full image covers the whole flash from 0x0, including the settings
+> area (NVS at 0x9000–0xDFFF), which `merge_bin` fills with blank bytes. Writing it erases
+> Wi-Fi credentials, the time zone, recent locations and touch calibration. To update a
+> configured clock, use the OTA image (web page) or `pio run -t upload`, which leave the
+> settings alone.
 
 A USB upload (`pio run -t upload`) always resets the boot slot to `app0`.
 
