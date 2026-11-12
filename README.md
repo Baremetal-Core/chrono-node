@@ -243,8 +243,10 @@ Your own photos can be shown on the clock, for example a picture of someone you 
     doesn't collide with the banner or forecast. You can choose every 1–60 minutes, or off.
   - The slideshow never runs at night, or while a notice is showing (setup, update PIN).
     You can still swipe to your photos at night.
-- **Web page:** thumbnails of the stored photos. Tap one to show it on the clock now, or ✕
-  to delete it.
+- **Web page:** thumbnails of the stored photos with each one's size. Tap one to show it on
+  the clock now, or ✕ to delete it. A storage bar shows each photo's share, file-system
+  overhead (files use whole 4 KB blocks) and free space. The Status section shows RAM as a
+  bar too: used now, the peak since boot, and free.
 - **Serial console:** `PHOTO` commands (listed below). Photos larger than the screen, for
   example uploaded with curl, are scaled down by 1/2, 1/4 or 1/8 and centred. Progressive
   JPEGs are rejected because the decoder (tjpgd) can't read them.
