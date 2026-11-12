@@ -14,9 +14,11 @@
 #include "display_manager.h"
 #include "net_manager.h"
 #include "rtc_manager.h"
+#include "screens.h"
 #include "serial_console.h"
 #include "settings.h"
 #include "time_utils.h"
+#include "touch.h"
 #include "weather.h"
 
 namespace {
@@ -36,14 +38,27 @@ int lastSecond = -1;
 bool hasTemp = false;
 float tempC = 0;
 
-// Night mode and the forecast screen are switched behind a backlight fade so
-// the repaint is never seen: fade out, switch, repaint, fade in.
+void pollRtc(bool forceLog = false);
+
+// Night mode and screen changes are switched behind a backlight fade so the
+// repaint is never seen: fade out, switch, repaint, fade in.
 bool transitioning = false;
 uint32_t transitionFadeInMs = 0;
 bool nightKnown = false;
 bool nightActive = false;
-bool weatherWanted = false;   // target of the current/next transition
-bool weatherOnScreen = false;
+
+// Screens, in swipe order. The forecast is skipped while there is no data.
+enum class Screen : uint8_t { Clock, Forecast, Info, Settings };
+constexpr int kScreenCount = 4;
+Screen screenOn = Screen::Clock;
+Screen screenWanted = Screen::Clock;  // target of the current/next transition
+bool autoForecast = false;  // forecast shown by the cycle or WEATHER SHOW, not by touch
+uint32_t lastTouchMs = 0;
+uint32_t lastInfoMs = 0;
+
+// Touching the screen at night raises it to the day level for a while.
+bool nightBoost = false;
+uint32_t nightBoostUntilMs = 0;
 
 void startTransition(uint32_t fadeOutMs, uint32_t fadeInMs) {
   transitioning = true;
@@ -52,7 +67,13 @@ void startTransition(uint32_t fadeOutMs, uint32_t fadeInMs) {
 }
 
 uint8_t brightnessFor(bool night) {
-  return night ? settings::brightnessNight() : settings::brightnessDay();
+  return night && !nightBoost ? settings::brightnessNight() : settings::brightnessDay();
+}
+
+void requestScreen(Screen s) {
+  if (transitioning || (s == screenOn && s == screenWanted)) return;
+  screenWanted = s;
+  startTransition(config::kScreenFadeOutMs, config::kScreenFadeInMs);
 }
 
 // Called every second with the local time, before the frame is drawn.
@@ -88,12 +109,217 @@ bool shouldShowWeather(const struct tm& local, bool hasData) {
          local.tm_sec < config::kWeatherShowAtSecond + (int)config::kWeatherShowS;
 }
 
-void updateWeatherScreen(const struct tm& local, bool hasData) {
-  const bool want = shouldShowWeather(local, hasData);
-  if (want != weatherOnScreen && !transitioning) {
-    weatherWanted = want;
-    startTransition(config::kScreenFadeOutMs, config::kScreenFadeInMs);
+// Automatic screen changes: the forecast cycle, and back to the clock after
+// a period without touch.
+void updateAutoScreens(const struct tm& local, bool hasData) {
+  if (transitioning) return;
+  const bool wantForecast = shouldShowWeather(local, hasData);
+  if (screenOn == Screen::Clock && wantForecast) {
+    autoForecast = true;
+    requestScreen(Screen::Forecast);
+  } else if (screenOn == Screen::Forecast && autoForecast && !wantForecast) {
+    requestScreen(Screen::Clock);
+  } else if (screenOn != Screen::Clock && !autoForecast &&
+             millis() - lastTouchMs >= config::kScreenIdleMs) {
+    requestScreen(Screen::Clock);
   }
+}
+
+void buildSettingsView(SettingsView& v) {
+  v.dayPct = settings::brightnessDay();
+  v.nightPct = settings::brightnessNight();
+  v.nightOn = settings::nightEnabled();
+  snprintf(v.nightWindow, sizeof(v.nightWindow), "%02u:%02u-%02u:%02u",
+           settings::nightStart() / 60, settings::nightStart() % 60, settings::nightEnd() / 60,
+           settings::nightEnd() % 60);
+  v.hour12 = settings::hour12();
+  v.cycleOn = settings::weatherCycle();
+  strlcpy(v.place, settings::place(), sizeof(v.place));
+  v.recentCount = settings::recentLocationCount();
+  v.recentIndex = -1;
+  for (int i = 0; i < v.recentCount; ++i) {
+    char name[32];
+    float la, lo;
+    if (settings::recentLocation(i, name, sizeof(name), la, lo) &&
+        strcmp(name, settings::place()) == 0) {
+      v.recentIndex = i;
+      break;
+    }
+  }
+}
+
+void buildInfoView(InfoView& v) {
+  v.count = 0;
+  auto add = [&](const char* label, const char* fmt, auto... args) {
+    if (v.count >= 9) return;
+    strlcpy(v.rows[v.count][0], label, sizeof(v.rows[0][0]));
+    snprintf(v.rows[v.count][1], sizeof(v.rows[0][1]), fmt, args...);
+    ++v.count;
+  };
+  add("Firmware", "v%s (%s)", config::kFirmwareVersion, config::kGitRevision);
+  char ssid[33], ip[16];
+  net::ssid(ssid, sizeof(ssid));
+  net::ip(ip, sizeof(ip));
+  if (net::isConnected()) {
+    add("Wi-Fi", "%s  %d dBm", ssid, net::rssi());
+    add("IP", "%s", ip);
+  } else {
+    add("Wi-Fi", "%s", net::state() == net::State::Portal ? "setup portal open" : "not connected");
+    add("IP", "-");
+  }
+  add("Host", "%s.local", config::kHostname);
+  char ntp[16];
+  clock_sync::statusText(ntp, sizeof(ntp));
+  add("Time sync", "%s", ntp);
+  const uint32_t age = weather::ageSeconds();
+  if (age == UINT32_MAX) {
+    add("Weather", "%s, no data", settings::place());
+  } else {
+    add("Weather", "%s, %lu min ago", settings::place(), (unsigned long)(age / 60));
+  }
+  const uint32_t up = millis() / 1000;
+  add("Uptime", "%lud %02lu:%02lu:%02lu", (unsigned long)(up / 86400),
+      (unsigned long)(up / 3600 % 24), (unsigned long)(up / 60 % 60), (unsigned long)(up % 60));
+  add("Memory", "%u KB free (min %u KB)", ESP.getFreeHeap() / 1024, ESP.getMinFreeHeap() / 1024);
+  if (hasTemp) {
+    add("RTC", "DS3231, %.1f \xC2\xB0" "C%s", tempC, rtcLostPower ? ", lost power" : "");
+  } else {
+    add("RTC", "%s", rtc.isPresent() ? "DS3231" : "not detected");
+  }
+}
+
+void showSettings() {
+  SettingsView v;
+  buildSettingsView(v);
+  display.showSettingsScreen(v);
+}
+
+void applySettingsAction(SettingsAction a) {
+  auto step = [](int value, int delta, int lo, int hi) {
+    return static_cast<uint8_t>(constrain(value + delta, lo, hi));
+  };
+  switch (a) {
+    case SettingsAction::None:
+      return;
+    case SettingsAction::DayMinus:
+    case SettingsAction::DayPlus:
+      settings::setBrightness(false, step(settings::brightnessDay(),
+                                          a == SettingsAction::DayPlus ? 10 : -10, 10, 100));
+      break;
+    case SettingsAction::NightMinus:
+    case SettingsAction::NightPlus:
+      settings::setBrightness(true, step(settings::brightnessNight(),
+                                         a == SettingsAction::NightPlus ? 5 : -5, 0, 100));
+      break;
+    case SettingsAction::NightToggle:
+      settings::setNightEnabled(!settings::nightEnabled());
+      break;
+    case SettingsAction::FormatToggle:
+      settings::setHour12(!settings::hour12());
+      display.setHour12(settings::hour12());
+      break;
+    case SettingsAction::CycleToggle:
+      settings::setWeatherCycle(!settings::weatherCycle());
+      break;
+    case SettingsAction::LocationPrev:
+    case SettingsAction::LocationNext: {
+      SettingsView v;
+      buildSettingsView(v);
+      if (v.recentCount < 2) break;
+      int i = v.recentIndex < 0 ? 0 : v.recentIndex;
+      i = (i + (a == SettingsAction::LocationNext ? 1 : v.recentCount - 1)) % v.recentCount;
+      char name[32];
+      float la, lo;
+      if (settings::recentLocation(i, name, sizeof(name), la, lo) &&
+          settings::setLocation(la, lo, name, false)) {
+        Serial.printf("[WEATHER] Location: %s\n", name);
+        weather::requestUpdate();
+      }
+      break;
+    }
+  }
+  showSettings();
+  // Preview brightness changes (at night the boost shows the day level).
+  if (a == SettingsAction::NightMinus || a == SettingsAction::NightPlus) {
+    nightBoost = false;
+  }
+  backlight::fadeTo(brightnessFor(nightActive), config::kBrightnessFadeMs);
+}
+
+Screen neighbour(Screen from, int dir) {
+  const bool hasForecast = weather::version() != 0;
+  int i = static_cast<int>(from);
+  for (int n = 0; n < kScreenCount; ++n) {
+    i = (i + dir + kScreenCount) % kScreenCount;
+    if (static_cast<Screen>(i) != Screen::Forecast || hasForecast) break;
+  }
+  return static_cast<Screen>(i);
+}
+
+void handleTouch() {
+  const touch::Event ev = touch::poll();
+  if (ev.gesture == touch::Gesture::None) return;
+  const uint32_t now = millis();
+  lastTouchMs = now;
+
+  if (ev.gesture == touch::Gesture::Down) {
+    if (nightActive && !transitioning) {
+      if (!nightBoost) backlight::fadeTo(settings::brightnessDay(), config::kBrightnessFadeMs);
+      nightBoost = true;
+      nightBoostUntilMs = now + config::kNightTapBoostMs;
+    }
+    return;
+  }
+  if (transitioning) return;
+  static const char* const kGestureNames[] = {"none", "down", "tap", "swipe left", "swipe right"};
+  Serial.printf("[TOUCH] %s at %d,%d\n", kGestureNames[static_cast<int>(ev.gesture)], ev.at.x,
+                ev.at.y);
+  switch (ev.gesture) {
+    case touch::Gesture::SwipeLeft:
+    case touch::Gesture::SwipeRight:
+      autoForecast = false;
+      requestScreen(neighbour(screenOn, ev.gesture == touch::Gesture::SwipeLeft ? 1 : -1));
+      break;
+    case touch::Gesture::Tap:
+      if (screenOn == Screen::Forecast) autoForecast = false;  // keep it while being read
+      if (screenOn == Screen::Settings) applySettingsAction(display.settingsHitTest(ev.at.x, ev.at.y));
+      break;
+    default:
+      break;
+  }
+}
+
+// Screen is dark: switch colours/screen, repaint, then fade back in.
+void finishTransition() {
+  display.setNightMode(nightActive);
+  display.setHour12(settings::hour12());
+  weather::Data wx;
+  Screen next = screenWanted;
+  if (next == Screen::Forecast && !weather::get(wx)) next = Screen::Clock;
+  switch (next) {
+    case Screen::Forecast:
+      display.showWeatherScreen(wx, weather::ageSeconds());
+      break;
+    case Screen::Info: {
+      InfoView v;
+      buildInfoView(v);
+      display.showInfoScreen(v);
+      lastInfoMs = millis();
+      break;
+    }
+    case Screen::Settings:
+      showSettings();
+      break;
+    case Screen::Clock:
+      display.endOverlayScreen();
+      autoForecast = false;
+      break;
+  }
+  screenOn = screenWanted = next;
+  transitioning = false;
+  lastSecond = -1;
+  pollRtc();
+  backlight::fadeTo(brightnessFor(nightActive), transitionFadeInMs);
 }
 
 void logTime(const DateTime& utc) {
@@ -176,7 +402,7 @@ void onRtcDetected() {
   refreshLostPower();
 }
 
-void pollRtc(bool forceLog = false) {
+void pollRtc(bool forceLog) {
   DateTime utc;
   if (!rtc.read(utc)) {
     if (!rtc.isPresent()) {
@@ -205,8 +431,8 @@ void pollRtc(bool forceLog = false) {
   struct tm local;
   time_utils::utcToLocal(utc, local);
   updateNight(local);
-  updateWeatherScreen(local, weather::version() != 0);
-  if (!weatherOnScreen) {
+  updateAutoScreens(local, weather::version() != 0);
+  if (screenOn == Screen::Clock && !transitioning) {
     display.showTime(local);
     updateStatus();
   }
@@ -214,6 +440,19 @@ void pollRtc(bool forceLog = false) {
 }
 
 }  // namespace
+
+bool requestScreenByName(const char* name) {
+  Screen s;
+  if (strcasecmp(name, "clock") == 0) s = Screen::Clock;
+  else if (strcasecmp(name, "forecast") == 0) s = Screen::Forecast;
+  else if (strcasecmp(name, "info") == 0) s = Screen::Info;
+  else if (strcasecmp(name, "settings") == 0) s = Screen::Settings;
+  else return false;
+  autoForecast = false;
+  lastTouchMs = millis();
+  requestScreen(s);
+  return true;
+}
 
 void setup() {
   // The CYD RGB LED is active-low and glows dimly if left floating: switch it off.
@@ -237,6 +476,7 @@ void setup() {
   backlight::begin(0);  // faded in once the first frame is drawn
 
   weather::begin();
+  touch::begin();
 
   rtcState = RtcState::Missing;
   if (rtc.begin()) {
@@ -248,6 +488,7 @@ void setup() {
     display.showError("RTC ERROR", "DS3231 not detected (SDA=27 SCL=22)");
   }
 
+  display.setHour12(settings::hour12());
   if (!nightKnown) backlight::fadeTo(settings::brightnessDay(), config::kNightFadeInMs);
 
   // Wi-Fi starts after the first clock frame so the time is visible immediately.
@@ -257,21 +498,19 @@ void setup() {
 
 void loop() {
   backlight::loop();
-  if (transitioning && !backlight::isFading()) {
-    // Screen is dark: switch colours/screen, repaint, then fade back in.
-    display.setNightMode(nightActive);
-    weather::Data wx;
-    if (weatherWanted && weather::get(wx)) {
-      display.showWeatherScreen(wx, weather::ageSeconds());
-      weatherOnScreen = true;
-    } else {
-      display.endWeatherScreen();
-      weatherOnScreen = false;
-    }
-    transitioning = false;
-    lastSecond = -1;
-    pollRtc();
-    backlight::fadeTo(brightnessFor(nightActive), transitionFadeInMs);
+  if (transitioning && !backlight::isFading()) finishTransition();
+
+  handleTouch();
+  const uint32_t nowMsTouch = millis();
+  if (nightBoost && (int32_t)(nowMsTouch - nightBoostUntilMs) >= 0) {
+    nightBoost = false;
+    if (!transitioning) backlight::fadeTo(brightnessFor(nightActive), config::kNightFadeInMs);
+  }
+  if (screenOn == Screen::Info && !transitioning && nowMsTouch - lastInfoMs >= 2000) {
+    lastInfoMs = nowMsTouch;
+    InfoView v;
+    buildInfoView(v);
+    display.showInfoScreen(v);
   }
 
   if (clock_sync::loop(rtc)) {
@@ -287,6 +526,8 @@ void loop() {
     // oscillator-stop flag, apply the brightness and redraw.
     rtcLostPower = rtc.lostPower();
     lastSecond = -1;
+    display.setHour12(settings::hour12());
+    if (screenOn == Screen::Settings && !transitioning) showSettings();
     if (!transitioning && nightKnown) {
       backlight::fadeTo(brightnessFor(nightActive), config::kBrightnessFadeMs);
     }

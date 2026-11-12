@@ -3,16 +3,19 @@
 Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 ("Cheap Yellow Display", CYD) with an external DS3231 RTC as its time source.
 
-**Current state (M8):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
+**Current state (M6 + M8):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
 local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal, mDNS
 (`chrono-node.local`) and NTP that keeps the DS3231 accurate. The UI uses bold anti-aliased
 gradient digits, rolling transitions and colours that follow the time of day, plus a dimmed
-night mode on a schedule and weather from Open-Meteo. See [docs/ROADMAP.md](docs/ROADMAP.md)
-for upcoming milestones.
+night mode on a schedule, weather from Open-Meteo, and touch navigation between the clock,
+forecast, info and settings screens. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming
+milestones.
 
 | Clock with weather | Forecast screen |
 |--------------------|-----------------|
 | ![Clock with weather](docs/images/weather-clock.png) | ![Forecast](docs/images/weather-forecast.png) |
+| **Settings (touch)** | **Info** |
+| ![Settings](docs/images/screen-settings.png) | ![Info](docs/images/screen-info.png) |
 
 | Night mode | Sunrise | Day |
 |------------|---------|-----|
@@ -41,6 +44,34 @@ for upcoming milestones.
 - Glyphs are rendered white-on-black into sprites, then tinted per pixel, so the gradients
   keep their anti-aliasing. Nothing flickers. An animation frame takes a few ms.
 - The CYD's RGB LED is switched off at boot.
+
+## Touch and screens
+
+- **Screens**, in swipe order: Clock → Forecast → Info → Settings, then back to Clock. Swipe
+  left for the next screen and right for the previous one. The forecast is skipped until
+  weather data exists. Screen changes happen behind a quick backlight dip.
+- After 30 s without touch the clock comes back. The automatic forecast cycle (see Weather)
+  still runs on the clock screen.
+- **Settings** (tap):
+  - day brightness (±10 %) and night brightness (±5 %)
+  - night mode on/off (the schedule itself is set with `NIGHT HH:MM HH:MM`)
+  - 12/24-hour time
+  - forecast cycle on/off
+  - weather location, chosen from the last 5 used locations (`<` / `>`). New locations are
+    added with `WEATHER CITY`/`WEATHER LOC`, and later from the web UI (M9).
+- **Info** shows firmware, Wi-Fi and signal, IP, host name, NTP sync, weather age, uptime,
+  memory and the RTC. It refreshes every 2 s.
+- **At night**, any touch raises the backlight to the day level for 10 s.
+- **12-hour mode** shows AM/PM before the minute bar. Hours 1–9 drop the leading digit and
+  the time stays centred.
+- **Touch hardware:** the XPT2046 controller sits on its own SPI bus (CLK 25, MOSI 32,
+  MISO 39, CS 33), separate from the display. Only firm presses give positions, because
+  resistive panels read unreliable coordinates while the finger lands or lifts.
+- **Calibration:** run `TOUCH CAL` and press each of the 4 crosshairs firmly, ideally with a
+  stylus. An affine fit (least squares) also corrects a touch panel that is slightly rotated
+  against the display, which is the case on this unit. The result is saved in NVS. Until
+  calibrated, a generic mapping is used, which can be ~15 px off near the edges.
+  `TOUCH` prints raw and mapped readings for 10 s.
 
 ## Weather
 
@@ -236,6 +267,10 @@ WEATHER SHOW                # show the forecast screen for 30 s
 WEATHER CITY Da Nang        # look up a city and save it as the location
 WEATHER LOC 10.82 106.63 Home   # save a location by coordinates (name optional)
 WEATHER CYCLE OFF           # stop the periodic forecast screen (ON to re-enable)
+FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
+SCREEN SETTINGS             # go to CLOCK, FORECAST, INFO or SETTINGS
+TOUCH                       # print raw/mapped touch readings for 10 s
+TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
 HELP
 ```
 
@@ -294,13 +329,15 @@ src/ui_theme.*                  day/night UI colours and time-of-day gradient pa
 src/backlight.*                 gamma-corrected PWM backlight with fades
 src/weather.*                   Open-Meteo fetch/parse (HTTPS + ArduinoJson), geocoding
 src/weather_icons.*             weather icons from anti-aliased primitives
+src/touch.*                     XPT2046 driver, affine calibration, tap/swipe gestures
+src/screens.h                   screen navigation requests (SCREEN command)
 src/certs/ca_bundle.h           generated Mozilla root CA bundle (do not edit)
 tools/gen_ca_bundle.py          CA bundle generator
 src/fonts/*.h                   generated Inter smooth fonts (do not edit)
 tools/gen_fonts.py              font generator (FreeType -> TFT_eSPI VLW arrays)
 tools/screenshot.py             screen capture over USB serial
 tools/fonts/                    Inter variable font + OFL licence
-src/serial_console.*            SET/GET/TZ/INFO/WIFI/NTP/BRIGHT/NIGHT/WEATHER/SHOT/TEST/HELP
+src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, TOUCH, SCREEN, ...)
 ```
 
 ## Troubleshooting

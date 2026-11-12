@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.7.0";
+constexpr const char* kFirmwareVersion = "0.8.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -31,6 +31,14 @@ constexpr int kI2cSclPin = 22;
 constexpr uint32_t kI2cFrequencyHz = 100000;
 
 constexpr uint8_t kDs3231Address = 0x68;
+
+// XPT2046 touch controller on its own SPI bus (VSPI); the display uses HSPI.
+constexpr int kTouchClkPin = 25;
+constexpr int kTouchMosiPin = 32;
+constexpr int kTouchMisoPin = 39;
+constexpr int kTouchCsPin = 33;
+constexpr int32_t kTouchPressure = 400;       // minimum Z to count as a press
+constexpr int32_t kTouchFirmPressure = 1000;  // minimum Z for a reliable position
 
 // CYD on-board RGB LED (active-low); kept off.
 constexpr int kLedRedPin = 4;
@@ -63,6 +71,10 @@ constexpr uint32_t kWeatherStaleS = 2UL * 60 * 60;  // shown as old after this
 constexpr int kWeatherCycleMinutes = 2;
 constexpr int kWeatherShowAtSecond = 45;
 constexpr uint32_t kWeatherShowS = 10;
+// Back to the clock after this long without touch (forecast/info/settings).
+constexpr uint32_t kScreenIdleMs = 30000;
+// Touching at night raises the backlight to the day level for this long.
+constexpr uint32_t kNightTapBoostMs = 10000;
 constexpr uint32_t kScreenFadeOutMs = 150;
 constexpr uint32_t kScreenFadeInMs = 300;
 

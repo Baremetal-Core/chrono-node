@@ -14,6 +14,28 @@
 #include "ui_theme.h"
 #include "weather.h"
 
+struct InfoView {
+  char rows[9][2][40];  // label, value
+  int count = 0;
+};
+
+struct SettingsView {
+  uint8_t dayPct;
+  uint8_t nightPct;
+  bool nightOn;
+  char nightWindow[16];  // e.g. "22:00-06:30"
+  bool hour12;
+  bool cycleOn;
+  char place[32];
+  int recentIndex;  // position of the current place in the recent list (-1 if not in it)
+  int recentCount;
+};
+
+enum class SettingsAction : uint8_t {
+  None, DayMinus, DayPlus, NightMinus, NightPlus, NightToggle, FormatToggle, CycleToggle,
+  LocationPrev, LocationNext
+};
+
 struct StatusInfo {
   enum class Wifi : uint8_t { Offline, Connecting, Connected, Setup };
   Wifi wifi = Wifi::Offline;
@@ -46,11 +68,22 @@ class DisplayManager {
   // Pass nullptr to clear. `stale` dims it and marks it as old.
   void setWeather(const weather::Data* data, bool stale);
 
-  // Full-screen forecast; the clock face returns on the next showTime() after
-  // clearing it with endWeatherScreen().
+  // Full-screen forecast; leave it with endOverlayScreen().
   void showWeatherScreen(const weather::Data& data, uint32_t ageS);
-  void endWeatherScreen();
-  bool weatherScreenActive() const { return mode_ == Mode::Weather; }
+  // Info and settings screens. Calling again redraws in place (no flicker).
+  void showInfoScreen(const InfoView& view);
+  void showSettingsScreen(const SettingsView& view);
+  SettingsAction settingsHitTest(int16_t x, int16_t y) const;
+
+  // Leaves the forecast/info/settings screen; the clock face is repainted on
+  // the next showTime().
+  void endOverlayScreen();
+
+  // Touch calibration target (crosshair) with an instruction line.
+  void showCalibrationTarget(int16_t x, int16_t y, const char* text);
+
+  // 12-hour clock with AM/PM.
+  void setHour12(bool enabled);
 
   // Night mode: black background, dim red UI and the night palette. The
   // screen is repainted on the next showTime(); hide it behind a backlight fade.
@@ -71,7 +104,7 @@ class DisplayManager {
   void screenshot(Print& out);
 
  private:
-  enum class Mode { None, Clock, Error, Test, Weather };
+  enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate };
   struct Roll {
     char from = ' ';
     char to = ' ';
@@ -88,6 +121,10 @@ class DisplayManager {
   void drawBigDigit(int index, float progress);
   void drawSeconds(float progress);
   void drawProgress(int targetPx, bool animate);
+  void drawMeridiem();
+  void drawScreenTitle(const char* title);
+  int16_t barX() const;
+  int16_t barW() const;
   void setPalette(const theme::Palette& palette);
 
   Mode mode_ = Mode::None;
@@ -121,4 +158,7 @@ class DisplayManager {
   uint32_t weatherKey_ = 0;
   char lastError_[96] = "";
   uint32_t testUntilMs_ = 0;
+  bool hour12_ = false;
+  int16_t timeOffset_ = 0;
+  bool pm_ = false;
 };

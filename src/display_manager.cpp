@@ -46,6 +46,7 @@ constexpr int16_t kSecX = kTimeX + kTimeW - kSecW;
 constexpr int16_t kBarH = 4;
 constexpr int16_t kBarX = kTimeX + 4;
 constexpr int16_t kBarW = kSecX - 12 - kBarX;
+constexpr int16_t kMeridiemW = 30;  // "AM"/"PM" before the bar in 12-hour mode
 constexpr int16_t kBarY = kRowY - kBarH / 2;
 
 // Date and notice lines
@@ -63,7 +64,9 @@ const char* const kWeekdays[] = {"SUNDAY",   "MONDAY", "TUESDAY", "WEDNESDAY",
 const char* const kMonths[] = {"January", "February", "March",     "April",   "May",      "June",
                                "July",    "August",   "September", "October", "November", "December"};
 
-int16_t digitX(int index) { return kTimeX + index * kDigitW + (index >= 2 ? kColonW : 0); }
+int16_t digitX(int index, int16_t offset) {
+  return kTimeX + offset + index * kDigitW + (index >= 2 ? kColonW : 0);
+}
 
 float easeOutCubic(float t) {
   float u = 1.0f - t;
@@ -194,7 +197,7 @@ void DisplayManager::setPalette(const theme::Palette& palette) {
   drawColon();
   if (!secAnimating_) drawSeconds(1.0f);
   barPx_ = -1;
-  drawProgress(lastLocal_.tm_sec * kBarW / 59, false);
+  drawProgress(lastLocal_.tm_sec * barW() / 59, false);
   drawDate(lastLocal_);
   drawStatusBar();
 }
@@ -210,8 +213,29 @@ void DisplayManager::showTime(const struct tm& local) {
   setPalette(night_ ? theme::nightPalette()
                     : theme::paletteForMinute(local.tm_hour * 60 + local.tm_min));
 
-  const char next[4] = {char('0' + local.tm_hour / 10), char('0' + local.tm_hour % 10),
+  int hour = local.tm_hour;
+  if (hour12_) {
+    const bool pm = hour >= 12;
+    if (pm != pm_) {
+      pm_ = pm;
+      drawMeridiem();
+    }
+    hour = hour % 12 == 0 ? 12 : hour % 12;
+  }
+  const char next[4] = {hour12_ && hour < 10 ? ' ' : char('0' + hour / 10), char('0' + hour % 10),
                         char('0' + local.tm_min / 10), char('0' + local.tm_min % 10)};
+  // A blank leading digit (12-hour, 1-9 o'clock) shifts the time left by half
+  // a cell so it stays centred; the time row is repainted when that changes.
+  const int16_t offset = next[0] == ' ' ? -kDigitW / 2 : 0;
+  if (offset != timeOffset_) {
+    timeOffset_ = offset;
+    tft.fillRect(0, kTimeTop, kScreenW, kDigitH, C->bg);
+    for (int i = 0; i < 4; ++i) {
+      digits_[i] = ' ';
+      bigRoll_[i].active = false;
+    }
+    drawColon();
+  }
   for (int i = 0; i < 4; ++i) {
     if (next[i] == digits_[i]) continue;
     Roll& r = bigRoll_[i];
@@ -237,7 +261,7 @@ void DisplayManager::showTime(const struct tm& local) {
     if (!secAnimating_) drawSeconds(1.0f);
   }
 
-  drawProgress(local.tm_sec * kBarW / 59, !firstFrame);
+  drawProgress(local.tm_sec * barW() / 59, !firstFrame);
 
   if (local.tm_yday != lastYday_) {
     drawDate(local);
@@ -290,7 +314,7 @@ void DisplayManager::drawBigDigit(int index, float progress) {
     drawGlyphString(digitSprite, to, 0, kDigitW, kDigitBaseline);
   }
   tintSprite(digitSprite, kDigitW, kDigitH, pal_, kGlyphTop, kDigitBaseline);
-  digitSprite.pushSprite(digitX(index), kTimeTop);
+  digitSprite.pushSprite(digitX(index, timeOffset_), kTimeTop);
 }
 
 void DisplayManager::drawColon() {
@@ -298,7 +322,7 @@ void DisplayManager::drawColon() {
   digitSprite.fillSprite(TFT_BLACK);
   drawGlyphString(digitSprite, ":", 0, kColonW, kDigitBaseline - 6);
   tintSprite(digitSprite, kDigitW, kDigitH, pal_, kGlyphTop, kDigitBaseline);
-  digitSprite.pushSprite(kTimeX + 2 * kDigitW, kTimeTop, 0, 0, kColonW, kDigitH);
+  digitSprite.pushSprite(kTimeX + timeOffset_ + 2 * kDigitW, kTimeTop, 0, 0, kColonW, kDigitH);
 }
 
 void DisplayManager::drawSeconds(float progress) {
@@ -325,7 +349,9 @@ void DisplayManager::drawProgress(int targetPx, bool animate) {
   const uint16_t track = theme::mix(C->bg, pal_.bottom, 48);
   if (barPx_ < 0) {
     // Full redraw (first frame or palette change).
-    tft.fillRect(kBarX, kBarY, kBarW, kBarH, track);
+    tft.fillRect(kBarX, kBarY, kBarW, kBarH, C->bg);
+    tft.fillRect(barX(), kBarY, barW(), kBarH, track);
+    drawMeridiem();
     barPx_ = 0;
     animate = false;
   }
@@ -339,10 +365,10 @@ void DisplayManager::drawProgress(int targetPx, bool animate) {
   barAnimating_ = false;  // tick() re-arms it while an animation is running
   // Horizontal gradient from the palette's top to bottom colour.
   for (int x = barPx_; x < targetPx; ++x) {
-    tft.drawFastVLine(kBarX + x, kBarY, kBarH, theme::mix(pal_.top, pal_.bottom, x * 255 / kBarW));
+    tft.drawFastVLine(barX() + x, kBarY, kBarH, theme::mix(pal_.top, pal_.bottom, x * 255 / barW()));
   }
   if (targetPx < barPx_) {
-    tft.fillRect(kBarX + targetPx, kBarY, barPx_ - targetPx, kBarH, track);
+    tft.fillRect(barX() + targetPx, kBarY, barPx_ - targetPx, kBarH, track);
   }
   barPx_ = targetPx;
 }
@@ -499,8 +525,189 @@ void DisplayManager::drawWeatherLine() {
   });
 }
 
-void DisplayManager::endWeatherScreen() {
-  if (mode_ == Mode::Weather) mode_ = Mode::None;  // next showTime() repaints the clock
+void DisplayManager::endOverlayScreen() {
+  if (mode_ == Mode::Weather || mode_ == Mode::Info || mode_ == Mode::Settings ||
+      mode_ == Mode::Calibrate) {
+    mode_ = Mode::None;  // next showTime() repaints the clock
+  }
+}
+
+int16_t DisplayManager::barX() const { return hour12_ ? kBarX + kMeridiemW : kBarX; }
+
+int16_t DisplayManager::barW() const { return hour12_ ? kBarW - kMeridiemW : kBarW; }
+
+void DisplayManager::setHour12(bool enabled) {
+  if (enabled == hour12_) return;
+  hour12_ = enabled;
+  pm_ = lastLocal_.tm_hour >= 12;
+  if (mode_ == Mode::Clock) mode_ = Mode::None;  // repaint with the new layout
+}
+
+void DisplayManager::drawMeridiem() {
+  if (mode_ != Mode::Clock || !hour12_) return;
+  TFT_eSprite s(&tft);
+  s.setColorDepth(16);
+  if (!s.createSprite(kMeridiemW - 4, 18)) return;
+  s.fillSprite(C->bg);
+  s.loadFont(font_small);
+  s.setTextColor(pal_.top, C->bg);
+  s.setTextDatum(ML_DATUM);
+  s.drawString(pm_ ? "PM" : "AM", 0, 9);
+  s.unloadFont();
+  s.pushSprite(kBarX, kRowY - 9);
+  s.deleteSprite();
+}
+
+void DisplayManager::drawScreenTitle(const char* title) {
+  drawLine(0, 28, font_small, [&](TFT_eSprite& s) {
+    s.setTextDatum(ML_DATUM);
+    s.setTextColor(pal_.top, C->bg);
+    s.drawString(title, 10, 15);
+    s.setTextDatum(MR_DATUM);
+    s.setTextColor(C->faint, C->bg);
+    s.drawString("swipe \xC2\xB7 30 s to clock", kScreenW - 10, 15);
+  });
+}
+
+void DisplayManager::showInfoScreen(const InfoView& v) {
+  if (mode_ != Mode::Info) {
+    enterMode(Mode::Info);
+    drawScreenTitle("Info");
+  }
+  constexpr int16_t kTop = 30, kRowH = 23;
+  for (int i = 0; i < v.count && i < 9; ++i) {
+    drawLine(kTop + i * kRowH, kRowH, font_small, [&](TFT_eSprite& s) {
+      s.setTextDatum(ML_DATUM);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(v.rows[i][0], 12, kRowH / 2);
+      s.setTextColor(C->text, C->bg);
+      s.drawString(v.rows[i][1], 100, kRowH / 2);
+    });
+  }
+}
+
+namespace {
+
+constexpr int16_t kSetTop = 30;
+constexpr int16_t kSetRowH = 35;
+constexpr int16_t kBtnY = 4, kBtnH = 27;
+constexpr int16_t kMinusX = 172, kPlusX = 274, kStepW = 42;
+constexpr int16_t kToggleX = 196, kToggleW = 120;
+constexpr int16_t kArrowW = 46;
+
+void drawButton(TFT_eSprite& s, int16_t x, int16_t w, const char* label, bool on, uint16_t accent) {
+  s.fillSmoothRoundRect(x, kBtnY, w, kBtnH, 8, on ? accent : C->faint, C->bg);
+  s.setTextDatum(MC_DATUM);
+  s.setTextColor(on ? theme::rgb(0, 0, 0) : C->text, on ? accent : C->faint);
+  s.drawString(label, x + w / 2, kBtnY + kBtnH / 2 + 1);
+}
+
+}  // namespace
+
+void DisplayManager::showSettingsScreen(const SettingsView& v) {
+  if (mode_ != Mode::Settings) {
+    enterMode(Mode::Settings);
+    drawScreenTitle("Settings");
+  }
+  const uint16_t accent = pal_.top;
+  auto row = [&](int index, auto&& draw) {
+    drawLine(kSetTop + index * kSetRowH, kSetRowH, font_small, [&](TFT_eSprite& s) {
+      s.setTextDatum(ML_DATUM);
+      draw(s);
+    });
+  };
+  auto label = [&](TFT_eSprite& s, const char* text, const char* sub) {
+    s.setTextDatum(ML_DATUM);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(text, 12, sub ? 11 : kSetRowH / 2);
+    if (sub) {
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(sub, 12, 26);
+    }
+  };
+  auto stepper = [&](TFT_eSprite& s, const char* text, uint8_t pct) {
+    label(s, text, nullptr);
+    drawButton(s, kMinusX, kStepW, "-", false, accent);
+    drawButton(s, kPlusX, kStepW, "+", false, accent);
+    char v[8];
+    snprintf(v, sizeof(v), "%u%%", pct);
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(v, (kMinusX + kStepW + kPlusX) / 2, kSetRowH / 2);
+  };
+
+  row(0, [&](TFT_eSprite& s) { stepper(s, "Day brightness", v.dayPct); });
+  row(1, [&](TFT_eSprite& s) { stepper(s, "Night brightness", v.nightPct); });
+  row(2, [&](TFT_eSprite& s) {
+    label(s, "Night mode", v.nightWindow);
+    drawButton(s, kToggleX, kToggleW, v.nightOn ? "On" : "Off", v.nightOn, accent);
+  });
+  row(3, [&](TFT_eSprite& s) {
+    label(s, "Time format", nullptr);
+    drawButton(s, kToggleX, kToggleW, v.hour12 ? "12-hour" : "24-hour", true, accent);
+  });
+  row(4, [&](TFT_eSprite& s) {
+    label(s, "Forecast cycle", "every 2 min");
+    drawButton(s, kToggleX, kToggleW, v.cycleOn ? "On" : "Off", v.cycleOn, accent);
+  });
+  row(5, [&](TFT_eSprite& s) {
+    const bool many = v.recentCount > 1;
+    drawButton(s, 8, kArrowW, "<", false, accent);
+    drawButton(s, kScreenW - 8 - kArrowW, kArrowW, ">", false, accent);
+    char text[48];
+    if (many && v.recentIndex >= 0) {
+      snprintf(text, sizeof(text), "%s  (%d/%d)", v.place, v.recentIndex + 1, v.recentCount);
+    } else {
+      snprintf(text, sizeof(text), "%s", v.place);
+    }
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(text, kScreenW / 2, kSetRowH / 2);
+  });
+}
+
+SettingsAction DisplayManager::settingsHitTest(int16_t x, int16_t y) const {
+  if (mode_ != Mode::Settings || y < kSetTop) return SettingsAction::None;
+  const int row = (y - kSetTop) / kSetRowH;
+  // Generous hit areas: resistive touch is imprecise.
+  auto inside = [&](int16_t bx, int16_t bw) { return x >= bx - 8 && x < bx + bw + 8; };
+  switch (row) {
+    case 0:
+      if (inside(kMinusX, kStepW)) return SettingsAction::DayMinus;
+      if (inside(kPlusX, kStepW)) return SettingsAction::DayPlus;
+      break;
+    case 1:
+      if (inside(kMinusX, kStepW)) return SettingsAction::NightMinus;
+      if (inside(kPlusX, kStepW)) return SettingsAction::NightPlus;
+      break;
+    case 2:
+      if (x >= kToggleX - 20) return SettingsAction::NightToggle;
+      break;
+    case 3:
+      if (x >= kToggleX - 20) return SettingsAction::FormatToggle;
+      break;
+    case 4:
+      if (x >= kToggleX - 20) return SettingsAction::CycleToggle;
+      break;
+    case 5:
+      if (x < kScreenW / 3) return SettingsAction::LocationPrev;
+      if (x >= kScreenW * 2 / 3) return SettingsAction::LocationNext;
+      break;
+  }
+  return SettingsAction::None;
+}
+
+void DisplayManager::showCalibrationTarget(int16_t x, int16_t y, const char* text) {
+  enterMode(Mode::Calibrate);
+  tft.fillScreen(C->bg);
+  tft.drawFastHLine(x - 12, y, 25, TFT_WHITE);
+  tft.drawFastVLine(x, y - 12, 25, TFT_WHITE);
+  tft.drawCircle(x, y, 6, theme::rgb(255, 120, 0));
+  drawLine(108, 24, font_small, [&](TFT_eSprite& s) {
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(text, kScreenW / 2, 12);
+  });
 }
 
 void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {

@@ -1,6 +1,7 @@
 // Chrono Node - persistent settings stored in ESP32 NVS.
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 namespace settings {
@@ -40,7 +41,17 @@ bool isNightAt(int minuteOfDay);
 float latitude();
 float longitude();
 const char* place();
-bool setLocation(float lat, float lon, const char* name);
+// Saves the location. With `remember`, it's also put first in the recent list.
+bool setLocation(float lat, float lon, const char* name, bool remember = true);
+
+// Recently used weather locations (newest first), for the settings screen.
+constexpr int kMaxRecentLocations = 5;
+int recentLocationCount();
+bool recentLocation(int index, char* name, size_t nameLen, float& lat, float& lon);
+
+// 12-hour clock (with AM/PM) instead of 24-hour.
+bool hour12();
+bool setHour12(bool enabled);
 
 // Periodic forecast screen on/off.
 bool weatherCycle();

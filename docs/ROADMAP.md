@@ -53,7 +53,7 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - Themes: dark/minimal, accent colours, colour by time-of-day. Smooth digit transitions.
 - Turn the always-on RGB LED off (or use it as a subtle status light).
 
-## M6 – Touch & screens
+## M6 – Touch & screens ✅ (calibration on this unit pending a stylus)
 - XPT2046 driver with a calibration routine stored in NVS.
 - Screens: Clock → Weather → Info/Settings. Swipe/tap navigation, on-device settings (12/24h, theme, brightness).
 
