@@ -82,6 +82,15 @@ bool setPhotoShowSeconds(uint8_t s);
 uint16_t screenIdleSeconds();
 bool setScreenIdleSeconds(uint16_t s);
 
+// Clock face colours: style (theme::Style), the custom style's two colours
+// (RGB565, top << 16 | bottom) and effect flags (theme::kFx*).
+uint8_t colorStyle();
+bool setColorStyle(uint8_t style);
+uint32_t customColors();
+bool setCustomColors(uint16_t top, uint16_t bottom);
+uint8_t effects();
+bool setEffects(uint8_t fx);
+
 // Photo slideshow period in minutes (0 = off).
 uint8_t photoEveryMinutes();
 bool setPhotoEveryMinutes(uint8_t minutes);

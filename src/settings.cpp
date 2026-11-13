@@ -34,6 +34,9 @@ constexpr const char* kKeyPhotoEvery = "ph_every";
 constexpr const char* kKeyForecastShow = "fc_show";
 constexpr const char* kKeyPhotoShow = "ph_show";
 constexpr const char* kKeyScreenIdle = "idle_s";
+constexpr const char* kKeyColorStyle = "clr_style";
+constexpr const char* kKeyColorCustom = "clr_custom";  // RGB565 top << 16 | bottom
+constexpr const char* kKeyEffects = "fx";
 
 char banners[config::kBannerMaxMessages][config::kBannerMaxLen + 1] = {};
 uint8_t bannerEvs[config::kBannerMaxMessages] = {};
@@ -46,6 +49,9 @@ uint8_t photoEvery = config::kDefaultPhotoEveryMin;
 uint8_t forecastShow = config::kDefaultForecastShowS;
 uint8_t photoShow = config::kDefaultPhotoShowS;
 uint16_t screenIdle = config::kDefaultScreenIdleS;
+uint8_t colorStyleValue = 0;
+uint32_t colorCustomValue = (0x07FEUL << 16) | 0xF819;  // cyan -> magenta
+uint8_t effectsValue = 0;
 
 void splitBanners(const char* joined) {
   bannerN = 0;
@@ -145,6 +151,9 @@ void begin() {
     forecastShow = prefs.getUChar(kKeyForecastShow, forecastShow);
     photoShow = prefs.getUChar(kKeyPhotoShow, photoShow);
     screenIdle = prefs.getUShort(kKeyScreenIdle, screenIdle);
+    colorStyleValue = prefs.getUChar(kKeyColorStyle, colorStyleValue);
+    colorCustomValue = prefs.getULong(kKeyColorCustom, colorCustomValue);
+    effectsValue = prefs.getUChar(kKeyEffects, effectsValue);
     if (prefs.isKey(kKeyBannerText)) {
       String joined = prefs.getString(kKeyBannerText, "");
       splitBanners(joined.c_str());
@@ -410,6 +419,31 @@ bool setScreenIdleSeconds(uint16_t s) {
   if (s < kMinIdleS || s > kMaxIdleS) return false;
   bool ok = save([&](Preferences& p) { return p.putUShort(kKeyScreenIdle, s) > 0; });
   if (ok) screenIdle = s;
+  return ok;
+}
+
+uint8_t colorStyle() { return colorStyleValue; }
+
+bool setColorStyle(uint8_t style) {
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyColorStyle, style) > 0; });
+  if (ok) colorStyleValue = style;
+  return ok;
+}
+
+uint32_t customColors() { return colorCustomValue; }
+
+bool setCustomColors(uint16_t top, uint16_t bottom) {
+  const uint32_t v = (static_cast<uint32_t>(top) << 16) | bottom;
+  bool ok = save([&](Preferences& p) { return p.putULong(kKeyColorCustom, v) > 0; });
+  if (ok) colorCustomValue = v;
+  return ok;
+}
+
+uint8_t effects() { return effectsValue; }
+
+bool setEffects(uint8_t fx) {
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyEffects, fx) > 0; });
+  if (ok) effectsValue = fx;
   return ok;
 }
 

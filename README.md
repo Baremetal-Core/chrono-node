@@ -65,7 +65,8 @@ forecast, info and settings screens, plus a settings page in the browser at
   - day brightness (±10 %) and night brightness (±5 %)
   - night mode on/off (the schedule itself is set with `NIGHT HH:MM HH:MM`)
   - 12/24-hour time
-  - forecast cycle on/off
+  - colour style (`<` / `>`, see Colours); the forecast cycle is switched on the web page or
+    with `WEATHER CYCLE`
   - weather location, chosen from the last 5 used locations (`<` / `>`). New locations are
     added with `WEATHER CITY`/`WEATHER LOC`, and later from the web UI (M9).
 - **Info** shows firmware, Wi-Fi and signal, IP, host name, NTP sync, weather age, uptime,
@@ -240,6 +241,36 @@ A USB upload (`pio run -t upload`) always resets the boot slot to `app0`.
 ```bash
 uv run --with cryptography tools/gen_ca_bundle.py
 ```
+
+## Colours
+
+![Colour styles](docs/images/colour-styles.png)
+
+The clock face can be coloured in different styles (web page *Colours* section, the clock's
+Settings → **Colours** `<` `>`, or `COLOR`):
+
+| Style | Look |
+|-------|------|
+| **Time of day** (default) | The day-cycle palettes: dawn, day, dusk, evening |
+| **Rainbow flow** | A rainbow across the digits that keeps flowing (one screen width every 18 s) |
+| **Colour cycle** | The whole clock slowly shifts through all colours (once a minute) |
+| **Per digit** | Each digit its own colour, turning slowly (every 30 s) |
+| **Sunset, Ocean, Aurora, Neon, Fire, Candy** | Fixed gradients |
+| **Custom** | Two colours you pick on the web page (top and bottom) |
+
+Effects can be added to any style:
+- **Shine:** a glint sweeps across the digits every 8 s.
+- **Pulse:** the colon gently breathes.
+- **Glow:** a soft halo around the digits.
+
+At night the clock keeps its dim night colours and the effects pause.
+
+How it works: colours come from a *colour field*, a top and a bottom colour for every screen
+column. Static styles fill it with one gradient (exactly the old look); rainbow and per-digit
+styles vary it across the screen. Animated styles repaint the time row 8 times a second (a
+frame takes ~30 ms, ~50 ms with glow, so the display core stays mostly idle). The shine runs
+at 20 fps during its 1.4 s sweep. The status icon, buttons and banner use the field's middle
+colour.
 
 ## Scrolling banner
 
@@ -499,6 +530,10 @@ PHOTO                       # stored photos, sizes, slideshow period, storage us
 PHOTO SHOW                  # show the next photo now (PHOTO SHOW 2 for photo 2)
 PHOTO DEL 2                 # delete photo 2 (PHOTO CLEAR deletes all)
 PHOTO EVERY 5               # slideshow every 5 min (0 = off, 1-60)
+COLOR                       # colour style, custom colours, effects, and the list of styles
+COLOR RAINBOW               # time, rainbow, cycle, digits, sunset, ocean, aurora, neon, fire, candy, custom
+COLOR CUSTOM #FFE600 #FF0080   # pick the custom style's top and bottom colours, and use it
+EFFECT GLOW ON              # SHINE, PULSE or GLOW, ON or OFF
 TIMEOUT                     # how long automatic screens stay up, and the idle timeout
 TIMEOUT FORECAST 10         # the forecast stays up 10 s (3-120)
 TIMEOUT PHOTO 12            # each photo stays up 12 s (3-120)

@@ -18,6 +18,7 @@
 #include "settings.h"
 #include "time_utils.h"
 #include "touch.h"
+#include "ui_theme.h"
 #include "weather.h"
 
 namespace {
@@ -256,6 +257,86 @@ bool handlePhoto(const char* arg) {
   return false;
 }
 
+// "#RRGGBB" -> RGB565.
+bool parseColor(const char* text, uint16_t& out) {
+  unsigned r, g, b;
+  if (sscanf(text, "#%2x%2x%2x", &r, &g, &b) != 3) return false;
+  out = theme::rgb(r, g, b);
+  return true;
+}
+
+void printColors() {
+  const uint8_t fx = settings::effects();
+  const uint32_t custom = settings::customColors();
+  auto hex = [](uint16_t c, char* buf) {
+    snprintf(buf, 8, "#%02X%02X%02X", (c >> 11) << 3, ((c >> 5) & 0x3F) << 2, (c & 0x1F) << 3);
+  };
+  char top[8], bottom[8];
+  hex(custom >> 16, top);
+  hex(custom & 0xFFFF, bottom);
+  const uint8_t style = settings::colorStyle() % static_cast<uint8_t>(theme::Style::Count);
+  Serial.printf("[COLOR] Style %s (%s); custom %s %s; effects:%s%s%s%s\n",
+                theme::styleKey(static_cast<theme::Style>(style)),
+                theme::styleName(static_cast<theme::Style>(style)), top, bottom,
+                fx & theme::kFxShine ? " shine" : "", fx & theme::kFxPulse ? " pulse" : "",
+                fx & theme::kFxGlow ? " glow" : "", fx ? "" : " none");
+  Serial.print("[COLOR] Styles:");
+  for (int i = 0; i < static_cast<int>(theme::Style::Count); ++i) {
+    Serial.printf(" %s", theme::styleKey(static_cast<theme::Style>(i)));
+  }
+  Serial.println();
+}
+
+bool handleColor(const char* arg) {
+  while (*arg == ' ') ++arg;
+  if (*arg == '\0') {
+    printColors();
+    return false;
+  }
+  if (strncasecmp(arg, "CUSTOM ", 7) == 0) {
+    uint16_t top, bottom;
+    char a[16] = "", b[16] = "";
+    if (sscanf(arg + 7, "%15s %15s", a, b) != 2 || !parseColor(a, top) || !parseColor(b, bottom)) {
+      Serial.println("[CONSOLE] Usage: COLOR CUSTOM #RRGGBB #RRGGBB (top, bottom)");
+      return false;
+    }
+    settings::setCustomColors(top, bottom);
+    settings::setColorStyle(static_cast<uint8_t>(theme::Style::Custom));
+  } else {
+    theme::Style style;
+    if (!theme::styleFromKey(arg, style)) {
+      Serial.println("[CONSOLE] Usage: COLOR [style|CUSTOM #RRGGBB #RRGGBB]; COLOR lists styles");
+      return false;
+    }
+    settings::setColorStyle(static_cast<uint8_t>(style));
+  }
+  printColors();
+  return true;
+}
+
+bool handleEffect(const char* arg) {
+  while (*arg == ' ') ++arg;
+  char name[8] = "", state[4] = "";
+  if (*arg == '\0') {
+    printColors();
+    return false;
+  }
+  uint8_t flag = 0;
+  if (sscanf(arg, "%7s %3s", name, state) == 2) {
+    if (strcasecmp(name, "SHINE") == 0) flag = theme::kFxShine;
+    if (strcasecmp(name, "PULSE") == 0) flag = theme::kFxPulse;
+    if (strcasecmp(name, "GLOW") == 0) flag = theme::kFxGlow;
+  }
+  const bool on = strcasecmp(state, "ON") == 0;
+  if (!flag || (!on && strcasecmp(state, "OFF") != 0)) {
+    Serial.println("[CONSOLE] Usage: EFFECT SHINE|PULSE|GLOW ON|OFF");
+    return false;
+  }
+  settings::setEffects(on ? settings::effects() | flag : settings::effects() & ~flag);
+  printColors();
+  return true;
+}
+
 void printTimeouts() {
   Serial.printf("[SCREEN] Forecast stays %us, photos %us; other screens return to the clock "
                 "after %us without touch\n", settings::forecastShowSeconds(),
@@ -420,6 +501,12 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   if (strncasecmp(text, "PHOTO", 5) == 0 && (text[5] == '\0' || text[5] == ' ')) {
     return handlePhoto(text + 5);
   }
+  if (strncasecmp(text, "COLOR", 5) == 0 && (text[5] == '\0' || text[5] == ' ')) {
+    return handleColor(text + 5);
+  }
+  if (strncasecmp(text, "EFFECT", 6) == 0 && (text[6] == '\0' || text[6] == ' ')) {
+    return handleEffect(text + 6);
+  }
   if (strncasecmp(text, "TIMEOUT", 7) == 0 && (text[7] == '\0' || text[7] == ' ')) {
     return handleTimeout(text + 7);
   }
@@ -514,7 +601,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | TOUCH [CAL] | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TOUCH [CAL] | "
       "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }

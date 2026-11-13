@@ -253,6 +253,17 @@ void updateBanner(const struct tm& local) {
   }
 }
 
+ColorSettings colorSettings() {
+  ColorSettings c;
+  const uint8_t style = settings::colorStyle();
+  c.style = style < static_cast<uint8_t>(theme::Style::Count) ? static_cast<theme::Style>(style)
+                                                                : theme::Style::TimeOfDay;
+  c.custom = {static_cast<uint16_t>(settings::customColors() >> 16),
+              static_cast<uint16_t>(settings::customColors() & 0xFFFF)};
+  c.effects = settings::effects();
+  return c;
+}
+
 void buildSettingsView(SettingsView& v) {
   v.dayPct = settings::brightnessDay();
   v.nightPct = settings::brightnessNight();
@@ -261,7 +272,7 @@ void buildSettingsView(SettingsView& v) {
            settings::nightStart() / 60, settings::nightStart() % 60, settings::nightEnd() / 60,
            settings::nightEnd() % 60);
   v.hour12 = settings::hour12();
-  v.cycleOn = settings::weatherCycle();
+  strlcpy(v.colorName, theme::styleName(colorSettings().style), sizeof(v.colorName));
   strlcpy(v.place, settings::place(), sizeof(v.place));
   v.recentCount = settings::recentLocationCount();
   v.recentIndex = -1;
@@ -407,9 +418,14 @@ void applySettingsAction(SettingsAction a) {
       settings::setHour12(!settings::hour12());
       display.setHour12(settings::hour12());
       break;
-    case SettingsAction::CycleToggle:
-      settings::setWeatherCycle(!settings::weatherCycle());
+    case SettingsAction::ColorPrev:
+    case SettingsAction::ColorNext: {
+      const int n = static_cast<int>(theme::Style::Count);
+      const int cur = static_cast<int>(colorSettings().style);
+      settings::setColorStyle((cur + (a == SettingsAction::ColorNext ? 1 : n - 1)) % n);
+      display.setColors(colorSettings());
       break;
+    }
     case SettingsAction::LocationPrev:
     case SettingsAction::LocationNext: {
       SettingsView v;
@@ -841,6 +857,7 @@ void setup() {
   }
 
   display.setHour12(settings::hour12());
+  display.setColors(colorSettings());
   if (!nightKnown) backlight::fadeTo(settings::brightnessDay(), config::kNightFadeInMs);
 
   // Wi-Fi starts after the first clock frame so the time is visible immediately.
@@ -895,6 +912,12 @@ void loop() {
     rtcLostPower = rtc.lostPower();
     lastSecond = -1;
     display.setHour12(settings::hour12());
+    static ColorSettings shownColors = colorSettings();
+    const ColorSettings colors = colorSettings();
+    if (memcmp(&colors, &shownColors, sizeof(colors)) != 0) {
+      shownColors = colors;
+      display.setColors(colors);
+    }
     if (screenOn == Screen::Settings && !transitioning) showSettings();
     if (!transitioning && nightKnown) {
       backlight::fadeTo(brightnessFor(nightActive), config::kBrightnessFadeMs);

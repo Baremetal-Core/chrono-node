@@ -84,32 +84,135 @@ float progressOf(uint32_t startMs, uint32_t durationMs, uint32_t nowMs) {
 
 inline uint16_t swap16(uint16_t c) { return (c >> 8) | (c << 8); }
 
-// Turns white-on-black glyphs in a 16-bit sprite into a vertical gradient
-// (top colour at row y0, bottom colour at row y1) over the background,
-// keeping the glyphs' anti-aliasing. Sprite pixels are stored byte-swapped.
-void tintSprite(TFT_eSprite& s, int16_t w, int16_t h, const theme::Palette& p, int16_t y0,
-                int16_t y1) {
+// The colour field: a top and a bottom colour for every screen column. Static
+// styles fill it with one palette; rainbow and per-digit styles vary it across
+// the screen, and animated styles recompute it every frame.
+uint16_t fieldTop[kScreenW];
+uint16_t fieldBottom[kScreenW];
+bool fieldUniform = true;
+
+// Shine: a diagonal glint across the time row, at this x (kNoShine: none).
+constexpr int16_t kNoShine = INT16_MIN;
+constexpr int16_t kShineW = 22;          // half width of the band
+constexpr uint32_t kShinePeriodMs = 8000;
+constexpr uint32_t kShineSweepMs = 1400;
+int16_t shineX = kNoShine;
+
+// Glow: the glyph coverage blurred into a halo (box blur, two passes).
+constexpr int kGlowRadius = 4;
+constexpr uint8_t kGlowStrength = 150;  // 0-255
+uint8_t glowA[kDigitW * kDigitH];
+uint8_t glowB[kDigitW * kDigitH];
+
+// Repaint intervals: a frame of the time row takes ~35 ms (~50 ms with glow),
+// so slow colour changes run at 8 fps and only the shine sweep goes faster.
+constexpr uint32_t kColorFrameMs = 125;
+constexpr uint32_t kShineFrameMs = 50;
+constexpr uint32_t kPulseFrameMs = 80;
+
+// Hue lookup (one entry per degree) for the animated styles' top and bottom
+// colours: much cheaper than converting 640 colours from HSV every frame.
+uint16_t hueTop[360];
+uint16_t hueBottom[360];
+
+void initHues() {
+  if (hueTop[0]) return;
+  for (int h = 0; h < 360; ++h) {
+    hueTop[h] = theme::hsv(h, 0.7f, 1);
+    hueBottom[h] = theme::hsv(h, 1, 0.95f);
+  }
+}
+
+// How a sprite is coloured.
+struct Paint {
+  const theme::Palette* palette = nullptr;  // one vertical gradient; nullptr: the field
+  int16_t screenX = 0;                      // sprite position (field lookup, shine)
+  int16_t screenY = 0;
+  uint8_t coverage = 255;                   // scales the glyphs (pulse)
+  bool shine = false;
+  bool glow = false;
+};
+
+// Blend a -> b by t/256 (t 0..256). Shifts instead of divisions: this runs
+// for every glyph pixel of every animation frame.
+inline uint16_t blend256(uint16_t a, uint16_t b, int t) {
+  const int ar = a >> 11, ag = (a >> 5) & 0x3F, ab = a & 0x1F;
+  const int r = ar + ((((b >> 11) - ar) * t) >> 8);
+  const int g = ag + (((((b >> 5) & 0x3F) - ag) * t) >> 8);
+  const int bl = ab + ((((b & 0x1F) - ab) * t) >> 8);
+  return (r << 11) | (g << 5) | bl;
+}
+
+void blurCoverage(const uint16_t* px, int16_t w, int16_t h) {
+  for (int i = 0; i < w * h; ++i) {
+    glowA[i] = px[i] ? ((swap16(px[i]) >> 5) & 0x3F) * 4 : 0;
+  }
+  constexpr int kInv = 65536 / (2 * kGlowRadius + 1);  // sum / n as a multiply
+  for (int16_t y = 0; y < h; ++y) {  // horizontal: A -> B
+    const uint8_t* in = glowA + y * w;
+    uint8_t* out = glowB + y * w;
+    int sum = 0;
+    for (int x = -kGlowRadius; x < w + kGlowRadius; ++x) {
+      if (x + kGlowRadius < w) sum += in[x + kGlowRadius];
+      if (x - kGlowRadius - 1 >= 0) sum -= in[x - kGlowRadius - 1];
+      if (x >= 0 && x < w) out[x] = (sum * kInv) >> 16;
+    }
+  }
+  for (int16_t x = 0; x < w; ++x) {  // vertical: B -> A
+    int sum = 0;
+    for (int y = -kGlowRadius; y < h + kGlowRadius; ++y) {
+      if (y + kGlowRadius < h) sum += glowB[(y + kGlowRadius) * w + x];
+      if (y - kGlowRadius - 1 >= 0) sum -= glowB[(y - kGlowRadius - 1) * w + x];
+      if (y >= 0 && y < h) glowA[y * w + x] = (sum * kInv) >> 16;
+    }
+  }
+}
+
+// Turns white-on-black glyphs in a 16-bit sprite into coloured text over the
+// background, keeping the glyphs' anti-aliasing: a vertical gradient (top
+// colour at row y0, bottom at y1) from the palette or the colour field, plus
+// the shine and glow effects. Sprite pixels are stored byte-swapped; `w` is
+// the sprite's row stride.
+void tintSprite(TFT_eSprite& s, int16_t w, int16_t h, int16_t y0, int16_t y1, const Paint& p) {
   uint16_t* px = static_cast<uint16_t*>(s.getPointer());
   if (!px) return;
   const uint16_t bg = C->bg;
-  const int bgR = bg >> 11, bgG = (bg >> 5) & 0x3F, bgB = bg & 0x1F;
   const uint16_t bgSwapped = swap16(bg);
+  const bool uniform = p.palette || fieldUniform;
+  const theme::Palette pal = p.palette ? *p.palette : theme::Palette{fieldTop[0], fieldBottom[0]};
+  const bool glow = p.glow && w * h <= kDigitW * kDigitH;
+  if (glow) blurCoverage(px, w, h);
+  const bool shine = p.shine && shineX != kNoShine;
+  static int shineT[kShineW];  // shine strength by distance from the band's centre
+  if (shine && shineT[0] == 0) {
+    for (int d = 0; d < kShineW; ++d) shineT[d] = (kShineW - d) * 190 * 256 / (kShineW * 255);
+  }
+  const int cov = p.coverage + (p.coverage >> 7);  // 0..256
   for (int16_t y = 0; y < h; ++y) {
-    int t = y <= y0 ? 0 : y >= y1 ? 255 : (y - y0) * 255 / (y1 - y0);
-    const uint16_t fg = theme::mix(p.top, p.bottom, t);
-    const int fR = fg >> 11, fG = (fg >> 5) & 0x3F, fB = fg & 0x1F;
+    const int t = y <= y0 ? 0 : y >= y1 ? 256 : (y - y0) * 256 / (y1 - y0);
+    const uint16_t rowFg = uniform ? blend256(pal.top, pal.bottom, t) : 0;
+    const int16_t shineAt = shineX - (p.screenY + y - kTimeTop) * 2 / 5;  // leans right going up
     uint16_t* row = px + y * w;
+    const uint8_t* glowRow = glowA + y * w;
     for (int16_t x = 0; x < w; ++x) {
       const uint16_t c = row[x];
-      if (c == 0) {
+      const int g = glow ? glowRow[x] : 0;
+      if (c == 0 && g == 0) {
         row[x] = bgSwapped;
         continue;
       }
-      const int a = (swap16(c) >> 5) & 0x3F;  // glyph coverage 0..63
-      const int r = bgR + (fR - bgR) * a / 63;
-      const int g = bgG + (fG - bgG) * a / 63;
-      const int b = bgB + (fB - bgB) * a / 63;
-      row[x] = swap16((r << 11) | (g << 5) | b);
+      int16_t sx = p.screenX + x;
+      if (sx < 0) sx = 0;
+      if (sx >= kScreenW) sx = kScreenW - 1;
+      uint16_t fg = uniform ? rowFg : blend256(fieldTop[sx], fieldBottom[sx], t);
+      if (shine) {
+        const int d = abs(sx - shineAt);
+        if (d < kShineW) fg = blend256(fg, TFT_WHITE, shineT[d]);
+      }
+      const uint16_t base = g ? blend256(bg, fg, (g * kGlowStrength) >> 8) : bg;
+      int a = c ? (swap16(c) >> 5) & 0x3F : 0;  // glyph coverage 0..63
+      a = ((a + (a >> 5)) * cov) >> 8;           // 0..64, scaled by the pulse
+      row[x] = swap16(blend256(base, fg, a << 2));
     }
   }
 }
@@ -199,11 +302,91 @@ void DisplayManager::enterMode(Mode mode) {
   lastError_[0] = '\0';
 }
 
+bool DisplayManager::effectsOn() const { return !night_ && colors_.effects != 0; }
+
+theme::Palette DisplayManager::basePalette(const struct tm& local, uint32_t now) {
+  if (night_) return theme::nightPalette();
+  theme::Palette p;
+  switch (colors_.style) {
+    case theme::Style::Custom:
+      return colors_.custom;
+    case theme::Style::Rainbow:
+    case theme::Style::Cycle:
+    case theme::Style::PerDigit:
+      // Accents (status icon, buttons, banner) follow the middle of the field.
+      refreshField(now);
+      return {fieldTop[kScreenW / 2], fieldBottom[kScreenW / 2]};
+    default:
+      if (theme::presetPalette(colors_.style, p)) return p;
+      return theme::paletteForMinute(local.tm_hour * 60 + local.tm_min);
+  }
+}
+
+void DisplayManager::refreshField(uint32_t now) {
+  const theme::Style st = colors_.style;
+  if (night_ || !theme::styleAnimated(st)) {
+    for (int16_t x = 0; x < kScreenW; ++x) {
+      fieldTop[x] = pal_.top;
+      fieldBottom[x] = pal_.bottom;
+    }
+    fieldUniform = true;
+    return;
+  }
+  initHues();
+  const uint32_t ms = now % 3600000UL;
+  if (st == theme::Style::Cycle) {
+    const int h = ms * 6 / 1000 % 360;  // once around the colour wheel per minute
+    for (int16_t x = 0; x < kScreenW; ++x) {
+      fieldTop[x] = hueTop[h];
+      fieldBottom[x] = hueBottom[(h + 40) % 360];
+    }
+    fieldUniform = true;
+    return;
+  }
+  fieldUniform = false;
+  const int flow = ms * 20 / 1000;  // degrees: rainbow flows one screen width every 18 s
+  const int turn = ms * 12 / 1000;  // per digit: all hues turn once every 30 s
+  for (int16_t x = 0; x < kScreenW; ++x) {
+    int h;
+    if (st == theme::Style::Rainbow) {
+      h = flow + x * 300 / kScreenW;
+    } else {
+      // Per digit: one hue per digit cell (the colon sits between two).
+      const int16_t rx = x - (kTimeX + timeOffset_);
+      int cell2;  // twice the cell index, so the colon can be 3 (= 1.5)
+      if (rx < 2 * kDigitW) {
+        cell2 = 2 * max(0, rx / kDigitW);
+      } else if (rx < 2 * kDigitW + kColonW) {
+        cell2 = 3;
+      } else {
+        cell2 = 2 * min(3, 2 + (rx - 2 * kDigitW - kColonW) / kDigitW);
+      }
+      h = turn + cell2 * 40;
+    }
+    fieldTop[x] = hueTop[h % 360];
+    fieldBottom[x] = hueBottom[(h + 25) % 360];
+  }
+}
+
+void DisplayManager::setColors(const ColorSettings& colors) {
+  colors_ = colors;
+  shineX = kNoShine;
+  if (mode_ != Mode::Clock || !palValid_) {
+    // Other screens use the accent colour; the clock face repaints on return.
+    if (lastLocal_.tm_year) pal_ = basePalette(lastLocal_, millis());
+    return;
+  }
+  const theme::Palette p = basePalette(lastLocal_, millis());
+  pal_.top = ~p.top;  // force setPalette() to repaint everything
+  setPalette(p);
+}
+
 void DisplayManager::setPalette(const theme::Palette& palette) {
   if (palValid_ && palette == pal_) return;
   const bool firstFrame = !palValid_;
   pal_ = palette;
   palValid_ = true;
+  if (!theme::styleAnimated(colors_.style) || night_) refreshField(millis());
   if (firstFrame) return;  // showTime draws everything on the first frame
   // Re-tint everything that uses the gradient colours.
   for (int i = 0; i < 4; ++i) {
@@ -225,8 +408,7 @@ void DisplayManager::showTime(const struct tm& local) {
   const uint32_t now = millis();
   lastLocal_ = local;
 
-  setPalette(night_ ? theme::nightPalette()
-                    : theme::paletteForMinute(local.tm_hour * 60 + local.tm_min));
+  setPalette(basePalette(local, now));
 
   int hour = local.tm_hour;
   if (hour12_) {
@@ -278,7 +460,8 @@ void DisplayManager::showTime(const struct tm& local) {
 
   drawProgress(local.tm_sec * barW() / 59, !firstFrame);
 
-  if (local.tm_yday != lastYday_) {
+  // Animated styles: the weekday follows the colours once a second.
+  if (local.tm_yday != lastYday_ || (!night_ && theme::styleAnimated(colors_.style))) {
     drawDate(local);
     lastYday_ = local.tm_yday;
   }
@@ -294,6 +477,32 @@ void DisplayManager::tick() {
   const uint32_t now = millis();
   if (now - lastFrameMs_ < kFrameMs) return;
   lastFrameMs_ = now;
+
+  // Animated styles and effects repaint the time about 15 times a second.
+  const bool animatedStyle = !night_ && theme::styleAnimated(colors_.style);
+  int16_t shineNow = kNoShine;
+  if (effectsOn() && (colors_.effects & theme::kFxShine)) {
+    const uint32_t phase = now % kShinePeriodMs;
+    if (phase < kShineSweepMs) {
+      shineNow = kTimeX - 60 + static_cast<int32_t>(kTimeW + 120) * phase / kShineSweepMs;
+    }
+  }
+  const bool pulse = effectsOn() && (colors_.effects & theme::kFxPulse);
+  const bool shining = shineNow != kNoShine || shineX != kNoShine;  // incl. the clean-up frame
+  const uint32_t interval = shining ? kShineFrameMs : animatedStyle ? kColorFrameMs : kPulseFrameMs;
+  if ((animatedStyle || pulse || shining) && now - lastAnimMs_ >= interval) {
+    lastAnimMs_ = now;
+    shineX = shineNow;
+    if (animatedStyle) refreshField(now);
+    if (animatedStyle || shining) {
+      for (int i = 0; i < 4; ++i) {
+        if (!bigRoll_[i].active) drawBigDigit(i, 1.0f);
+      }
+      if (!secAnimating_) drawSeconds(1.0f);
+    }
+    drawColon();
+    if (animatedStyle) drawBarFill();
+  }
 
   if (bannerActive_) drawBanner(now);
 
@@ -330,7 +539,12 @@ void DisplayManager::drawBigDigit(int index, float progress) {
   } else {
     drawGlyphString(digitSprite, to, 0, kDigitW, kDigitBaseline);
   }
-  tintSprite(digitSprite, kDigitW, kDigitH, pal_, kGlyphTop, kDigitBaseline);
+  Paint paint;
+  paint.screenX = digitX(index, timeOffset_);
+  paint.screenY = kTimeTop;
+  paint.shine = effectsOn() && (colors_.effects & theme::kFxShine);
+  paint.glow = effectsOn() && (colors_.effects & theme::kFxGlow);
+  tintSprite(digitSprite, kDigitW, kDigitH, kGlyphTop, kDigitBaseline, paint);
   digitSprite.pushSprite(digitX(index, timeOffset_), kTimeTop);
 }
 
@@ -338,7 +552,17 @@ void DisplayManager::drawColon() {
   if (mode_ != Mode::Clock) return;
   digitSprite.fillSprite(TFT_BLACK);
   drawGlyphString(digitSprite, ":", 0, kColonW, kDigitBaseline - 6);
-  tintSprite(digitSprite, kDigitW, kDigitH, pal_, kGlyphTop, kDigitBaseline);
+  Paint paint;
+  paint.screenX = kTimeX + timeOffset_ + 2 * kDigitW;
+  paint.screenY = kTimeTop;
+  paint.shine = effectsOn() && (colors_.effects & theme::kFxShine);
+  paint.glow = effectsOn() && (colors_.effects & theme::kFxGlow);
+  if (effectsOn() && (colors_.effects & theme::kFxPulse)) {
+    // Breathes between 35% and 100% every 2 s.
+    const float phase = (millis() % 2000) / 2000.0f * 2 * PI;
+    paint.coverage = static_cast<uint8_t>(90 + 165 * (0.5f + 0.5f * cosf(phase)));
+  }
+  tintSprite(digitSprite, kDigitW, kDigitH, kGlyphTop, kDigitBaseline, paint);  // w = row stride
   digitSprite.pushSprite(kTimeX + timeOffset_ + 2 * kDigitW, kTimeTop, 0, 0, kColonW, kDigitH);
 }
 
@@ -358,7 +582,11 @@ void DisplayManager::drawSeconds(float progress) {
       drawGlyphString(secondsSprite, to, cellX, kSecCellW, kSecBaseline);
     }
   }
-  tintSprite(secondsSprite, kSecW, kSecH, pal_, 2, kSecBaseline);
+  Paint paint;
+  paint.screenX = kSecX;
+  paint.screenY = kRowY - kSecH / 2 - 1;
+  paint.shine = effectsOn() && (colors_.effects & theme::kFxShine);
+  tintSprite(secondsSprite, kSecW, kSecH, 2, kSecBaseline, paint);
   secondsSprite.pushSprite(kSecX, kRowY - kSecH / 2 - 1);
 }
 
@@ -380,14 +608,26 @@ void DisplayManager::drawProgress(int targetPx, bool animate) {
     return;
   }
   barAnimating_ = false;  // tick() re-arms it while an animation is running
-  // Horizontal gradient from the palette's top to bottom colour.
-  for (int x = barPx_; x < targetPx; ++x) {
-    tft.drawFastVLine(barX() + x, kBarY, kBarH, theme::mix(pal_.top, pal_.bottom, x * 255 / barW()));
-  }
+  for (int x = barPx_; x < targetPx; ++x) tft.drawFastVLine(barX() + x, kBarY, kBarH, barColor(x));
   if (targetPx < barPx_) {
     tft.fillRect(barX() + targetPx, kBarY, barPx_ - targetPx, kBarH, track);
   }
   barPx_ = targetPx;
+}
+
+// Bar column x (0..barW): a horizontal gradient of the palette, or the
+// colour field's column when it varies across the screen.
+uint16_t DisplayManager::barColor(int x) const {
+  if (fieldUniform) return theme::mix(fieldTop[0], fieldBottom[0], x * 255 / barW());
+  const int16_t sx = constrain(barX() + x, 0, kScreenW - 1);
+  return theme::mix(fieldTop[sx], fieldBottom[sx], 128);
+}
+
+void DisplayManager::drawBarFill() {
+  if (barPx_ <= 0) return;
+  tft.startWrite();
+  for (int x = 0; x < barPx_; ++x) tft.drawFastVLine(barX() + x, kBarY, kBarH, barColor(x));
+  tft.endWrite();
 }
 
 void DisplayManager::drawDate(const struct tm& local) {
@@ -406,7 +646,7 @@ void DisplayManager::drawDate(const struct tm& local) {
     }
     const int16_t x = (kScreenW - w1 - s.textWidth(rest)) / 2;
     s.setTextDatum(ML_DATUM);
-    s.setTextColor(pal_.top, C->bg);
+    s.setTextColor(fieldTop[constrain(x + w1 / 2, 0, kScreenW - 1)], C->bg);
     s.drawString(weekday, x, kDateH / 2);
     s.setTextColor(C->date, C->bg);
     s.drawString(rest, x + w1, kDateH / 2);
@@ -517,7 +757,9 @@ void DisplayManager::drawBanner(uint32_t now) {
   }
   bannerSprite.fillSprite(TFT_BLACK);
   bannerSprite.drawString(bannerText_, x, kNoticeH / 2);
-  tintSprite(bannerSprite, kScreenW, kNoticeH, pal_, 3, kNoticeH - 4);
+  Paint paint;
+  paint.screenY = kNoticeTop;
+  tintSprite(bannerSprite, kScreenW, kNoticeH, 3, kNoticeH - 4, paint);
   // Soft fade at both edges.
   uint16_t* px = static_cast<uint16_t*>(bannerSprite.getPointer());
   constexpr int kFade = 24;
@@ -930,8 +1172,13 @@ void DisplayManager::showSettingsScreen(const SettingsView& v) {
     drawButton(s, kToggleX, kToggleW, v.hour12 ? "12-hour" : "24-hour", true, accent);
   });
   row(4, [&](TFT_eSprite& s) {
-    label(s, "Forecast cycle", "every 2 min");
-    drawButton(s, kToggleX, kToggleW, v.cycleOn ? "On" : "Off", v.cycleOn, accent);
+    drawButton(s, 8, kArrowW, "<", false, accent);
+    drawButton(s, kScreenW - 8 - kArrowW, kArrowW, ">", false, accent);
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->dim, C->bg);
+    s.drawString("Colours", kScreenW / 2, 9);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(v.colorName, kScreenW / 2, 25);
   });
   row(5, [&](TFT_eSprite& s) {
     const bool many = v.recentCount > 1;
@@ -970,7 +1217,8 @@ SettingsAction DisplayManager::settingsHitTest(int16_t x, int16_t y) const {
       if (x >= kToggleX - 20) return SettingsAction::FormatToggle;
       break;
     case 4:
-      if (x >= kToggleX - 20) return SettingsAction::CycleToggle;
+      if (x < kScreenW / 3) return SettingsAction::ColorPrev;
+      if (x >= kScreenW * 2 / 3) return SettingsAction::ColorNext;
       break;
     case 5:
       if (x < kScreenW / 3) return SettingsAction::LocationPrev;
@@ -1189,7 +1437,9 @@ void DisplayManager::showPaletteTest(uint32_t durationMs) {
     // Big digit sample, cropped to the column.
     digitSprite.fillSprite(TFT_BLACK);
     drawGlyphString(digitSprite, "8", 0, colW, kDigitBaseline);
-    tintSprite(digitSprite, kDigitW, kDigitH, p, kGlyphTop, kDigitBaseline);
+    Paint paint;
+    paint.palette = &p;
+    tintSprite(digitSprite, kDigitW, kDigitH, kGlyphTop, kDigitBaseline, paint);
     digitSprite.pushSprite(x, 30, 0, 0, colW, kDigitH);
     // Vertical gradient swatch.
     for (int16_t y = 0; y < 70; ++y) {

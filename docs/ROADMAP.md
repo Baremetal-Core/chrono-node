@@ -51,6 +51,8 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - Custom anti-aliased digit font (e.g. a large Inter/Rajdhani/DSEG variant), seconds as a progress arc or small digits.
 - Layout: a big time display, date with weekday, a status bar (Wi-Fi, NTP, indoor temperature from the DS3231's sensor).
 - Themes: dark/minimal, accent colours, colour by time-of-day. Smooth digit transitions.
+- ✅ Colour styles (v0.15): rainbow flow, colour cycle, per-digit colours, six preset gradients and
+  custom colours, plus shine, pulse and glow effects; chosen on the web page or the clock.
 - Turn the always-on RGB LED off (or use it as a subtle status light).
 
 ## M6 – Touch & screens ✅ (calibration on this unit pending a stylus)

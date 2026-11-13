@@ -67,4 +67,29 @@ Palette namedPalette(int index, const char** name);
 // Linear blend between two colours; t in 0..255.
 uint16_t mix(uint16_t a, uint16_t b, uint8_t t);
 
+// Colour from hue (degrees, any value), saturation and value (0-1).
+uint16_t hsv(float h, float s, float v);
+
+// Colour styles for the clock face. Night mode always uses the night palette.
+enum class Style : uint8_t {
+  TimeOfDay,  // the day-cycle palettes (default)
+  Rainbow,    // a rainbow across the digits that keeps flowing
+  Cycle,      // the whole clock slowly shifts through all colours
+  PerDigit,   // each digit its own colour, slowly rotating
+  Sunset, Ocean, Aurora, Neon, Fire, Candy,  // fixed gradients
+  Custom,     // two colours chosen by the user
+  Count
+};
+const char* styleName(Style s);  // "Rainbow flow"
+const char* styleKey(Style s);   // "rainbow" (console/web)
+bool styleFromKey(const char* key, Style& out);
+bool styleAnimated(Style s);
+// The fixed gradient of a preset style; false for other styles.
+bool presetPalette(Style s, Palette& out);
+
+// Effects on the time digits (bit flags), paused at night.
+constexpr uint8_t kFxShine = 1;  // a glint sweeps across the digits every few seconds
+constexpr uint8_t kFxPulse = 2;  // the colon breathes
+constexpr uint8_t kFxGlow = 4;   // a soft halo around the digits
+
 }  // namespace theme

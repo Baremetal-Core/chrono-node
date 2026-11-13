@@ -22,7 +22,13 @@ button{cursor:pointer;background:#1b2142}button.primary{background:var(--accent)
 button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-align:right}
 .results button,.recent button{display:block;width:100%;text-align:left;margin:6px 0}
 .results small,.recent small{color:var(--dim)}#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#1b2142;border:1px solid var(--line);padding:8px 14px;border-radius:10px;opacity:0;transition:opacity .3s}
-#toast.show{opacity:1}details{margin:10px 0}summary{cursor:pointer;color:var(--dim)}a{color:var(--accent)}
+#toast.show{opacity:1}
+.styles{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin:8px 0}
+.st{background:#0b0f22;border:2px solid var(--line);border-radius:12px;padding:8px;cursor:pointer;text-align:center;font-size:13px;color:var(--dim)}
+.st.on{border-color:var(--accent);color:var(--text)}input[type=color]{width:52px;height:36px;padding:3px;cursor:pointer}.st b{display:block;font:800 30px/1.1 -apple-system,system-ui,sans-serif;letter-spacing:1px;
+-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:4px;background-size:200% 100%}
+@keyframes flow{from{background-position:0 0}to{background-position:-200% 0}}@keyframes hue{to{filter:hue-rotate(360deg)}}
+.st b.flow{animation:flow 9s linear infinite}.st b.hue{animation:hue 30s linear infinite}details{margin:10px 0}summary{cursor:pointer;color:var(--dim)}a{color:var(--accent)}
 .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:8px 0}.ph{position:relative}
 .ph img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px;display:block;cursor:pointer;border:1px solid var(--line);background:#000}
 .ph button{position:absolute;top:6px;right:6px;padding:2px 8px;background:#0b0f22d0}
@@ -52,6 +58,15 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div class="row"><label>Each photo stays up for</label><select id="toph" data-cmd="TIMEOUT PHOTO"></select></div>
 <div class="row"><label>Other screens go back to the clock after</label><select id="toidle" data-cmd="TIMEOUT IDLE"></select></div>
 <div class="row"><label>Preview the forecast and photos now (also at night)</label><button id="preview">Preview</button></div>
+</section>
+
+<section><h2>Colours</h2>
+<div class="styles" id="clrstyles"></div>
+<div class="row"><label>Custom colours (top, bottom)</label><input type="color" id="clrtop"><input type="color" id="clrbot"><button id="clrsave">Use custom</button></div>
+<div class="row"><label>Shine: a glint sweeps across the digits every few seconds</label><select id="fxshine" data-fx="SHINE"><option value="OFF">Off</option><option value="ON">On</option></select></div>
+<div class="row"><label>Pulse: the colon gently breathes</label><select id="fxpulse" data-fx="PULSE"><option value="OFF">Off</option><option value="ON">On</option></select></div>
+<div class="row"><label>Glow: a soft halo around the digits</label><select id="fxglow" data-fx="GLOW"><option value="OFF">Off</option><option value="ON">On</option></select></div>
+<div class="muted">At night the clock keeps its dim night colours and the effects pause. On the clock: Settings &rarr; Colours &lt; &gt;.</div>
 </section>
 
 <section><h2>Banner</h2>
@@ -193,7 +208,7 @@ let S;
 async function loadSettings(){S=await(await fetch("/api/settings")).json();
 $("bday").value=S.brightness_day;$("bdayv").textContent=S.brightness_day+"%";$("bnight").value=S.brightness_night;$("bnightv").textContent=S.brightness_night+"%";
 $("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("cyc").value=S.forecast_cycle?"ON":"OFF";
-selVal("tofc",S.timeouts.forecast_s,S.timeouts.forecast_s+" seconds");selVal("toph",S.timeouts.photo_s,S.timeouts.photo_s+" seconds");selVal("toidle",S.timeouts.idle_s,S.timeouts.idle_s+" seconds");
+clrRender(S.colors);selVal("tofc",S.timeouts.forecast_s,S.timeouts.forecast_s+" seconds");selVal("toph",S.timeouts.photo_s,S.timeouts.photo_s+" seconds");selVal("toidle",S.timeouts.idle_s,S.timeouts.idle_s+" seconds");
 const known=TZ.find(z=>z[1]===S.timezone);$("tz").value=known?known[0]:"custom";$("tzcustom").value=S.timezone;$("tzcustomrow").style.display=known?"none":"flex";
 $("ntp").value=S.ntp_server;
 const B=S.banner;$("bnon").value=B.enabled?"ON":"OFF";selVal("bnspeed",B.speed,B.speed+" px/s");
@@ -261,6 +276,17 @@ $("fmt").onchange=e=>cmd("FORMAT "+e.target.value);
 const secs=(id,list)=>{$(id).innerHTML=list.map(s=>`<option value="${s}">${s<60?s+" seconds":s/60+(s===60?" minute":" minutes")}</option>`).join("");
 $(id).onchange=e=>cmd($(id).dataset.cmd+" "+e.target.value)};
 secs("tofc",[5,10,15,20,30,60]);secs("toph",[5,8,12,20,30,60]);secs("toidle",[10,15,30,60,120,300]);
+// Colour styles: a tile each, with "12" painted the way the clock does it.
+function clrSwatch(s){if(s.key==="rainbow")return'class="flow" style="background-image:linear-gradient(90deg,hsl(0,100%,60%),hsl(60,100%,55%),hsl(120,100%,50%),hsl(180,100%,50%),hsl(240,100%,65%),hsl(300,100%,60%),hsl(360,100%,60%))"';
+if(s.key==="cycle")return'class="hue" style="background-image:linear-gradient(180deg,hsl(20,100%,62%),hsl(60,100%,50%))"';
+if(s.key==="digits")return'class="hue" style="background-image:linear-gradient(90deg,hsl(0,100%,60%) 0 50%,hsl(160,100%,50%) 50% 100%)"';
+return`style="background-image:linear-gradient(180deg,${s.top},${s.bottom})"`}
+function clrRender(C){$("clrstyles").innerHTML=C.styles.map(s=>`<div class="st${s.key===C.style?" on":""}" data-clr="${s.key}"><b ${clrSwatch(s)}>12</b>${esc(s.name)}</div>`).join("");
+$("clrtop").value=C.custom[0].toLowerCase();$("clrbot").value=C.custom[1].toLowerCase();
+for(const k of["shine","pulse","glow"])$("fx"+k).value=C.effects[k]?"ON":"OFF"}
+$("clrstyles").onclick=e=>{const t=e.target.closest("[data-clr]");if(t)cmd("COLOR "+t.dataset.clr,"Colours: "+t.textContent.slice(2))};
+$("clrsave").onclick=()=>cmd(`COLOR CUSTOM ${$("clrtop").value} ${$("clrbot").value}`,"Custom colours");
+for(const k of["shine","pulse","glow"])$("fx"+k).onchange=e=>cmd(`EFFECT ${e.target.dataset.fx} ${e.target.value}`);
 $("preview").onclick=()=>cmd("PREVIEW","Showing the forecast and photos on the clock");$("cyc").onchange=e=>cmd("WEATHER CYCLE "+e.target.value);
 $("tz").onchange=e=>{const z=TZ.find(t=>t[0]===e.target.value);if(z)cmd("TZ "+z[1],"Time zone: "+z[0]);else $("tzcustomrow").style.display="flex"};
 $("tzsave").onclick=()=>cmd("TZ "+$("tzcustom").value.trim());

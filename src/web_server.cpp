@@ -19,6 +19,7 @@
 #include "ota.h"
 #include "photos.h"
 #include "settings.h"
+#include "ui_theme.h"
 #include "weather.h"
 #include "web_page.h"
 #include "yield_stream.h"
@@ -40,7 +41,7 @@ const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BR
                                 "NIGHT ",       "FORMAT ",     "WEATHER LOC ", "WEATHER CYCLE ",
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
-                                "TIMEOUT",      "PREVIEW"};
+                                "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT"};
 
 bool allowed(const String& cmd) {
   if (cmd.length() == 0 || cmd.length() >= kCommandLen || cmd.indexOf('\n') >= 0 ||
@@ -138,6 +139,12 @@ void handleStatus() {
   sendJson(doc);
 }
 
+String hexColor(uint16_t c) {
+  char buf[8];
+  snprintf(buf, sizeof(buf), "#%02X%02X%02X", (c >> 11) << 3, ((c >> 5) & 0x3F) << 2, (c & 0x1F) << 3);
+  return buf;
+}
+
 void handleSettings() {
   JsonDocument doc;
   doc["timezone"] = settings::timezone();
@@ -153,6 +160,41 @@ void handleSettings() {
   night["end"] = hm;
   doc["hour12"] = settings::hour12();
   doc["forecast_cycle"] = settings::weatherCycle();
+  JsonObject colors = doc["colors"].to<JsonObject>();
+  const uint8_t styleIndex = settings::colorStyle() % static_cast<uint8_t>(theme::Style::Count);
+  colors["style"] = theme::styleKey(static_cast<theme::Style>(styleIndex));
+  const uint16_t customTop = settings::customColors() >> 16, customBottom = settings::customColors() & 0xFFFF;
+  JsonArray custom = colors["custom"].to<JsonArray>();
+  custom.add(hexColor(customTop));
+  custom.add(hexColor(customBottom));
+  JsonObject fx = colors["effects"].to<JsonObject>();
+  fx["shine"] = (settings::effects() & theme::kFxShine) != 0;
+  fx["pulse"] = (settings::effects() & theme::kFxPulse) != 0;
+  fx["glow"] = (settings::effects() & theme::kFxGlow) != 0;
+  JsonArray styles = colors["styles"].to<JsonArray>();
+  struct tm local;
+  time_t nowT = time(nullptr);
+  localtime_r(&nowT, &local);
+  for (int i = 0; i < static_cast<int>(theme::Style::Count); ++i) {
+    const theme::Style st = static_cast<theme::Style>(i);
+    JsonObject o = styles.add<JsonObject>();
+    o["key"] = theme::styleKey(st);
+    o["name"] = theme::styleName(st);
+    o["animated"] = theme::styleAnimated(st);
+    theme::Palette p;
+    bool has = theme::presetPalette(st, p);
+    if (st == theme::Style::TimeOfDay) {
+      p = theme::paletteForMinute(local.tm_hour * 60 + local.tm_min);
+      has = true;
+    } else if (st == theme::Style::Custom) {
+      p = {customTop, customBottom};
+      has = true;
+    }
+    if (has) {
+      o["top"] = hexColor(p.top);
+      o["bottom"] = hexColor(p.bottom);
+    }
+  }
   JsonObject timeouts = doc["timeouts"].to<JsonObject>();
   timeouts["forecast_s"] = settings::forecastShowSeconds();
   timeouts["photo_s"] = settings::photoShowSeconds();

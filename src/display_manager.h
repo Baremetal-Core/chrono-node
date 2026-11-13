@@ -48,15 +48,22 @@ struct SettingsView {
   bool nightOn;
   char nightWindow[16];  // e.g. "22:00-06:30"
   bool hour12;
-  bool cycleOn;
+  char colorName[24];  // current colour style
   char place[32];
   int recentIndex;  // position of the current place in the recent list (-1 if not in it)
   int recentCount;
 };
 
 enum class SettingsAction : uint8_t {
-  None, DayMinus, DayPlus, NightMinus, NightPlus, NightToggle, FormatToggle, CycleToggle,
-  LocationPrev, LocationNext
+  None, DayMinus, DayPlus, NightMinus, NightPlus, NightToggle, FormatToggle, ColorPrev,
+  ColorNext, LocationPrev, LocationNext
+};
+
+// How the clock face is coloured (see theme::Style and the kFx flags).
+struct ColorSettings {
+  theme::Style style = theme::Style::TimeOfDay;
+  theme::Palette custom = {0, 0};
+  uint8_t effects = 0;
 };
 
 struct StatusInfo {
@@ -127,6 +134,9 @@ class DisplayManager {
   // Touch calibration target (crosshair) with an instruction line.
   void showCalibrationTarget(int16_t x, int16_t y, const char* text);
 
+  // Colour style and effects for the clock face; repaints it if it's showing.
+  void setColors(const ColorSettings& colors);
+
   // 12-hour clock with AM/PM.
   void setHour12(bool enabled);
 
@@ -173,6 +183,11 @@ class DisplayManager {
   int16_t barX() const;
   int16_t barW() const;
   void setPalette(const theme::Palette& palette);
+  theme::Palette basePalette(const struct tm& local, uint32_t now);
+  void refreshField(uint32_t now);
+  void drawBarFill();
+  uint16_t barColor(int x) const;
+  bool effectsOn() const;
 
   Mode mode_ = Mode::None;
   bool spritesOk_ = false;
@@ -214,4 +229,6 @@ class DisplayManager {
   uint8_t bannerSpeed_ = 70;
   uint32_t bannerStartMs_ = 0;
   bool pm_ = false;
+  ColorSettings colors_;
+  uint32_t lastAnimMs_ = 0;
 };
