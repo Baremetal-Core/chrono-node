@@ -624,7 +624,9 @@ void DisplayManager::drawSeconds(float progress) {
 // The minute bar fills smoothly: its length follows the seconds plus the time
 // since the current second began. It's drawn into a sprite and pushed in one
 // go, only when it grows a pixel (`recolor`: the colours moved; `full`: also
-// clear the row and redraw AM/PM).
+// redraw AM/PM). The bar is never cleared first: the sprite covers it
+// completely, so it can't blink when the palette changes (every second in
+// the animated styles).
 void DisplayManager::drawBar(bool full, bool recolor) {
   if (mode_ != Mode::Clock || !barOk) return;
   const int w = barW();
@@ -633,7 +635,8 @@ void DisplayManager::drawBar(bool full, bool recolor) {
   if (barPx_ < 0) full = true;
   if (!full && !recolor && px == barPx_) return;
   if (full) {
-    tft.fillRect(kBarX, kBarY, kBarW, kBarH, C->bg);
+    // Only the strip the bar doesn't cover: AM/PM in 12-hour mode.
+    if (barX() > kBarX) tft.fillRect(kBarX, kBarY, barX() - kBarX, kBarH, C->bg);
     drawMeridiem();
   }
   barPx_ = px;
