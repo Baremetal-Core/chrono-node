@@ -568,13 +568,13 @@ src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BA
   failure:
   `2` auth expired (the access point didn't answer), `15`/`202` wrong password,
   `201` network not found, `203` association rejected, `204` handshake timeout.
-  WPA2-Enterprise (802.1X, e.g. `Axon_Corp`) isn't supported. Run `WIFI PORTAL` to
+  WPA2-Enterprise (802.1X, common on corporate networks) isn't supported. Run `WIFI PORTAL` to
   re-enter credentials.
-- **Office Wi-Fi with many access points (e.g. `Axon_Open`):** connecting works, but some
+- **Office Wi-Fi with many access points:** connecting works, but some
   access points often ignore the ESP32's authentication (reason 2) even at −50 dBm, so a
   connection can take a few retries (~10–90 s). If it never connects, ask IT whether the
   network uses MAC allow-listing or client exclusion. The clock's Wi-Fi MAC is shown by
-  `esptool` at upload (e.g. `48:af:f3:70:57:a0`).
+  `esptool` at upload (e.g. `24:0a:c4:12:34:56`).
 - **Clock restarts a few seconds after joining Wi-Fi (`task_wdt: IDLE0`):** fixed in v0.12.
   A TLS handshake with Open-Meteo takes ~7 s on the ESP32, mostly one CPU-bound step
   (software ECDSA P-384 certificate checks). With the default 5 s task watchdog this reset
