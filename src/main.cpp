@@ -614,10 +614,10 @@ void handleTouch() {
 // Screen is dark: switch colours/screen, repaint, then fade back in.
 void finishTransition() {
   const theme::Transition style = transitionStyle;
-  const bool hardware = style == theme::Transition::Wipe || style == theme::Transition::Slide;
   if (style != theme::Transition::Fade) {
     display.transitionOut(style, transitionDir);
     // Nothing visible is left: draw the new screen with the backlight off.
+    // The screen is black now: draw the new one with the backlight off.
     if (style != theme::Transition::None) backlight::fadeTo(0, 0);
   }
   display.setNightMode(nightActive);
@@ -678,11 +678,7 @@ void finishTransition() {
   pollRtc();
   if (style == theme::Transition::Fade) {
     backlight::fadeTo(brightnessFor(nightActive), transitionFadeInMs);
-  } else if (hardware) {
-    display.transitionPrepareIn(style, transitionDir);
-    backlight::fadeTo(brightnessFor(nightActive), 0);
-    display.transitionIn(style, transitionDir);
-  } else if (style == theme::Transition::Blinds) {
+  } else if (style != theme::Transition::None) {
     backlight::fadeTo(brightnessFor(nightActive), config::kScreenFadeInMs);
   } else {
     backlight::fadeTo(brightnessFor(nightActive), 0);

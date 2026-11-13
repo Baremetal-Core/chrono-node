@@ -61,17 +61,18 @@ forecast, info and settings screens, plus a settings page in the browser at
   the screen has faded in.
 - **Screen change animation** (web page *Display* section, or `TRANSITION`), for swipes and
   for the forecast, photos and the return to the clock:
-  - **Wipe** (default): black sweeps across the old screen, then the new one is revealed, in
-    the direction you'd swipe.
-  - **Slide:** the old screen slides off, then the new one slides in.
+  - **Wipe** (default): black sweeps across the old screen in the direction you'd swipe,
+    then the new one fades in.
+  - **Slide:** the old screen slides off (using the ST7789's hardware scroll), then the new
+    one fades in.
   - **Blinds:** eight stripes close over the old screen, then the new one fades in.
   - **Fade:** a quick backlight dip.
   - **Instant:** no animation.
 
-  The switch between day and night always fades. Wipe and slide use the ST7789's own
-  hardware scroll and partial-display modes, so they need no second frame buffer (the CYD's
-  RAM couldn't hold one). Measured on this panel: partial display only works while a scroll
-  area is defined.
+  The switch between day and night always fades. The CYD has no RAM for a second frame
+  buffer, so the new screen is drawn with the backlight off and then faded in. The ST7789's
+  partial display could reveal it instead, but on this panel its hidden area shows white
+  (tested with both non-display settings), so it isn't used.
 - **Preview** (web page, or `PREVIEW`): shows the forecast and then each photo once, for
   their set times, also at night when the automatic cycles are paused. A tap or swipe stops it.
 - **Settings** (tap):

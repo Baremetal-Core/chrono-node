@@ -158,14 +158,11 @@ class DisplayManager {
   // Streams the screen as big-endian RGB565 between "[SHOT] BEGIN w h" and
   // "[SHOT] END" lines. Blocks for ~14 s at 115200 baud (development only).
   void screenshot(Print& out);
-  // Screen change animations (theme::Transition). `dir` +1: the new screen
-  // comes from the right (swipe left), -1 from the left. Out() animates the
-  // old screen away and leaves the panel showing (almost) nothing; draw the new
-  // screen with the backlight off, call prepareIn(), switch the backlight
-  // back on, then In() reveals it. Fade and None don't animate here.
+  // Screen change animations (theme::Transition): animates the old screen
+  // away, leaving it black. `dir` +1: towards the left, as when the new screen
+  // comes from the right (swipe left); -1 the other way. Fade and None don't
+  // animate here; the new screen then fades in.
   void transitionOut(theme::Transition t, int dir);
-  void transitionPrepareIn(theme::Transition t, int dir);
-  void transitionIn(theme::Transition t, int dir);
 
  private:
   enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo, Confirm,
