@@ -264,6 +264,8 @@ ColorSettings colorSettings() {
   return c;
 }
 
+ColorSettings shownColors;  // what the display was last given (set in setup)
+
 void buildSettingsView(SettingsView& v) {
   v.dayPct = settings::brightnessDay();
   v.nightPct = settings::brightnessNight();
@@ -423,7 +425,8 @@ void applySettingsAction(SettingsAction a) {
       const int n = static_cast<int>(theme::Style::Count);
       const int cur = static_cast<int>(colorSettings().style);
       settings::setColorStyle((cur + (a == SettingsAction::ColorNext ? 1 : n - 1)) % n);
-      display.setColors(colorSettings());
+      shownColors = colorSettings();
+      display.setColors(shownColors);
       break;
     }
     case SettingsAction::LocationPrev:
@@ -857,7 +860,8 @@ void setup() {
   }
 
   display.setHour12(settings::hour12());
-  display.setColors(colorSettings());
+  shownColors = colorSettings();
+  display.setColors(shownColors);
   if (!nightKnown) backlight::fadeTo(settings::brightnessDay(), config::kNightFadeInMs);
 
   // Wi-Fi starts after the first clock frame so the time is visible immediately.
@@ -912,7 +916,6 @@ void loop() {
     rtcLostPower = rtc.lostPower();
     lastSecond = -1;
     display.setHour12(settings::hour12());
-    static ColorSettings shownColors = colorSettings();
     const ColorSettings colors = colorSettings();
     if (memcmp(&colors, &shownColors, sizeof(colors)) != 0) {
       shownColors = colors;

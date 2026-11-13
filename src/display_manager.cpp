@@ -21,6 +21,10 @@ const theme::Colors* C = &theme::kDayColors;  // active UI colours (day or night
 TFT_eSprite digitSprite(&tft);   // one big digit cell, reused for every digit and the colon
 TFT_eSprite secondsSprite(&tft); // both seconds digits
 TFT_eSprite bannerSprite(&tft);  // scrolling banner on the bottom line
+TFT_eSprite barSprite(&tft);     // the minute bar, pushed in one go (no tearing)
+TFT_eSprite dateSprite(&tft);    // the date line; kept only while the colours animate
+bool barOk = false;
+bool dateOk = false;
 
 constexpr int16_t kScreenW = 320;
 constexpr int16_t kScreenH = 240;
@@ -59,7 +63,6 @@ constexpr int16_t kNoticeTop = 212;
 constexpr int16_t kNoticeH = 24;
 
 constexpr uint32_t kRollMs = 300;
-constexpr uint32_t kBarMs = 300;
 constexpr uint32_t kFrameMs = 16;
 
 const char* const kWeekdays[] = {"SUNDAY",   "MONDAY", "TUESDAY", "WEDNESDAY",
@@ -98,15 +101,35 @@ constexpr uint32_t kShinePeriodMs = 8000;
 constexpr uint32_t kShineSweepMs = 1400;
 int16_t shineX = kNoShine;
 
+// Glyph shapes kept between colour frames, so animated styles only re-tint
+// them: the coverage (0-63) of each settled big digit and of the date line.
+uint8_t digitCov[4][kDigitW * kDigitH];
+char digitCovChar[4] = {};
+uint8_t dateCov[kScreenW * kDateH];
+int32_t dateCovKey = -1;  // year * 400 + day of year
+
+void saveCoverage(const uint16_t* px, uint8_t* cov, int n) {
+  for (int i = 0; i < n; ++i) cov[i] = px[i] ? (((px[i] >> 8) | (px[i] << 8)) >> 5) & 0x3F : 0;
+}
+
+void restoreCoverage(uint16_t* px, const uint8_t* cov, int n) {
+  for (int i = 0; i < n; ++i) {
+    const uint16_t c = cov[i] << 5;  // the tint only reads the green channel
+    px[i] = (c >> 8) | (c << 8);     // sprites are byte-swapped
+  }
+}
+
 // Glow: the glyph coverage blurred into a halo (box blur, two passes).
 constexpr int kGlowRadius = 4;
 constexpr uint8_t kGlowStrength = 150;  // 0-255
 uint8_t glowA[kDigitW * kDigitH];
 uint8_t glowB[kDigitW * kDigitH];
 
-// Repaint intervals: a frame of the time row takes ~35 ms (~50 ms with glow),
-// so slow colour changes run at 8 fps and only the shine sweep goes faster.
-constexpr uint32_t kColorFrameMs = 125;
+// Repaint intervals: a colour frame (time row, bar and date, re-tinting kept
+// glyph shapes) takes ~30 ms (~46 ms with glow), so colour styles run at
+// 12 fps (8 with glow); the shine sweep goes faster.
+constexpr uint32_t kColorFrameMs = 80;
+constexpr uint32_t kGlowColorFrameMs = 120;  // glow adds ~16 ms a frame
 constexpr uint32_t kShineFrameMs = 50;
 constexpr uint32_t kPulseFrameMs = 80;
 
@@ -269,6 +292,9 @@ bool DisplayManager::begin() {
   secondsSprite.setTextColor(TFT_WHITE, TFT_BLACK);
   secondsSprite.setTextDatum(L_BASELINE);
 
+  barSprite.setColorDepth(16);
+  barOk = barSprite.createSprite(kBarW, kBarH) != nullptr;
+
   // The banner is rendered white-on-black every frame, then tinted.
   bannerSprite.setColorDepth(16);
   bannerOk_ = bannerSprite.createSprite(kScreenW, kNoticeH) != nullptr;
@@ -293,7 +319,6 @@ void DisplayManager::enterMode(Mode mode) {
   secDigits_[0] = secDigits_[1] = ' ';
   secAnimating_ = false;
   barPx_ = -1;
-  barAnimating_ = false;
   palValid_ = false;
   lastYday_ = -1;
   statusValid_ = false;
@@ -370,6 +395,7 @@ void DisplayManager::refreshField(uint32_t now) {
 
 void DisplayManager::setColors(const ColorSettings& colors) {
   colors_ = colors;
+  syncDateSprite();
   shineX = kNoShine;
   if (mode_ != Mode::Clock || !palValid_) {
     // Other screens use the accent colour; the clock face repaints on return.
@@ -394,8 +420,7 @@ void DisplayManager::setPalette(const theme::Palette& palette) {
   }
   drawColon();
   if (!secAnimating_) drawSeconds(1.0f);
-  barPx_ = -1;
-  drawProgress(lastLocal_.tm_sec * barW() / 59, false);
+  drawBar(true, true);
   drawDate(lastLocal_);
   drawStatusBar();
 }
@@ -406,6 +431,7 @@ void DisplayManager::showTime(const struct tm& local) {
   const bool firstFrame = mode_ != Mode::Clock;
   enterMode(Mode::Clock);
   const uint32_t now = millis();
+  if (firstFrame || local.tm_sec != lastLocal_.tm_sec) secondStartMs_ = now;
   lastLocal_ = local;
 
   setPalette(basePalette(local, now));
@@ -458,10 +484,9 @@ void DisplayManager::showTime(const struct tm& local) {
     if (!secAnimating_) drawSeconds(1.0f);
   }
 
-  drawProgress(local.tm_sec * barW() / 59, !firstFrame);
+  drawBar(firstFrame, false);
 
-  // Animated styles: the weekday follows the colours once a second.
-  if (local.tm_yday != lastYday_ || (!night_ && theme::styleAnimated(colors_.style))) {
+  if (local.tm_yday != lastYday_) {
     drawDate(local);
     lastYday_ = local.tm_yday;
   }
@@ -489,7 +514,11 @@ void DisplayManager::tick() {
   }
   const bool pulse = effectsOn() && (colors_.effects & theme::kFxPulse);
   const bool shining = shineNow != kNoShine || shineX != kNoShine;  // incl. the clean-up frame
-  const uint32_t interval = shining ? kShineFrameMs : animatedStyle ? kColorFrameMs : kPulseFrameMs;
+  const bool glow = effectsOn() && (colors_.effects & theme::kFxGlow);
+  const uint32_t interval = shining         ? kShineFrameMs
+                            : !animatedStyle ? kPulseFrameMs
+                            : glow           ? kGlowColorFrameMs
+                                             : kColorFrameMs;
   if ((animatedStyle || pulse || shining) && now - lastAnimMs_ >= interval) {
     lastAnimMs_ = now;
     shineX = shineNow;
@@ -501,8 +530,12 @@ void DisplayManager::tick() {
       if (!secAnimating_) drawSeconds(1.0f);
     }
     drawColon();
-    if (animatedStyle) drawBarFill();
+    if (animatedStyle) {
+      drawBar(false, true);
+      drawDate(lastLocal_);
+    }
   }
+  drawBar(false, false);  // the bar fills smoothly: redrawn whenever it grows a pixel
 
   if (bannerActive_) drawBanner(now);
 
@@ -518,12 +551,6 @@ void DisplayManager::tick() {
     drawSeconds(p);
     if (p >= 1.0f) secAnimating_ = false;
   }
-  if (barAnimating_) {
-    float p = progressOf(barStartMs_, kBarMs, now);
-    int px = barFrom_ + static_cast<int>((barTo_ - barFrom_) * p + 0.5f);
-    drawProgress(px, false);
-    barAnimating_ = p < 1.0f;
-  }
 }
 
 void DisplayManager::drawBigDigit(int index, float progress) {
@@ -536,8 +563,12 @@ void DisplayManager::drawBigDigit(int index, float progress) {
     const char from[2] = {r.from, '\0'};
     drawGlyphString(digitSprite, from, 0, kDigitW, kDigitBaseline - shift);
     drawGlyphString(digitSprite, to, 0, kDigitW, kDigitBaseline + kDigitH - shift);
+  } else if (digitCovChar[index] == to[0]) {
+    restoreCoverage(static_cast<uint16_t*>(digitSprite.getPointer()), digitCov[index], kDigitW * kDigitH);
   } else {
     drawGlyphString(digitSprite, to, 0, kDigitW, kDigitBaseline);
+    saveCoverage(static_cast<uint16_t*>(digitSprite.getPointer()), digitCov[index], kDigitW * kDigitH);
+    digitCovChar[index] = to[0];
   }
   Paint paint;
   paint.screenX = digitX(index, timeOffset_);
@@ -590,29 +621,27 @@ void DisplayManager::drawSeconds(float progress) {
   secondsSprite.pushSprite(kSecX, kRowY - kSecH / 2 - 1);
 }
 
-void DisplayManager::drawProgress(int targetPx, bool animate) {
-  const uint16_t track = theme::mix(C->bg, pal_.bottom, 48);
-  if (barPx_ < 0) {
-    // Full redraw (first frame or palette change).
+// The minute bar fills smoothly: its length follows the seconds plus the time
+// since the current second began. It's drawn into a sprite and pushed in one
+// go, only when it grows a pixel (`recolor`: the colours moved; `full`: also
+// clear the row and redraw AM/PM).
+void DisplayManager::drawBar(bool full, bool recolor) {
+  if (mode_ != Mode::Clock || !barOk) return;
+  const int w = barW();
+  const uint32_t intoSecond = min<uint32_t>(999, millis() - secondStartMs_);
+  const int px = static_cast<int>(static_cast<int64_t>(lastLocal_.tm_sec * 1000 + intoSecond) * w / 60000);
+  if (barPx_ < 0) full = true;
+  if (!full && !recolor && px == barPx_) return;
+  if (full) {
     tft.fillRect(kBarX, kBarY, kBarW, kBarH, C->bg);
-    tft.fillRect(barX(), kBarY, barW(), kBarH, track);
     drawMeridiem();
-    barPx_ = 0;
-    animate = false;
   }
-  if (animate && targetPx > barPx_) {
-    barFrom_ = barPx_;
-    barTo_ = targetPx;
-    barStartMs_ = millis();
-    barAnimating_ = true;
-    return;
-  }
-  barAnimating_ = false;  // tick() re-arms it while an animation is running
-  for (int x = barPx_; x < targetPx; ++x) tft.drawFastVLine(barX() + x, kBarY, kBarH, barColor(x));
-  if (targetPx < barPx_) {
-    tft.fillRect(barX() + targetPx, kBarY, barPx_ - targetPx, kBarH, track);
-  }
-  barPx_ = targetPx;
+  barPx_ = px;
+  const uint16_t track = swap16(theme::mix(C->bg, pal_.bottom, 48));
+  uint16_t* buf = static_cast<uint16_t*>(barSprite.getPointer());
+  for (int x = 0; x < w; ++x) buf[x] = x < px ? swap16(barColor(x)) : track;  // sprites are byte-swapped
+  for (int y = 1; y < kBarH; ++y) memcpy(buf + y * kBarW, buf, w * sizeof(uint16_t));
+  barSprite.pushSprite(barX(), kBarY, 0, 0, w, kBarH);
 }
 
 // Bar column x (0..barW): a horizontal gradient of the palette, or the
@@ -623,15 +652,13 @@ uint16_t DisplayManager::barColor(int x) const {
   return theme::mix(fieldTop[sx], fieldBottom[sx], 128);
 }
 
-void DisplayManager::drawBarFill() {
-  if (barPx_ <= 0) return;
-  tft.startWrite();
-  for (int x = 0; x < barPx_; ++x) tft.drawFastVLine(barX() + x, kBarY, kBarH, barColor(x));
-  tft.endWrite();
-}
 
+// The date line in the clock's colours: the weekday at full strength and the
+// rest a little dimmer (drawn in grey, so the tint gives it less coverage).
+// Night mode keeps the quiet night look. Animated styles repaint it every
+// colour frame through a kept sprite (see syncDateSprite).
 void DisplayManager::drawDate(const struct tm& local) {
-  drawLine(kDateTop, kDateH, font_date, [&](TFT_eSprite& s) {
+  auto layout = [&](TFT_eSprite& s, uint16_t weekdayColor, uint16_t restColor, uint16_t bg) {
     // Long weekday/month combinations (e.g. WEDNESDAY, September) don't fit:
     // shorten the month first, then the weekday.
     char weekday[12];
@@ -646,11 +673,60 @@ void DisplayManager::drawDate(const struct tm& local) {
     }
     const int16_t x = (kScreenW - w1 - s.textWidth(rest)) / 2;
     s.setTextDatum(ML_DATUM);
-    s.setTextColor(fieldTop[constrain(x + w1 / 2, 0, kScreenW - 1)], C->bg);
+    s.setTextColor(weekdayColor, bg);
     s.drawString(weekday, x, kDateH / 2);
-    s.setTextColor(C->date, C->bg);
+    s.setTextColor(restColor, bg);
     s.drawString(rest, x + w1, kDateH / 2);
-  });
+  };
+  if (night_) {
+    drawLine(kDateTop, kDateH, font_date,
+             [&](TFT_eSprite& s) { layout(s, pal_.top, C->date, C->bg); });
+    return;
+  }
+  auto render = [&](TFT_eSprite& s) {
+    uint16_t* px = static_cast<uint16_t*>(s.getPointer());
+    const int32_t key = local.tm_year * 400 + local.tm_yday;
+    if (&s == &dateSprite && key == dateCovKey) {
+      restoreCoverage(px, dateCov, kScreenW * kDateH);
+    } else {
+      s.fillSprite(TFT_BLACK);
+      layout(s, TFT_WHITE, theme::rgb(190, 190, 190), TFT_BLACK);
+      if (&s == &dateSprite) {
+        saveCoverage(px, dateCov, kScreenW * kDateH);
+        dateCovKey = key;
+      }
+    }
+    Paint paint;
+    paint.screenY = kDateTop;
+    tintSprite(s, kScreenW, kDateH, kDateH / 2 - 9, kDateH / 2 + 8, paint);
+    s.pushSprite(0, kDateTop);
+  };
+  if (dateOk) {
+    render(dateSprite);
+    return;
+  }
+  TFT_eSprite s(&tft);
+  s.setColorDepth(16);
+  if (!s.createSprite(kScreenW, kDateH)) return;
+  s.loadFont(font_date);
+  render(s);
+  s.unloadFont();
+  s.deleteSprite();
+}
+
+// Animated styles repaint the date every colour frame: keep its sprite (with
+// the font loaded) only then, so static styles don't hold the 19 KB.
+void DisplayManager::syncDateSprite() {
+  const bool want = !night_ && theme::styleAnimated(colors_.style);
+  if (want && !dateOk) {
+    dateSprite.setColorDepth(16);
+    dateOk = dateSprite.createSprite(kScreenW, kDateH) != nullptr;
+    if (dateOk) dateSprite.loadFont(font_date);
+  } else if (!want && dateOk) {
+    dateSprite.unloadFont();
+    dateSprite.deleteSprite();
+    dateOk = false;
+  }
 }
 
 void DisplayManager::setStatus(const StatusInfo& status) {
@@ -714,6 +790,7 @@ void DisplayManager::setNightMode(bool night) {
   if (night == night_) return;
   night_ = night;
   C = night ? &theme::kNightColors : &theme::kDayColors;
+  syncDateSprite();
   // Repaint everything with the new colours on the next showTime().
   mode_ = Mode::None;
 }
@@ -1462,7 +1539,6 @@ void DisplayManager::screenshot(Print& out) {
   lastFrameMs_ = 0;
   for (int i = 0; i < 4; ++i) bigRoll_[i].startMs -= kRollMs;
   secRoll_[0].startMs -= kRollMs;
-  barStartMs_ -= kBarMs;
   tick();
 
   static uint16_t row[kScreenW];

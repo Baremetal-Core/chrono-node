@@ -267,10 +267,15 @@ At night the clock keeps its dim night colours and the effects pause.
 
 How it works: colours come from a *colour field*, a top and a bottom colour for every screen
 column. Static styles fill it with one gradient (exactly the old look); rainbow and per-digit
-styles vary it across the screen. Animated styles repaint the time row 8 times a second (a
-frame takes ~30 ms, ~50 ms with glow, so the display core stays mostly idle). The shine runs
-at 20 fps during its 1.4 s sweep. The status icon, buttons and banner use the field's middle
-colour.
+styles vary it across the screen. Animated styles repaint the time, the bar and the date 12
+times a second (8 with glow). The glyph shapes of the settled digits and the date are kept
+between frames and only re-coloured, so a frame takes ~30 ms (~46 ms with glow). The shine
+runs at 20 fps during its 1.4 s sweep. The status icon, buttons and banner use the field's
+middle colour.
+
+The date takes the clock's colours too: the weekday at full strength, the rest a little
+dimmer. The minute bar fills smoothly through the minute instead of stepping every second,
+and it's drawn off-screen and sent in one go, so it never tears.
 
 ## Scrolling banner
 

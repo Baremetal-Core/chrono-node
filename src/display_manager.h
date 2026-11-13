@@ -177,7 +177,8 @@ class DisplayManager {
   void drawColon();
   void drawBigDigit(int index, float progress);
   void drawSeconds(float progress);
-  void drawProgress(int targetPx, bool animate);
+  void drawBar(bool full, bool recolor);
+  void syncDateSprite();
   void drawMeridiem();
   void drawScreenTitle(const char* title);
   int16_t barX() const;
@@ -185,7 +186,6 @@ class DisplayManager {
   void setPalette(const theme::Palette& palette);
   theme::Palette basePalette(const struct tm& local, uint32_t now);
   void refreshField(uint32_t now);
-  void drawBarFill();
   uint16_t barColor(int x) const;
   bool effectsOn() const;
 
@@ -198,11 +198,8 @@ class DisplayManager {
   Roll secRoll_[2];
   bool secAnimating_ = false;
 
-  int barPx_ = -1;      // drawn bar length
-  int barFrom_ = 0;
-  int barTo_ = 0;
-  uint32_t barStartMs_ = 0;
-  bool barAnimating_ = false;
+  int barPx_ = -1;              // drawn bar length (-1: redraw everything)
+  uint32_t secondStartMs_ = 0;  // millis() when the shown second began (smooth bar)
 
   theme::Palette pal_{0, 0};
   bool palValid_ = false;
