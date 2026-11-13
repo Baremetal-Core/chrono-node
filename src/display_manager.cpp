@@ -248,16 +248,27 @@ void tintSprite(TFT_eSprite& s, int16_t w, int16_t h, int16_t y0, int16_t y1, co
 }
 
 // Draws one text line through a temporary full-width sprite (no flicker).
+// Tall lines need up to 56 KB; when the heap can't spare that, the line is
+// drawn in strips, re-running `draw` with a viewport shifted onto each strip.
 template <typename Fn>
 void drawLine(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
   TFT_eSprite line(&tft);
   line.setColorDepth(16);
-  if (!line.createSprite(kScreenW, height)) return;
-  line.fillSprite(C->bg);
-  line.loadFont(font);
-  draw(line);
-  line.unloadFont();
-  line.pushSprite(0, top);
+  int16_t band = height;
+  while (!line.createSprite(kScreenW, band)) {
+    if (band <= 8) return;
+    band = (band + 1) / 2;
+  }
+  for (int16_t y = 0; y < height; y += band) {
+    line.resetViewport();
+    line.fillSprite(C->bg);
+    if (band < height) line.setViewport(0, -y, kScreenW, height, true);
+    line.loadFont(font);
+    draw(line);
+    line.unloadFont();
+    line.resetViewport();
+    line.pushSprite(0, top + y, 0, 0, kScreenW, min<int16_t>(band, height - y));
+  }
   line.deleteSprite();
 }
 
@@ -318,6 +329,7 @@ bool DisplayManager::begin() {
 void DisplayManager::enterMode(Mode mode) {
   if (mode_ == mode) return;
   mode_ = mode;
+  syncFxBuffers();
   tft.fillScreen(C->bg);
   for (int i = 0; i < 4; ++i) {
     digits_[i] = ' ';
@@ -710,7 +722,7 @@ void DisplayManager::drawDate(const struct tm& local) {
     if (!s.createSprite(kScreenW, kDateH)) return;
     s.loadFont(font_face);
     s.fillSprite(TFT_BLACK);
-    layout(s, TFT_WHITE, theme::rgb(190, 190, 190), TFT_BLACK);
+    layout(s, TFT_WHITE, TFT_WHITE, TFT_BLACK);
     s.unloadFont();
     if (fxCache && dateOk) {
       saveCoverage(static_cast<uint16_t*>(s.getPointer()), fxCache->date, kScreenW * kDateH);
@@ -740,10 +752,13 @@ void DisplayManager::drawDate(const struct tm& local) {
 // Buffers for animation, allocated only while something animates so the
 // network task keeps enough heap for TLS: glyph shapes (32 KB) and a date
 // strip (6 KB) for animated styles and the shine, glow buffers (11 KB) for glow.
+// Other screens free them: their tall lines need the room.
 void DisplayManager::syncFxBuffers() {
-  const bool animated = !night_ && theme::styleAnimated(colors_.style);
-  const bool cache = animated || (effectsOn() && (colors_.effects & (theme::kFxShine | theme::kFxGlow)));
-  const bool glow = effectsOn() && (colors_.effects & theme::kFxGlow);
+  const bool clock = mode_ == Mode::Clock;
+  const bool fx = clock && effectsOn();
+  const bool animated = clock && !night_ && theme::styleAnimated(colors_.style);
+  const bool cache = animated || (fx && (colors_.effects & (theme::kFxShine | theme::kFxGlow)));
+  const bool glow = fx && (colors_.effects & theme::kFxGlow);
   if (cache && !fxCache) {
     fxCache = static_cast<FxCache*>(malloc(sizeof(FxCache)));
     memset(digitCovChar, 0, sizeof(digitCovChar));
@@ -936,7 +951,7 @@ void DisplayManager::drawWeatherLine() {
     }
     int16_t x = (kScreenW - (iconW + 4 + tempW + 10 + detailW)) / 2;
 
-    weather_icons::draw(s, x + iconW / 2, kNoticeH / 2, 22, weather::iconFor(w.code), w.isDay,
+    weather_icons::draw(s, x + iconW / 2, kNoticeH / 2, 22, weather::iconFor(w.code), w.isDay, C->bg,
                         night_ || weatherStale_, C->dim);
     x += iconW + 4;
     s.setTextDatum(ML_DATUM);
@@ -1414,7 +1429,7 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
 
   // Now: big icon, temperature, condition, details.
   drawLine(28, 88, font_temp, [&](TFT_eSprite& s) {
-    weather_icons::draw(s, 54, 44, 74, weather::iconFor(w.code), w.isDay);
+    weather_icons::draw(s, 54, 44, 74, weather::iconFor(w.code), w.isDay, C->bg);
     char t[8];
     deg(t, sizeof(t), (int)lroundf(w.temp));
     s.setTextDatum(L_BASELINE);
@@ -1455,7 +1470,7 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
       s.setTextDatum(MC_DATUM);
       s.setTextColor(C->dim, C->bg);
       s.drawString(label, cx, 8);
-      weather_icons::draw(s, cx, 29, 26, weather::iconFor(h.code), h.isDay);
+      weather_icons::draw(s, cx, 29, 26, weather::iconFor(h.code), h.isDay, C->bg);
       char tv[8];
       deg(tv, sizeof(tv), h.temp);
       s.setTextColor(C->text, C->bg);
@@ -1477,7 +1492,7 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
       s.setTextDatum(MC_DATUM);
       s.setTextColor(i == 0 ? accent : C->text, C->bg);
       s.drawString(i == 0 ? "Today" : kShortDays[t.tm_wday % 7], cx, 14);
-      weather_icons::draw(s, cx - 13, 34, 22, weather::iconFor(d.code), true);
+      weather_icons::draw(s, cx - 13, 34, 22, weather::iconFor(d.code), true, C->bg);
       char pop[8];
       snprintf(pop, sizeof(pop), "%u%%", d.pop);
       s.setTextDatum(ML_DATUM);

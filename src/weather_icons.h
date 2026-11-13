@@ -9,8 +9,9 @@
 namespace weather_icons {
 
 // Draws `icon` centred at (cx, cy) in a box roughly `size` pixels wide.
+// `bg` is the colour underneath (the moon's bite is cut with it).
 // With `mono` set, everything is drawn in `monoColor` (used in night mode).
 void draw(TFT_eSprite& s, int16_t cx, int16_t cy, int16_t size, weather::Icon icon, bool isDay,
-          bool mono = false, uint16_t monoColor = 0);
+          uint16_t bg, bool mono = false, uint16_t monoColor = 0);
 
 }  // namespace weather_icons
