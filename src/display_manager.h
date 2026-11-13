@@ -64,6 +64,7 @@ struct ColorSettings {
   theme::Style style = theme::Style::TimeOfDay;
   theme::Palette custom = {0, 0};
   uint8_t effects = 0;
+  uint8_t speedQuarters = 4;  // animation speed: 4 = x1
 };
 
 struct StatusInfo {
@@ -157,6 +158,14 @@ class DisplayManager {
   // Streams the screen as big-endian RGB565 between "[SHOT] BEGIN w h" and
   // "[SHOT] END" lines. Blocks for ~14 s at 115200 baud (development only).
   void screenshot(Print& out);
+  // Screen change animations (theme::Transition). `dir` +1: the new screen
+  // comes from the right (swipe left), -1 from the left. Out() animates the
+  // old screen away and leaves the panel showing (almost) nothing; draw the new
+  // screen with the backlight off, call prepareIn(), switch the backlight
+  // back on, then In() reveals it. Fade and None don't animate here.
+  void transitionOut(theme::Transition t, int dir);
+  void transitionPrepareIn(theme::Transition t, int dir);
+  void transitionIn(theme::Transition t, int dir);
 
  private:
   enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo, Confirm,
@@ -228,4 +237,6 @@ class DisplayManager {
   bool pm_ = false;
   ColorSettings colors_;
   uint32_t lastAnimMs_ = 0;
+  uint32_t animPhaseMs_ = 0;  // animation clock, advancing at the chosen speed
+  uint32_t lastPhaseMs_ = 0;
 };

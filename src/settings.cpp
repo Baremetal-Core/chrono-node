@@ -37,6 +37,9 @@ constexpr const char* kKeyScreenIdle = "idle_s";
 constexpr const char* kKeyColorStyle = "clr_style";
 constexpr const char* kKeyColorCustom = "clr_custom";  // RGB565 top << 16 | bottom
 constexpr const char* kKeyEffects = "fx";
+constexpr const char* kKeyColorSpeed = "clr_speed";
+constexpr const char* kKeyMixEvery = "mix_every";
+constexpr const char* kKeyTransition = "transition";
 
 char banners[config::kBannerMaxMessages][config::kBannerMaxLen + 1] = {};
 uint8_t bannerEvs[config::kBannerMaxMessages] = {};
@@ -52,6 +55,9 @@ uint16_t screenIdle = config::kDefaultScreenIdleS;
 uint8_t colorStyleValue = 0;
 uint32_t colorCustomValue = (0x07FEUL << 16) | 0xF819;  // cyan -> magenta
 uint8_t effectsValue = 0;
+uint8_t colorSpeedValue = 1;   // normal
+uint8_t mixEveryValue = 5;     // minutes
+uint8_t transitionValue = 1;   // wipe
 
 void splitBanners(const char* joined) {
   bannerN = 0;
@@ -154,6 +160,9 @@ void begin() {
     colorStyleValue = prefs.getUChar(kKeyColorStyle, colorStyleValue);
     colorCustomValue = prefs.getULong(kKeyColorCustom, colorCustomValue);
     effectsValue = prefs.getUChar(kKeyEffects, effectsValue);
+    colorSpeedValue = prefs.getUChar(kKeyColorSpeed, colorSpeedValue) % 4;
+    mixEveryValue = prefs.getUChar(kKeyMixEvery, mixEveryValue);
+    transitionValue = prefs.getUChar(kKeyTransition, transitionValue) % 5;
     if (prefs.isKey(kKeyBannerText)) {
       String joined = prefs.getString(kKeyBannerText, "");
       splitBanners(joined.c_str());
@@ -444,6 +453,33 @@ uint8_t effects() { return effectsValue; }
 bool setEffects(uint8_t fx) {
   bool ok = save([&](Preferences& p) { return p.putUChar(kKeyEffects, fx) > 0; });
   if (ok) effectsValue = fx;
+  return ok;
+}
+
+uint8_t colorSpeed() { return colorSpeedValue; }
+
+bool setColorSpeed(uint8_t speed) {
+  if (speed > 3) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyColorSpeed, speed) > 0; });
+  if (ok) colorSpeedValue = speed;
+  return ok;
+}
+
+uint8_t mixEveryMinutes() { return mixEveryValue; }
+
+bool setMixEveryMinutes(uint8_t minutes) {
+  if (minutes < 1 || minutes > 60) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyMixEvery, minutes) > 0; });
+  if (ok) mixEveryValue = minutes;
+  return ok;
+}
+
+uint8_t transition() { return transitionValue; }
+
+bool setTransition(uint8_t t) {
+  if (t > 4) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyTransition, t) > 0; });
+  if (ok) transitionValue = t;
   return ok;
 }
 

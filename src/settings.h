@@ -91,6 +91,15 @@ bool setCustomColors(uint16_t top, uint16_t bottom);
 uint8_t effects();
 bool setEffects(uint8_t fx);
 
+// Animated colour speed (theme::Speed), the Mix style's minutes per style
+// (1-60) and the screen change animation (theme::Transition).
+uint8_t colorSpeed();
+bool setColorSpeed(uint8_t speed);
+uint8_t mixEveryMinutes();
+bool setMixEveryMinutes(uint8_t minutes);
+uint8_t transition();
+bool setTransition(uint8_t t);
+
 // Photo slideshow period in minutes (0 = off).
 uint8_t photoEveryMinutes();
 bool setPhotoEveryMinutes(uint8_t minutes);

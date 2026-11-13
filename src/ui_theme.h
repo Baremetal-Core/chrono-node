@@ -78,6 +78,7 @@ enum class Style : uint8_t {
   PerDigit,   // each digit its own colour, slowly rotating
   Sunset, Ocean, Aurora, Neon, Fire, Candy,  // fixed gradients
   Custom,     // two colours chosen by the user
+  Mix,        // takes turns through the other colourful styles
   Count
 };
 const char* styleName(Style s);  // "Rainbow flow"
@@ -86,6 +87,20 @@ bool styleFromKey(const char* key, Style& out);
 bool styleAnimated(Style s);
 // The fixed gradient of a preset style; false for other styles.
 bool presetPalette(Style s, Palette& out);
+
+// The style Mix shows for a minute of the day, changing every `everyMinutes`.
+Style mixStyleAt(int minuteOfDay, uint8_t everyMinutes);
+
+// How fast animated styles move: x0.5, x1, x2, x4.
+enum class Speed : uint8_t { Slow, Normal, Fast, VeryFast, Count };
+const char* speedKey(Speed s);  // "slow", "normal", "fast", "veryfast"
+bool speedFromKey(const char* key, Speed& out);
+uint8_t speedQuarters(Speed s);  // multiplier in quarters: 2, 4, 8, 16
+
+// Screen change animations.
+enum class Transition : uint8_t { Fade, Wipe, Slide, Blinds, None, Count };
+const char* transitionKey(Transition t);  // "fade", "wipe", ...
+bool transitionFromKey(const char* key, Transition& out);
 
 // Effects on the time digits (bit flags), paused at night.
 constexpr uint8_t kFxShine = 1;  // a glint sweeps across the digits every few seconds

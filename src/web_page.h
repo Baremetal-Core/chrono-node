@@ -57,11 +57,17 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div class="row"><label>Forecast stays up for</label><select id="tofc" data-cmd="TIMEOUT FORECAST"></select></div>
 <div class="row"><label>Each photo stays up for</label><select id="toph" data-cmd="TIMEOUT PHOTO"></select></div>
 <div class="row"><label>Other screens go back to the clock after</label><select id="toidle" data-cmd="TIMEOUT IDLE"></select></div>
+<div class="row"><label>Screen change animation</label><select id="trans"><option value="FADE">Fade</option><option value="WIPE">Wipe</option>
+<option value="SLIDE">Slide</option><option value="BLINDS">Blinds</option><option value="NONE">Instant</option></select></div>
 <div class="row"><label>Preview the forecast and photos now (also at night)</label><button id="preview">Preview</button></div>
 </section>
 
 <section><h2>Colours</h2>
 <div class="styles" id="clrstyles"></div>
+<div class="row"><label>Speed of moving colours (Rainbow flow, Colour cycle, Per digit)</label><select id="clrspeed">
+<option value="SLOW">Slow</option><option value="NORMAL">Normal</option><option value="FAST">Fast</option><option value="VERYFAST">Very fast</option></select></div>
+<div class="row"><label>Mix: change style every</label><select id="clrmix"><option value="1">minute</option><option value="2">2 minutes</option>
+<option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">hour</option></select></div>
 <div class="row"><label>Custom colours (top, bottom)</label><input type="color" id="clrtop"><input type="color" id="clrbot"><button id="clrsave">Use custom</button></div>
 <div class="row"><label>Shine: a glint sweeps across the digits every few seconds</label><select id="fxshine" data-fx="SHINE"><option value="OFF">Off</option><option value="ON">On</option></select></div>
 <div class="row"><label>Pulse: the colon gently breathes</label><select id="fxpulse" data-fx="PULSE"><option value="OFF">Off</option><option value="ON">On</option></select></div>
@@ -280,11 +286,15 @@ secs("tofc",[5,10,15,20,30,60]);secs("toph",[5,8,12,20,30,60]);secs("toidle",[10
 function clrSwatch(s){if(s.key==="rainbow")return'class="flow" style="background-image:linear-gradient(90deg,hsl(0,100%,60%),hsl(60,100%,55%),hsl(120,100%,50%),hsl(180,100%,50%),hsl(240,100%,65%),hsl(300,100%,60%),hsl(360,100%,60%))"';
 if(s.key==="cycle")return'class="hue" style="background-image:linear-gradient(180deg,hsl(20,100%,62%),hsl(60,100%,50%))"';
 if(s.key==="digits")return'class="hue" style="background-image:linear-gradient(90deg,hsl(0,100%,60%) 0 50%,hsl(160,100%,50%) 50% 100%)"';
+if(s.key==="mix")return'class="hue" style="background-image:linear-gradient(135deg,#ffb000,#ff2d6f 35%,#00e5ff 65%,#3dff8a)"';
 return`style="background-image:linear-gradient(180deg,${s.top},${s.bottom})"`}
 function clrRender(C){$("clrstyles").innerHTML=C.styles.map(s=>`<div class="st${s.key===C.style?" on":""}" data-clr="${s.key}"><b ${clrSwatch(s)}>12</b>${esc(s.name)}</div>`).join("");
 $("clrtop").value=C.custom[0].toLowerCase();$("clrbot").value=C.custom[1].toLowerCase();
-for(const k of["shine","pulse","glow"])$("fx"+k).value=C.effects[k]?"ON":"OFF"}
+for(const k of["shine","pulse","glow"])$("fx"+k).value=C.effects[k]?"ON":"OFF";
+$("clrspeed").value=C.speed.toUpperCase();selVal("clrmix",C.mix_every,C.mix_every+" minutes");$("trans").value=S.transition.toUpperCase()}
 $("clrstyles").onclick=e=>{const t=e.target.closest("[data-clr]");if(t)cmd("COLOR "+t.dataset.clr,"Colours: "+t.textContent.slice(2))};
+$("clrspeed").onchange=e=>cmd("COLOR SPEED "+e.target.value);$("clrmix").onchange=e=>cmd("COLOR MIX EVERY "+e.target.value);
+$("trans").onchange=e=>cmd("TRANSITION "+e.target.value,"Transition: "+e.target.selectedOptions[0].text);
 $("clrsave").onclick=()=>cmd(`COLOR CUSTOM ${$("clrtop").value} ${$("clrbot").value}`,"Custom colours");
 for(const k of["shine","pulse","glow"])$("fx"+k).onchange=e=>cmd(`EFFECT ${e.target.dataset.fx} ${e.target.value}`);
 $("preview").onclick=()=>cmd("PREVIEW","Showing the forecast and photos on the clock");$("cyc").onchange=e=>cmd("WEATHER CYCLE "+e.target.value);

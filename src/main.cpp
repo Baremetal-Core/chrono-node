@@ -94,8 +94,14 @@ uint32_t bannerNextMs = 0;
 bool nightBoost = false;
 uint32_t nightBoostUntilMs = 0;
 
+// The screen change animation: Fade dims the backlight (always used for the
+// switch between day and night); the others run in finishTransition().
+theme::Transition transitionStyle = theme::Transition::Fade;
+int transitionDir = 1;
+
 void startTransition(uint32_t fadeOutMs, uint32_t fadeInMs) {
   transitioning = true;
+  transitionStyle = theme::Transition::Fade;
   transitionFadeInMs = fadeInMs;
   backlight::fadeTo(0, fadeOutMs);
 }
@@ -104,11 +110,24 @@ uint8_t brightnessFor(bool night) {
   return night && !nightBoost ? settings::brightnessNight() : settings::brightnessDay();
 }
 
-// `again` repaints the current screen behind a fade (e.g. the next photo).
-void requestScreen(Screen s, bool again = false) {
+// Index of a screen in the swipe order, so a change can animate in the
+// direction you'd swipe; screens opened from Info count as after it.
+int screenOrder(Screen s) { return s == Screen::Clock ? 0 : static_cast<int>(s); }
+
+// `again` repaints the current screen (e.g. the next photo). `dir`: +1 the
+// new screen comes from the right, -1 from the left, 0 by the swipe order.
+void requestScreen(Screen s, bool again = false, int dir = 0) {
   if (transitioning || (!again && s == screenOn && s == screenWanted)) return;
   screenWanted = s;
-  startTransition(config::kScreenFadeOutMs, config::kScreenFadeInMs);
+  const auto style = static_cast<theme::Transition>(settings::transition());
+  if (style == theme::Transition::Fade) {
+    startTransition(config::kScreenFadeOutMs, config::kScreenFadeInMs);
+    return;
+  }
+  transitioning = true;  // runs in finishTransition() on the next loop
+  transitionStyle = style;
+  transitionDir = dir ? dir : screenOrder(s) >= screenOrder(screenOn) ? 1 : -1;
+  if (s == Screen::Clock && screenOn != Screen::Clock && !dir) transitionDir = -1;
 }
 
 // Called every second with the local time, before the frame is drawn.
@@ -261,10 +280,31 @@ ColorSettings colorSettings() {
   c.custom = {static_cast<uint16_t>(settings::customColors() >> 16),
               static_cast<uint16_t>(settings::customColors() & 0xFFFF)};
   c.effects = settings::effects();
+  c.speedQuarters = theme::speedQuarters(static_cast<theme::Speed>(settings::colorSpeed()));
   return c;
 }
 
-ColorSettings shownColors;  // what the display was last given (set in setup)
+// What the display shows: Mix becomes the style whose turn it is.
+ColorSettings shownColorsFor(const struct tm& local) {
+  ColorSettings c = colorSettings();
+  if (c.style == theme::Style::Mix) {
+    c.style = theme::mixStyleAt(local.tm_hour * 60 + local.tm_min, settings::mixEveryMinutes());
+  }
+  return c;
+}
+
+ColorSettings shownColors;  // what the display was last given
+bool colorsShown = false;
+struct tm lastLocalTm = {};  // updated every second by pollRtc()
+
+// Gives the display the current colours if they changed (a setting, or Mix's turn).
+void applyColors() {
+  const ColorSettings c = shownColorsFor(lastLocalTm);
+  if (colorsShown && memcmp(&c, &shownColors, sizeof(c)) == 0) return;
+  shownColors = c;
+  colorsShown = true;
+  display.setColors(c);
+}
 
 void buildSettingsView(SettingsView& v) {
   v.dayPct = settings::brightnessDay();
@@ -425,8 +465,7 @@ void applySettingsAction(SettingsAction a) {
       const int n = static_cast<int>(theme::Style::Count);
       const int cur = static_cast<int>(colorSettings().style);
       settings::setColorStyle((cur + (a == SettingsAction::ColorNext ? 1 : n - 1)) % n);
-      shownColors = colorSettings();
-      display.setColors(shownColors);
+      applyColors();
       break;
     }
     case SettingsAction::LocationPrev:
@@ -493,7 +532,8 @@ void handleTouch() {
     case touch::Gesture::SwipeRight:
       autoScreen = false;
       previewCount = 0;
-      requestScreen(neighbour(screenOn, ev.gesture == touch::Gesture::SwipeLeft ? 1 : -1));
+      requestScreen(neighbour(screenOn, ev.gesture == touch::Gesture::SwipeLeft ? 1 : -1), false,
+                    ev.gesture == touch::Gesture::SwipeLeft ? 1 : -1);
       break;
     case touch::Gesture::Hold:
       // Touch and hold anywhere: straight back to the clock.
@@ -573,6 +613,13 @@ void handleTouch() {
 
 // Screen is dark: switch colours/screen, repaint, then fade back in.
 void finishTransition() {
+  const theme::Transition style = transitionStyle;
+  const bool hardware = style == theme::Transition::Wipe || style == theme::Transition::Slide;
+  if (style != theme::Transition::Fade) {
+    display.transitionOut(style, transitionDir);
+    // Nothing visible is left: draw the new screen with the backlight off.
+    if (style != theme::Transition::None) backlight::fadeTo(0, 0);
+  }
   display.setNightMode(nightActive);
   display.setHour12(settings::hour12());
   weather::Data wx;
@@ -629,7 +676,17 @@ void finishTransition() {
   transitioning = false;
   lastSecond = -1;
   pollRtc();
-  backlight::fadeTo(brightnessFor(nightActive), transitionFadeInMs);
+  if (style == theme::Transition::Fade) {
+    backlight::fadeTo(brightnessFor(nightActive), transitionFadeInMs);
+  } else if (hardware) {
+    display.transitionPrepareIn(style, transitionDir);
+    backlight::fadeTo(brightnessFor(nightActive), 0);
+    display.transitionIn(style, transitionDir);
+  } else if (style == theme::Transition::Blinds) {
+    backlight::fadeTo(brightnessFor(nightActive), config::kScreenFadeInMs);
+  } else {
+    backlight::fadeTo(brightnessFor(nightActive), 0);
+  }
 }
 
 void logTime(const DateTime& utc) {
@@ -753,6 +810,8 @@ void pollRtc(bool forceLog) {
 
   struct tm local;
   time_utils::utcToLocal(utc, local);
+  lastLocalTm = local;
+  applyColors();  // Mix changes style on the minute
   updateNight(local);
   updateAutoScreens(local, weather::version() != 0);
   if (screenOn == Screen::Clock && !transitioning) {
@@ -860,8 +919,7 @@ void setup() {
   }
 
   display.setHour12(settings::hour12());
-  shownColors = colorSettings();
-  display.setColors(shownColors);
+  applyColors();
   if (!nightKnown) backlight::fadeTo(settings::brightnessDay(), config::kNightFadeInMs);
 
   // Wi-Fi starts after the first clock frame so the time is visible immediately.
@@ -916,11 +974,7 @@ void loop() {
     rtcLostPower = rtc.lostPower();
     lastSecond = -1;
     display.setHour12(settings::hour12());
-    const ColorSettings colors = colorSettings();
-    if (memcmp(&colors, &shownColors, sizeof(colors)) != 0) {
-      shownColors = colors;
-      display.setColors(colors);
-    }
+    applyColors();
     if (screenOn == Screen::Settings && !transitioning) showSettings();
     if (!transitioning && nightKnown) {
       backlight::fadeTo(brightnessFor(nightActive), config::kBrightnessFadeMs);

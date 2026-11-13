@@ -358,7 +358,11 @@ void DisplayManager::refreshField(uint32_t now) {
     return;
   }
   initHues();
-  const uint32_t ms = now % 3600000UL;
+  // The animation clock runs at the chosen speed; every period below divides
+  // an hour, so it wraps without a jump.
+  animPhaseMs_ = (animPhaseMs_ + (now - lastPhaseMs_) * colors_.speedQuarters / 4) % 3600000UL;
+  lastPhaseMs_ = now;
+  const uint32_t ms = animPhaseMs_;
   if (st == theme::Style::Cycle) {
     const int h = ms * 6 / 1000 % 360;  // once around the colour wheel per minute
     for (int16_t x = 0; x < kScreenW; ++x) {
@@ -1535,6 +1539,139 @@ void DisplayManager::showPaletteTest(uint32_t durationMs) {
       s.drawString(name, i * colW + colW / 2, 12);
     }
   });
+}
+
+// Screen transitions use two ST7789 features, so no second frame buffer is
+// needed: vertical scroll (in landscape it shifts the picture sideways:
+// screen column x shows memory column (x + offset) % 320) and partial display
+// (only screen columns first..last are shown, the rest is black). Measured on
+// this panel: partial display only works while a scroll area is defined.
+namespace {
+
+void cmd16(uint8_t c, std::initializer_list<uint16_t> args) {
+  tft.writecommand(c);
+  for (uint16_t a : args) {
+    tft.writedata(a >> 8);
+    tft.writedata(a & 0xFF);
+  }
+}
+
+void scrollOffset(int off) { cmd16(0x37, {static_cast<uint16_t>(((off % kScreenW) + kScreenW) % kScreenW)}); }
+
+// Shows only screen columns [first, last] (clamped; at least one column).
+void showColumns(int first, int last) {
+  first = constrain(first, 0, kScreenW - 1);
+  last = constrain(last, first, kScreenW - 1);
+  cmd16(0x30, {static_cast<uint16_t>(first), static_cast<uint16_t>(last)});
+}
+
+void beginHardwareFx() {
+  cmd16(0x33, {0, static_cast<uint16_t>(kScreenW), 0});  // whole panel scrolls
+  scrollOffset(0);
+  tft.writecommand(0x12);  // partial mode on
+}
+
+void endHardwareFx() {
+  scrollOffset(0);
+  tft.writecommand(0x13);  // normal display
+}
+
+float easeInOut(float t) { return t < 0.5f ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t); }
+
+constexpr uint32_t kSweepMs = 260;
+
+// Runs `step(p)` with p easing from 0 to 1 (pixels: p * 320) over `ms`.
+template <typename Fn>
+void animate(uint32_t ms, Fn&& step) {
+  const uint32_t t0 = millis();
+  for (;;) {
+    const uint32_t e = millis() - t0;
+    const float t = e >= ms ? 1.0f : static_cast<float>(e) / ms;
+    step(static_cast<int>(easeInOut(t) * kScreenW + 0.5f));
+    if (t >= 1.0f) break;
+    delay(6);
+  }
+}
+
+}  // namespace
+
+void DisplayManager::transitionOut(theme::Transition t, int dir) {
+  switch (t) {
+    case theme::Transition::Wipe:
+      // Black sweeps in from the side the new screen comes from.
+      beginHardwareFx();
+      animate(kSweepMs, [&](int p) {
+        if (dir > 0) showColumns(0, kScreenW - 1 - p);
+        else showColumns(p, kScreenW - 1);
+      });
+      break;
+    case theme::Transition::Slide:
+      // The picture slides away, opposite to where the new one comes from.
+      beginHardwareFx();
+      animate(kSweepMs, [&](int p) {
+        if (dir > 0) {
+          scrollOffset(p);
+          showColumns(0, kScreenW - 1 - p);
+        } else {
+          scrollOffset(-p);
+          showColumns(p, kScreenW - 1);
+        }
+      });
+      break;
+    case theme::Transition::Blinds: {
+      // Eight stripes close.
+      constexpr int kStripes = 8, kStripeW = kScreenW / kStripes;
+      int done = 0;
+      animate(kSweepMs, [&](int p) {
+        const int w = p * kStripeW / kScreenW;
+        for (int i = 0; i < kStripes; ++i) {
+          const int x = dir > 0 ? i * kStripeW + kStripeW - w : i * kStripeW + done;
+          if (w > done) tft.fillRect(dir > 0 ? x : x, 0, w - done, kScreenH, TFT_BLACK);
+        }
+        done = max(done, w);
+      });
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+void DisplayManager::transitionPrepareIn(theme::Transition t, int dir) {
+  if (t == theme::Transition::Wipe) {
+    showColumns(dir > 0 ? kScreenW - 1 : 0, dir > 0 ? kScreenW - 1 : 0);
+  } else if (t == theme::Transition::Slide) {
+    scrollOffset(0);
+    showColumns(dir > 0 ? kScreenW - 1 : 0, dir > 0 ? kScreenW - 1 : 0);
+  }
+}
+
+void DisplayManager::transitionIn(theme::Transition t, int dir) {
+  switch (t) {
+    case theme::Transition::Wipe:
+      animate(kSweepMs, [&](int p) {
+        if (dir > 0) showColumns(kScreenW - p, kScreenW - 1);
+        else showColumns(0, p - 1);
+      });
+      endHardwareFx();
+      break;
+    case theme::Transition::Slide:
+      // Screen column x shows memory column (x + off): the new picture's
+      // leading edge sits at the moving boundary.
+      animate(kSweepMs, [&](int p) {
+        if (dir > 0) {
+          scrollOffset(p);  // = p - 320: memory column 0 at screen column 320 - p
+          showColumns(kScreenW - p, kScreenW - 1);
+        } else {
+          scrollOffset(kScreenW - p);  // memory column 319 at screen column p - 1
+          showColumns(0, p - 1);
+        }
+      });
+      endHardwareFx();
+      break;
+    default:
+      break;
+  }
 }
 
 void DisplayManager::screenshot(Print& out) {

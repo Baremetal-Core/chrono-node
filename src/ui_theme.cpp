@@ -137,6 +137,7 @@ constexpr StyleInfo kStyles[] = {
     {"fire", "Fire", {255, 224, 0}, {255, 42, 0}},
     {"candy", "Candy", {255, 138, 216}, {155, 92, 255}},
     {"custom", "Custom", {}, {}},
+    {"mix", "Mix", {}, {}},
 };
 static_assert(sizeof(kStyles) / sizeof(kStyles[0]) == static_cast<size_t>(Style::Count), "styles");
 
@@ -165,6 +166,46 @@ bool presetPalette(Style s, Palette& out) {
   const StyleInfo& i = kStyles[static_cast<int>(s)];
   out = {rgb(i.top.r, i.top.g, i.top.b), rgb(i.bottom.r, i.bottom.g, i.bottom.b)};
   return true;
+}
+
+Style mixStyleAt(int minuteOfDay, uint8_t everyMinutes) {
+  static constexpr Style kTurns[] = {Style::Rainbow, Style::Sunset, Style::Cycle, Style::Ocean,
+                                     Style::PerDigit, Style::Aurora, Style::Neon, Style::Fire,
+                                     Style::Candy};
+  constexpr int n = sizeof(kTurns) / sizeof(kTurns[0]);
+  const int turn = minuteOfDay / (everyMinutes ? everyMinutes : 1);
+  return kTurns[turn % n];
+}
+
+namespace {
+constexpr const char* kSpeedKeys[] = {"slow", "normal", "fast", "veryfast"};
+constexpr const char* kTransitionKeys[] = {"fade", "wipe", "slide", "blinds", "none"};
+}  // namespace
+
+const char* speedKey(Speed s) { return kSpeedKeys[static_cast<int>(s) % 4]; }
+
+bool speedFromKey(const char* key, Speed& out) {
+  for (int i = 0; i < 4; ++i) {
+    if (strcasecmp(key, kSpeedKeys[i]) == 0) {
+      out = static_cast<Speed>(i);
+      return true;
+    }
+  }
+  return false;
+}
+
+uint8_t speedQuarters(Speed s) { return 2 << (static_cast<int>(s) % 4); }
+
+const char* transitionKey(Transition t) { return kTransitionKeys[static_cast<int>(t) % 5]; }
+
+bool transitionFromKey(const char* key, Transition& out) {
+  for (int i = 0; i < 5; ++i) {
+    if (strcasecmp(key, kTransitionKeys[i]) == 0) {
+      out = static_cast<Transition>(i);
+      return true;
+    }
+  }
+  return false;
 }
 
 uint16_t mix(uint16_t a, uint16_t b, uint8_t t) {

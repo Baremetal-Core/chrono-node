@@ -59,6 +59,19 @@ forecast, info and settings screens, plus a settings page in the browser at
   (default 10 s) and each photo (12 s) stay up when they come up by themselves, and how long
   other screens wait without touch before the clock returns (30 s). The time counts from when
   the screen has faded in.
+- **Screen change animation** (web page *Display* section, or `TRANSITION`), for swipes and
+  for the forecast, photos and the return to the clock:
+  - **Wipe** (default): black sweeps across the old screen, then the new one is revealed, in
+    the direction you'd swipe.
+  - **Slide:** the old screen slides off, then the new one slides in.
+  - **Blinds:** eight stripes close over the old screen, then the new one fades in.
+  - **Fade:** a quick backlight dip.
+  - **Instant:** no animation.
+
+  The switch between day and night always fades. Wipe and slide use the ST7789's own
+  hardware scroll and partial-display modes, so they need no second frame buffer (the CYD's
+  RAM couldn't hold one). Measured on this panel: partial display only works while a scroll
+  area is defined.
 - **Preview** (web page, or `PREVIEW`): shows the forecast and then each photo once, for
   their set times, also at night when the automatic cycles are paused. A tap or swipe stops it.
 - **Settings** (tap):
@@ -257,6 +270,10 @@ Settings → **Colours** `<` `>`, or `COLOR`):
 | **Per digit** | Each digit its own colour, turning slowly (every 30 s) |
 | **Sunset, Ocean, Aurora, Neon, Fire, Candy** | Fixed gradients |
 | **Custom** | Two colours you pick on the web page (top and bottom) |
+| **Mix** | Takes turns through the colourful styles, changing every 1–60 minutes (default 5) |
+
+**Speed** of the moving styles (Rainbow flow, Colour cycle, Per digit): Slow (×0.5), Normal,
+Fast (×2) or Very fast (×4).
 
 Effects can be added to any style:
 - **Shine:** a glint sweeps across the digits every 8 s.
@@ -539,6 +556,10 @@ COLOR                       # colour style, custom colours, effects, and the lis
 COLOR RAINBOW               # time, rainbow, cycle, digits, sunset, ocean, aurora, neon, fire, candy, custom
 COLOR CUSTOM #FFE600 #FF0080   # pick the custom style's top and bottom colours, and use it
 EFFECT GLOW ON              # SHINE, PULSE or GLOW, ON or OFF
+COLOR SPEED FAST            # moving colours: SLOW, NORMAL, FAST, VERYFAST
+COLOR MIX                   # take turns through the colourful styles
+COLOR MIX EVERY 5           # Mix changes style every 5 minutes (1-60)
+TRANSITION WIPE             # screen changes: FADE, WIPE, SLIDE, BLINDS, NONE
 TIMEOUT                     # how long automatic screens stay up, and the idle timeout
 TIMEOUT FORECAST 10         # the forecast stays up 10 s (3-120)
 TIMEOUT PHOTO 12            # each photo stays up 12 s (3-120)

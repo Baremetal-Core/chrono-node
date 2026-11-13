@@ -275,9 +275,11 @@ void printColors() {
   hex(custom >> 16, top);
   hex(custom & 0xFFFF, bottom);
   const uint8_t style = settings::colorStyle() % static_cast<uint8_t>(theme::Style::Count);
-  Serial.printf("[COLOR] Style %s (%s); custom %s %s; effects:%s%s%s%s\n",
+  Serial.printf("[COLOR] Style %s (%s), speed %s, mix every %u min; custom %s %s; effects:%s%s%s%s\n",
                 theme::styleKey(static_cast<theme::Style>(style)),
-                theme::styleName(static_cast<theme::Style>(style)), top, bottom,
+                theme::styleName(static_cast<theme::Style>(style)),
+                theme::speedKey(static_cast<theme::Speed>(settings::colorSpeed())),
+                settings::mixEveryMinutes(), top, bottom,
                 fx & theme::kFxShine ? " shine" : "", fx & theme::kFxPulse ? " pulse" : "",
                 fx & theme::kFxGlow ? " glow" : "", fx ? "" : " none");
   Serial.print("[COLOR] Styles:");
@@ -293,7 +295,20 @@ bool handleColor(const char* arg) {
     printColors();
     return false;
   }
-  if (strncasecmp(arg, "CUSTOM ", 7) == 0) {
+  int n = 0;
+  if (strncasecmp(arg, "SPEED ", 6) == 0) {
+    theme::Speed speed;
+    if (!theme::speedFromKey(arg + 6, speed)) {
+      Serial.println("[CONSOLE] Usage: COLOR SPEED SLOW|NORMAL|FAST|VERYFAST");
+      return false;
+    }
+    settings::setColorSpeed(static_cast<uint8_t>(speed));
+  } else if (strncasecmp(arg, "MIX EVERY ", 10) == 0 && sscanf(arg + 10, "%d", &n) == 1) {
+    if (n < 1 || n > 60 || !settings::setMixEveryMinutes(n)) {
+      Serial.println("[CONSOLE] ERROR: 1-60 minutes");
+      return false;
+    }
+  } else if (strncasecmp(arg, "CUSTOM ", 7) == 0) {
     uint16_t top, bottom;
     char a[16] = "", b[16] = "";
     if (sscanf(arg + 7, "%15s %15s", a, b) != 2 || !parseColor(a, top) || !parseColor(b, bottom)) {
@@ -305,7 +320,7 @@ bool handleColor(const char* arg) {
   } else {
     theme::Style style;
     if (!theme::styleFromKey(arg, style)) {
-      Serial.println("[CONSOLE] Usage: COLOR [style|CUSTOM #RRGGBB #RRGGBB]; COLOR lists styles");
+      Serial.println("[CONSOLE] Usage: COLOR [style|CUSTOM #RRGGBB #RRGGBB|SPEED s|MIX EVERY min]");
       return false;
     }
     settings::setColorStyle(static_cast<uint8_t>(style));
@@ -335,6 +350,20 @@ bool handleEffect(const char* arg) {
   settings::setEffects(on ? settings::effects() | flag : settings::effects() & ~flag);
   printColors();
   return true;
+}
+
+bool handleTransition(const char* arg) {
+  while (*arg == ' ') ++arg;
+  theme::Transition t;
+  if (*arg && theme::transitionFromKey(arg, t)) {
+    settings::setTransition(static_cast<uint8_t>(t));
+  } else if (*arg) {
+    Serial.println("[CONSOLE] Usage: TRANSITION FADE|WIPE|SLIDE|BLINDS|NONE");
+    return false;
+  }
+  Serial.printf("[SCREEN] Transition: %s\n",
+                theme::transitionKey(static_cast<theme::Transition>(settings::transition())));
+  return *arg != '\0';
 }
 
 void printTimeouts() {
@@ -507,6 +536,9 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   if (strncasecmp(text, "EFFECT", 6) == 0 && (text[6] == '\0' || text[6] == ' ')) {
     return handleEffect(text + 6);
   }
+  if (strncasecmp(text, "TRANSITION", 10) == 0 && (text[10] == '\0' || text[10] == ' ')) {
+    return handleTransition(text + 10);
+  }
   if (strncasecmp(text, "TIMEOUT", 7) == 0 && (text[7] == '\0' || text[7] == ' ')) {
     return handleTimeout(text + 7);
   }
@@ -601,7 +633,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TOUCH [CAL] | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
       "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }

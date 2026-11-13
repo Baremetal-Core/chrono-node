@@ -41,7 +41,8 @@ const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BR
                                 "NIGHT ",       "FORMAT ",     "WEATHER LOC ", "WEATHER CYCLE ",
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
-                                "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT"};
+                                "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT",
+                                "TRANSITION"};
 
 bool allowed(const String& cmd) {
   if (cmd.length() == 0 || cmd.length() >= kCommandLen || cmd.indexOf('\n') >= 0 ||
@@ -167,6 +168,9 @@ void handleSettings() {
   JsonArray custom = colors["custom"].to<JsonArray>();
   custom.add(hexColor(customTop));
   custom.add(hexColor(customBottom));
+  colors["speed"] = theme::speedKey(static_cast<theme::Speed>(settings::colorSpeed()));
+  colors["mix_every"] = settings::mixEveryMinutes();
+  doc["transition"] = theme::transitionKey(static_cast<theme::Transition>(settings::transition()));
   JsonObject fx = colors["effects"].to<JsonObject>();
   fx["shine"] = (settings::effects() & theme::kFxShine) != 0;
   fx["pulse"] = (settings::effects() & theme::kFxPulse) != 0;
