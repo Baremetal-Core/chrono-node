@@ -656,20 +656,29 @@ void DisplayManager::showInfoScreen(const InfoView& v) {
       int16_t x = kInfoValueX;
       const InfoBar& bar = v.bars[i];
       if (bar.total > 0) {
-        // Segments as small blocks with 1 px gaps over the free (faint) track.
-        const uint16_t colors[3] = {pal_.top, theme::mix(pal_.top, C->faint, 120), pal_.bottom};
-        const int16_t y = (kInfoRowH - kInfoBarH) / 2;
-        s.fillSmoothRoundRect(x, y, kInfoBarW, kInfoBarH, 2, C->faint, C->bg);
+        // One continuous bar like a phone's storage bar: segments side by side,
+        // free space (faint) at the end. Non-empty segments get at least 2 px.
+        const uint16_t colors[3] = {pal_.top, pal_.bottom, C->text};
+        int16_t edge[3];
+        int16_t at = 0;
         uint64_t sum = 0;
-        int16_t from = 0;
         for (int k = 0; k < 3; ++k) {
-          if (!bar.seg[k]) continue;
           sum += bar.seg[k];
-          const int16_t to = min<int64_t>(kInfoBarW, (int64_t)(kInfoBarW * sum / bar.total));
-          if (to - from >= 2) {
-            s.fillSmoothRoundRect(x + from, y, to - from - 1, kInfoBarH, 2, colors[k], C->faint);
+          int16_t to = min<int64_t>(kInfoBarW, (int64_t)(kInfoBarW * sum / bar.total));
+          if (bar.seg[k] && to < at + 2) to = min<int16_t>(kInfoBarW, at + 2);
+          edge[k] = at = max(at, to);
+        }
+        const int16_t y = (kInfoRowH - kInfoBarH) / 2;
+        for (int16_t px = 0; px < kInfoBarW; ++px) {
+          uint16_t c = C->faint;
+          for (int k = 0; k < 3; ++k) {
+            if (px < edge[k]) {
+              c = colors[k];
+              break;
+            }
           }
-          from = to;
+          const int16_t inset = (px == 0 || px == kInfoBarW - 1) ? 1 : 0;  // rounded ends
+          s.drawFastVLine(x + px, y + inset, kInfoBarH - 2 * inset, c);
         }
         x += kInfoBarW + 8;
       }

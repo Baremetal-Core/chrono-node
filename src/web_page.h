@@ -28,12 +28,18 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 .ph button{position:absolute;top:6px;right:6px;padding:2px 8px;background:#0b0f22d0}
 .ph .cap{position:absolute;left:6px;bottom:6px;font-size:12px;background:#0b0f22d0;border-radius:6px;padding:1px 7px;pointer-events:none}
 .bar{display:flex;height:12px;border-radius:6px;background:#0b0f22;border:1px solid var(--line);overflow:hidden;margin:4px 0}.bar i{display:block;height:100%}
+.bar.big{height:18px;border-radius:6px}.bar.big i{border-right:2px solid var(--card)}.bar.big i:last-child{border-right:0}
+.sthead{display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 6px}.sthead span{color:var(--dim);font-size:13px}
+.strow{display:grid;grid-template-columns:12px 1fr auto;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line)}
+.strow .sw{width:12px;height:12px;border-radius:4px}.stv{color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--dim)}.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 #phcv{width:100%;max-width:480px;aspect-ratio:4/3;border-radius:9px;touch-action:none;cursor:grab;display:block;background:#000;border:1px solid var(--line)}.big{font-size:28px;font-weight:700}.muted{color:var(--dim);font-size:13px}
 </style></head><body><main>
 <h1>Chrono <span>Node</span></h1><div class="sub" id="sub">Loading...</div>
 
 <section><h2>Status</h2><div class="big" id="time">--:--:--</div><div class="grid" id="status"></div></section>
+
+<section><h2>Storage</h2><div id="storage"></div></section>
 
 <section><h2>Display</h2>
 <div class="row"><label>Day brightness</label><input type="range" id="bday" min="10" max="100" step="5"><span class="val" id="bdayv"></span></div>
@@ -116,23 +122,31 @@ $("time").textContent=s.local_time.slice(11);$("fwcur").textContent="Installed: 
 const w=s.weather?`${s.weather.temp_c}\u00b0C ${s.weather.condition}, ${s.weather.place} (${ago(s.weather.age_s)})`:"no data yet";
 const rows=[["Date",s.local_time.slice(0,10)],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
 ["RTC",s.rtc.present?("DS3231"+(s.rtc.temp_c!==undefined?`, ${s.rtc.temp_c}\u00b0C`:"")+(s.rtc.lost_power?", LOST POWER":"")):"not detected"],
-["Weather",w],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)],["RAM",{html:memBar(s)}],["Flash",{html:flashBar(s.flash)}]];
+["Weather",w],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)]];
+$("storage").innerHTML=flashList(s)+ramList(s);
 $("status").innerHTML=rows.map(r=>`<div>${r[0]}</div><div>${r[1].html||esc(String(r[1]))}</div>`).join("")}catch(e){$("sub").textContent="Clock not reachable"}}
 const kb=b=>(b<10240?(b/1024).toFixed(1):Math.round(b/1024))+" KB";
 const mb=b=>b>=1048576?(b/1048576).toFixed(2)+" MB":kb(b);
 // Stacked bar: parts [{v,c,t}] out of total, then a legend with the same colours.
-// Parts without a label are free space inside the bar (not in the legend).
-function bar(parts,total,free){return`<div class="bar">${parts.map(p=>`<i style="width:${Math.max(0,100*p.v/total).toFixed(2)}%;background:${p.t?p.c:"transparent"}"${p.t?` title="${esc(p.t)}"`:""}></i>`).join("")}</div>
-<div class="legend">${parts.filter(p=>p.t).concat([{c:"#0b0f22;border:1px solid var(--line)",t:"Free "+mb(free)}]).map(p=>`<span><span class="sw" style="background:${p.c}"></span>${esc(p.t)}</span>`).join("")}</div>`}
-// Flash in physical order: system, firmware (+ room left in its slot), the
-// update slot, photos (+ room left in the photo partition).
-function flashBar(f){if(!f)return"";const fwFree=f.slot-f.firmware,phFree=f.photos_total-f.photos_used;
-return bar([{v:f.system,c:"#4a5072",t:"System "+mb(f.system)},{v:f.firmware,c:"var(--accent)",t:"Firmware "+mb(f.firmware)},{v:fwFree},
-{v:f.update_slot,c:"#ff9a1f55",t:"Update slot "+mb(f.update_slot)},{v:f.photos_used,c:"#ff5fa2",t:"Photos "+mb(f.photos_used)},{v:phFree}],f.chip,fwFree+phFree)+
-`<div class="muted">${mb(f.chip)} chip \u00b7 firmware fills ${Math.round(100*f.firmware/f.slot)}% of its ${mb(f.slot)} slot \u00b7 photos get ${mb(f.photos_total)}</div>`}
-// RAM: in use now, plus the extra that was in use at the lowest point since boot.
-function memBar(s){const t=s.heap_total,used=t-s.heap_free,peak=t-s.heap_min;
-return bar([{v:used,c:"var(--accent)",t:"Used "+kb(used)},{v:peak-used,c:"#ff9a1f55",t:"Peak used "+kb(peak)}],t,s.heap_free)+`<div class="muted">${kb(t)} total (of the chip's 520 KB SRAM)</div>`}
+function bar(parts,total,free){return`<div class="bar">${parts.map(p=>`<i style="width:${Math.max(0,100*p.v/total).toFixed(2)}%;background:${p.c}" title="${esc(p.t)}"></i>`).join("")}</div>
+<div class="legend">${parts.concat([{c:"#0b0f22;border:1px solid var(--line)",t:"Free "+mb(free)}]).map(p=>`<span><span class="sw" style="background:${p.c}"></span>${esc(p.t)}</span>`).join("")}</div>`}
+// Phone-style storage view: header, one continuous bar, then every part with
+// its size and what it is. Free space is the last row.
+function stList(title,total,parts,freeNote){const used=parts.reduce((a,p)=>a+p.v,0),free=Math.max(0,total-used);
+return`<div class="sthead"><b>${title}</b><span>${mb(used)} of ${mb(total)} used</span></div>
+<div class="bar big">${parts.map(p=>`<i style="width:${(100*p.v/total).toFixed(2)}%;background:${p.c}"></i>`).join("")}</div>`+
+parts.concat([{v:free,c:"#2a3154",n:"Free",d:freeNote}]).map(p=>`<div class="strow"><span class="sw" style="background:${p.c}"></span>
+<div>${p.n}<div class="muted">${p.d}</div></div><div class="stv">${mb(p.v)}</div></div>`).join("")}
+function flashList(s){const f=s.flash;if(!f)return"";const fwFree=f.slot-f.firmware,phFree=f.photos_total-f.photos_used;
+return stList("Flash \u00b7 "+mb(f.chip),f.chip,[
+{v:f.firmware,c:"var(--accent)",n:"Firmware",d:`The clock's software, v${esc(s.firmware)}. Uses ${Math.round(100*f.firmware/f.slot)}% of its ${mb(f.slot)} slot.`},
+{v:f.update_slot,c:"#8b7bff",n:"Update slot",d:"Kept free for updates: a new version is written here, and the clock goes back to the current one if it fails."},
+{v:f.photos_used,c:"#ff5fa2",n:"Photos",d:`Your photos. ${mb(f.photos_total)} is set aside for them.`},
+{v:f.system,c:"#6b7194",n:"System",d:"Bootloader, settings (including the Wi-Fi password) and the crash log."}],
+`Room for photos (${mb(phFree)}) and for the firmware to grow (${mb(fwFree)}).`)}
+function ramList(s){const t=s.heap_total,used=t-s.heap_free,peak=t-s.heap_min;
+return stList("RAM \u00b7 "+kb(t),t,[{v:used,c:"var(--accent)",n:"In use",d:`Wi-Fi, web server, display and weather data. The most used since the clock started: ${kb(peak)}.`}],
+"Working memory available right now. It's cleared at every restart; nothing is stored here.")}
 const PHC=["#ff9a1f","#ff5fa2","#8b7bff","#2ec5ff","#3ddc97"];
 function esc(t){return t.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 let S;

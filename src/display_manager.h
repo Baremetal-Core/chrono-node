@@ -14,8 +14,8 @@
 #include "ui_theme.h"
 #include "weather.h"
 
-// Usage bar on an info row: up to three segments out of `total`, drawn in the
-// accent colour, a dimmed accent and the palette's second colour; the rest is free.
+// Usage bar on an info row: up to three segments out of `total`, drawn side by
+// side in the palette's two colours and the text colour; the rest is free.
 struct InfoBar {
   uint32_t total = 0;  // 0: no bar
   uint32_t seg[3] = {};
