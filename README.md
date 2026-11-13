@@ -120,7 +120,7 @@ stays online:
   from this device** for networks without NTP (accurate to about a second).
 - **Weather location:** search a city or district (Open-Meteo geocoding, top 5 matches with
   province, country and population, *Vietnam only* on by default), or enter coordinates, or
-  pick a recent location.
+  pick a recent location (✕ removes one from the list).
 - **Wi-Fi & device:** open the setup portal, forget the Wi-Fi network, reboot.
 
 ![Web settings](docs/images/web-ui.png)
@@ -147,7 +147,7 @@ stays in one task.
 | `POST /api/ota?pin=NNNN` | Multipart firmware upload. Returns `200`, `403` (PIN) or `500` (image) |
 
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
-`WEATHER LOC|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
+`WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
 `PHOTO`.
 Blocking or diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
@@ -544,6 +544,7 @@ WEATHER UPDATE              # fetch now
 WEATHER SHOW                # show the forecast screen now (for its set time)
 WEATHER CITY Da Nang        # look up a city and save it as the location
 WEATHER LOC 10.82 106.63 Home   # save a location by coordinates (name optional)
+WEATHER FORGET Home         # remove a location from the recent list
 WEATHER CYCLE OFF           # stop the periodic forecast screen (ON to re-enable)
 BANNER                      # banner settings and messages
 BANNER ADD Chúc mừng năm mới!   # add a message (up to 5, 120 bytes each)

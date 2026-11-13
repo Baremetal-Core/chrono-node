@@ -38,7 +38,7 @@ ClockState clockState = {};
 // Console commands the web UI may run. Blocking/diagnostic ones (SHOT, TEST,
 // TOUCH) are excluded.
 const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BRIGHT ",
-                                "NIGHT ",       "FORMAT ",     "WEATHER LOC ", "WEATHER CYCLE ",
+                                "NIGHT ",       "FORMAT ",     "WEATHER LOC ", "WEATHER CYCLE ", "WEATHER FORGET ",
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
                                 "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT",

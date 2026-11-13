@@ -520,11 +520,17 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
       } else {
         Serial.println("[CONSOLE] ERROR: invalid coordinates");
       }
+    } else if (strncasecmp(arg, "FORGET ", 7) == 0 && arg[7]) {
+      if (settings::forgetRecentLocation(arg + 7)) {
+        Serial.printf("[WEATHER] Removed %s from recent locations\n", arg + 7);
+      } else {
+        Serial.println("[CONSOLE] ERROR: no recent location with that name");
+      }
     } else if (strcasecmp(arg, "CYCLE ON") == 0 || strcasecmp(arg, "CYCLE OFF") == 0) {
       settings::setWeatherCycle(strcasecmp(arg, "CYCLE ON") == 0);
       weather::printStatus();
     } else {
-      Serial.println("[CONSOLE] Usage: WEATHER [UPDATE|SHOW|CITY name|LOC lat lon [name]|CYCLE ON|OFF]");
+      Serial.println("[CONSOLE] Usage: WEATHER [UPDATE|SHOW|CITY name|LOC lat lon [name]|FORGET name|CYCLE ON|OFF]");
     }
     return false;
   }

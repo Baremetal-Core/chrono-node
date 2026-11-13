@@ -20,7 +20,7 @@ input,select,button{font:inherit;color:var(--text);background:#0b0f22;border:1px
 input[type=range]{flex:2 1 180px;padding:0;accent-color:var(--accent)}input[type=time]{width:110px}
 button{cursor:pointer;background:#1b2142}button.primary{background:var(--accent);color:#111;border-color:var(--accent);font-weight:600}
 button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-align:right}
-.results button,.recent button{display:block;width:100%;text-align:left;margin:6px 0}
+.results button,.recent button{display:block;width:100%;text-align:left;margin:6px 0}.recent div{display:flex;gap:6px;align-items:center}.recent .rm{width:auto;flex:0 0 auto;text-align:center;padding-left:14px;padding-right:14px}
 .results small,.recent small{color:var(--dim)}#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#1b2142;border:1px solid var(--line);padding:8px 14px;border-radius:10px;opacity:0;transition:opacity .3s}
 #toast.show{opacity:1}
 .styles{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin:8px 0}
@@ -219,7 +219,7 @@ const known=TZ.find(z=>z[1]===S.timezone);$("tz").value=known?known[0]:"custom";
 $("ntp").value=S.ntp_server;
 const B=S.banner;$("bnon").value=B.enabled?"ON":"OFF";selVal("bnspeed",B.speed,B.speed+" px/s");
 if(!document.activeElement||!document.activeElement.closest(".bnrow")){$("bnlist").innerHTML="";B.messages.forEach(m=>bnRow(m.text,m.every_min));if(!B.messages.length)bnRow("",B.every_min)}phList(S.photos);$("loccur").textContent=`Current: ${S.location.name} (${S.location.lat}, ${S.location.lon})`;
-$("recent").innerHTML=S.recent_locations.map(r=>`<button data-c="${r.lat} ${r.lon} ${esc(r.name)}">${esc(r.name)} <small>${r.lat}, ${r.lon}</small></button>`).join("");}
+$("recent").innerHTML=S.recent_locations.map(r=>`<div><button data-c="${r.lat} ${r.lon} ${esc(r.name)}">${esc(r.name)} <small>${r.lat}, ${r.lon}</small></button><button class="rm danger" title="Remove" data-f="${esc(r.name)}">\u2715</button></div>`).join("");}
 let phSig="";
 function phList(P){selVal("phevery",P.every_min,"Every "+P.every_min+" min");const n=P.items.length;
 $("phadd").disabled=!P.available||n>=P.max;$("phfree").textContent=P.available?`${n} of ${P.max} photos`:"Photo storage unavailable";
@@ -311,7 +311,7 @@ const list=d.results||[];$("results").innerHTML=list.length?list.map(x=>{const w
 const pop=x.population?" \u00b7 pop. "+x.population.toLocaleString():"";
 return`<button data-c="${x.latitude.toFixed(4)} ${x.longitude.toFixed(4)} ${esc(x.name)}">${esc(x.name)} <small>${esc(where)}${pop}</small></button>`}).join(""):'<div class="muted">No matches</div>'};
 $("q").onkeydown=e=>{if(e.key==="Enter")$("search").click()};
-document.addEventListener("click",e=>{const b=e.target.closest("button[data-c]");if(b){cmd("WEATHER LOC "+b.dataset.c,"Location saved");$("results").innerHTML=""}});
+document.addEventListener("click",e=>{const f=e.target.closest("button[data-f]");if(f){confirm(`Remove ${f.dataset.f} from recent locations?`)&&cmd("WEATHER FORGET "+f.dataset.f,"Removed");return}const b=e.target.closest("button[data-c]");if(b){cmd("WEATHER LOC "+b.dataset.c,"Location saved");$("results").innerHTML=""}});
 $("locsave").onclick=()=>{const la=parseFloat($("lat").value),lo=parseFloat($("lon").value);if(isNaN(la)||isNaN(lo)){toast("Enter latitude and longitude");return}
 cmd(`WEATHER LOC ${la} ${lo} ${$("lname").value.trim()}`.trim(),"Location saved")};
 $("portal").onclick=()=>confirm("Open the setup portal? The clock leaves this network until set up again.")&&cmd("WIFI PORTAL","Portal opening");

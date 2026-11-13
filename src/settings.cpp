@@ -315,6 +315,18 @@ bool recentLocation(int index, char* name, size_t nameLen, float& outLat, float&
   return true;
 }
 
+bool forgetRecentLocation(const char* name) {
+  int i = 0;
+  while (i < recentCount && strcmp(recents[i].name, name) != 0) ++i;
+  if (i == recentCount) return false;
+  memmove(&recents[i], &recents[i + 1], sizeof(RecentLocation) * (recentCount - i - 1));
+  --recentCount;
+  return save([&](Preferences& p) {
+    return recentCount ? p.putBytes(kKeyRecent, recents, sizeof(RecentLocation) * recentCount) > 0
+                       : p.remove(kKeyRecent);
+  });
+}
+
 namespace {
 
 // Banner text may hold any printable UTF-8; control characters are rejected.

@@ -48,6 +48,8 @@ bool setLocation(float lat, float lon, const char* name, bool remember = true);
 constexpr int kMaxRecentLocations = 5;
 int recentLocationCount();
 bool recentLocation(int index, char* name, size_t nameLen, float& lat, float& lon);
+// Removes the recent location with this name (the current location is kept).
+bool forgetRecentLocation(const char* name);
 
 // 12-hour clock (with AM/PM) instead of 24-hour.
 bool hour12();
