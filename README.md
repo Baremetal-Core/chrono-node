@@ -67,11 +67,17 @@ forecast, info and settings screens, plus a settings page in the browser at
   - weather location, chosen from the last 5 used locations (`<` / `>`). New locations are
     added with `WEATHER CITY`/`WEATHER LOC`, and later from the web UI (M9).
 - **Info** shows firmware, Wi-Fi and signal, IP, host name, NTP sync, weather age, uptime,
-  RAM, flash and the RTC. It refreshes every 2 s.
-  - **RAM** is a bar with used / total.
-  - **Flash** covers the whole 4 MB chip: system data and firmware, the update slot (dimmed),
-    then photos. Free space is what's left in the firmware slot and the photo partition. **Change Wi-Fi network** at the bottom forgets the
-  saved network after a confirmation (see Wi-Fi setup).
+  RAM and flash (used / total bars) and the RTC. It refreshes every 2 s. Three buttons along
+  the bottom open:
+  - **Wi-Fi:** forget the saved network after a confirmation (see Wi-Fi setup).
+  - **Storage:** how the 4 MB flash and the RAM are used, with a colour legend: firmware, the
+    update slot (kept free so updates can roll back), photos, system data, free. Tap to go back.
+  - **Update:** the clock checks GitHub for a newer release and offers **Install** (see
+    Firmware updates).
+
+| Info | Storage | Update |
+|------|---------|--------|
+| ![Info](docs/images/screen-info.png) | ![Storage](docs/images/screen-storage.png) | ![Update](docs/images/screen-update.png) |
 - **At night**, any touch raises the backlight to the day level for 10 s.
 - **12-hour mode** shows AM/PM before the minute bar. Hours 1–9 drop the leading digit and
   the time stays centred.
@@ -133,6 +139,11 @@ curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-
 ```
 
 ## Firmware updates (OTA) and releases
+
+**On the clock** (Info → **Update**): the clock asks GitHub for the newest release (it reads
+where `github.com/<repo>/releases/latest` redirects to, which isn't rate limited). If it's
+newer than the installed version, tap **Install**: the clock downloads and installs it, shows
+the progress, and restarts. Touching the clock proves someone is there, so no code is needed.
 
 **From the web page, the easy way** (*Firmware* section): the page asks GitHub for the
 latest release of `kReleaseRepo` (`Baremetal-Core/chrono-node`). If it's newer than the
@@ -422,7 +433,7 @@ Credentials are stored in ESP32 NVS by the Wi-Fi stack, never in the repository.
 **Moving to another place:**
 - **Automatic:** after a reboot where the saved network isn't in range, the portal opens on
   its own for 180 s.
-- **On the clock:** swipe to **Info**, tap **Change Wi-Fi network**, then tap **Forget**. A
+- **On the clock:** swipe to **Info**, tap **Wi-Fi**, then tap **Forget**. A
   confirmation screen names the saved network and the setup network before anything is
   erased; Cancel or 30 s without touch leaves everything as it was.
 - **Web page or serial console:** **Forget Wi-Fi**, or `WIFI FORGET`, does the same.
@@ -492,12 +503,14 @@ TIMEOUT PHOTO 12            # each photo stays up 12 s (3-120)
 TIMEOUT IDLE 30             # other screens go back to the clock after 30 s without touch (5-600)
 PREVIEW                     # show the forecast and each photo once now, even at night
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
-SCREEN SETTINGS             # go to CLOCK, FORECAST, PHOTO, INFO, SETTINGS or WIFI-RESET
+SCREEN SETTINGS             # CLOCK, FORECAST, PHOTO, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
 SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web page)
 REBOOT                      # restart the clock
 OTA                         # running slot, OTA state (pending/valid), next slot
+OTA CHECK                   # ask GitHub for the newest release (shown on the Update screen)
+OTA INSTALL v0.14.0         # download and install a release (or: OTA INSTALL latest)
 HELP
 ```
 

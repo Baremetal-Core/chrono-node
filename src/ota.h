@@ -23,13 +23,20 @@ uint32_t activePin();
 // Consumes the PIN if it matches (single use).
 bool checkPin(uint32_t pin);
 
-// Install a GitHub release (network task). `tag` must look like "v1.2.3", or be
+// Install a GitHub release (any task). `tag` must look like "v1.2.3", or be
 // "latest" for the newest release.
 // Returns false if it's not a valid tag or an install is already running. The
 // download happens in serviceNet(); the clock restarts when it succeeds.
 bool requestRelease(const char* tag);
-// Network task, while connected: runs a requested release install (blocks).
+// Network task, while connected: runs a requested check or install (blocks).
 void serviceNet();
+
+// Checking GitHub for a newer release (for the clock's update screen). Any
+// task; the check runs on the network task.
+enum class CheckState : uint8_t { Idle, Checking, Available, UpToDate, Failed };
+void requestCheck();
+// State, the newest release tag (Available/UpToDate) or why it failed.
+CheckState checkState(char* tagOrError, size_t len);
 // Any task: why the last install failed, if it was in the last minute.
 bool recentError(char* buf, size_t len);
 

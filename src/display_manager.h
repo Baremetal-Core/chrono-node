@@ -14,11 +14,25 @@
 #include "ui_theme.h"
 #include "weather.h"
 
-// Usage bar on an info row: up to three segments out of `total`, drawn side by
-// side in the palette's two colours and the text colour; the rest is free.
+// Usage bar on an info row: used out of `total`; the rest is free.
 struct InfoBar {
   uint32_t total = 0;  // 0: no bar
-  uint32_t seg[3] = {};
+  uint32_t used = 0;
+};
+
+// The storage screen: how the flash chip and RAM are used (bytes).
+struct StorageView {
+  uint32_t chip, firmware, updateSlot, photos, system;
+  uint32_t heapTotal, heapUsed, heapPeak;
+};
+
+// The software update screen.
+struct UpdateView {
+  char installed[24];  // "v0.13.0"
+  char status[48];     // main line, e.g. "v0.14.0 is available"
+  char detail[96];     // smaller line under it; " | " starts a second line
+  char action[16];     // right button label ("Install", "Check again"); empty: none
+  bool actionIsInstall;
 };
 
 struct InfoView {
@@ -89,10 +103,15 @@ class DisplayManager {
   void showInfoScreen(const InfoView& view);
   void showSettingsScreen(const SettingsView& view);
   SettingsAction settingsHitTest(int16_t x, int16_t y) const;
-  // The info screen's "Change Wi-Fi network" button.
-  bool infoButtonHit(int16_t x, int16_t y) const;
+  // The info screen's buttons along the bottom.
+  enum class InfoButton : uint8_t { None, Wifi, Storage, Update };
+  InfoButton infoButtonHit(int16_t x, int16_t y) const;
+  void showStorageScreen(const StorageView& view);
+  // Redraws in place when called again.
+  void showUpdateScreen(const UpdateView& view);
 
-  // Confirmation before forgetting the Wi-Fi network: Cancel / Forget.
+  // Confirmation before forgetting the Wi-Fi network: Cancel / Forget. The
+  // update screen uses the same two buttons (Back / action).
   void showWifiResetScreen(const char* savedSsid, const char* portalSsid);
   enum class ConfirmHit : uint8_t { None, Cancel, Confirm };
   ConfirmHit confirmHitTest(int16_t x, int16_t y) const;
@@ -130,7 +149,8 @@ class DisplayManager {
   void screenshot(Print& out);
 
  private:
-  enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo, Confirm };
+  enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo, Confirm,
+                    Storage, Update };
   struct Roll {
     char from = ' ';
     char to = ' ';

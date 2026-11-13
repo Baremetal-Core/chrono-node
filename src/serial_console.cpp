@@ -439,7 +439,7 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     printRtcTime(rtc);
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
     if (!requestScreenByName(text + 7)) {
-      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|INFO|SETTINGS|WIFI-RESET");
+      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|INFO|SETTINGS|STORAGE|UPDATE|WIFI-RESET");
     }
   } else if (strcasecmp(text, "TOUCH CAL") == 0) {
     calibrateTouch(display);
@@ -464,6 +464,13 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     }
   } else if (strcasecmp(text, "OTA") == 0) {
     ota::printStatus();
+  } else if (strcasecmp(text, "OTA CHECK") == 0) {
+    ota::requestCheck();  // the result is logged and shown on the update screen
+  } else if (strncasecmp(text, "OTA INSTALL ", 12) == 0) {
+    // The serial console is local, like a tap on the screen: no code needed.
+    if (!ota::requestRelease(text + 12)) {
+      Serial.println("[CONSOLE] ERROR: give a release tag like v0.13.0, or latest");
+    }
   } else if (strcasecmp(text, "INFO") == 0) {
     printInfo(rtc);
     printBrightness();
@@ -508,7 +515,7 @@ void serialConsolePrintHelp() {
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
       "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | TOUCH [CAL] | "
-      "SCREEN name | SETEPOCH n | REBOOT | OTA | SHOT | "
+      "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }
 

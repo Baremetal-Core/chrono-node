@@ -587,7 +587,8 @@ void DisplayManager::drawWeatherLine() {
 
 void DisplayManager::endOverlayScreen() {
   if (mode_ == Mode::Weather || mode_ == Mode::Info || mode_ == Mode::Settings ||
-      mode_ == Mode::Calibrate || mode_ == Mode::Photo || mode_ == Mode::Confirm) {
+      mode_ == Mode::Calibrate || mode_ == Mode::Photo || mode_ == Mode::Confirm ||
+      mode_ == Mode::Storage || mode_ == Mode::Update) {
     mode_ = Mode::None;  // next showTime() repaints the clock
   }
 }
@@ -630,6 +631,42 @@ void DisplayManager::drawScreenTitle(const char* title) {
 }
 
 namespace {
+
+// A continuous rounded bar like a phone's storage bar: segments side by side,
+// free space (faint) at the end. Non-empty segments get at least 2 px.
+void drawSegmentBar(TFT_eSprite& s, int16_t x, int16_t y, int16_t w, int16_t h, uint32_t total,
+                    const uint32_t* seg, const uint16_t* colors, int n) {
+  int16_t edge[6];
+  int16_t at = 0;
+  uint64_t sum = 0;
+  for (int k = 0; k < n && k < 6; ++k) {
+    sum += seg[k];
+    int16_t to = total ? min<int64_t>(w, (int64_t)(w * sum / total)) : 0;
+    if (seg[k] && to < at + 2) to = min<int16_t>(w, at + 2);
+    edge[k] = at = max(at, to);
+  }
+  for (int16_t px = 0; px < w; ++px) {
+    uint16_t c = C->faint;
+    for (int k = 0; k < n && k < 6; ++k) {
+      if (px < edge[k]) {
+        c = colors[k];
+        break;
+      }
+    }
+    const int16_t inset = (px == 0 || px == w - 1) ? 1 : 0;  // rounded ends
+    s.drawFastVLine(x + px, y + inset, h - 2 * inset, c);
+  }
+}
+
+// Bytes as "1.48 MB" or "68 KB".
+void formatSize(char* buf, size_t len, uint32_t bytes) {
+  if (bytes >= 1024 * 1024) {
+    snprintf(buf, len, "%.2f MB", bytes / 1048576.0f);
+  } else {
+    snprintf(buf, len, "%u KB", (unsigned)((bytes + 512) / 1024));
+  }
+}
+
 constexpr int16_t kInfoTop = 30, kInfoRowH = 18;
 constexpr int16_t kInfoBtnY = 212, kInfoBtnH = 26;
 constexpr int16_t kInfoValueX = 100;
@@ -642,10 +679,14 @@ void DisplayManager::showInfoScreen(const InfoView& v) {
     enterMode(Mode::Info);
     drawScreenTitle("Info");
     drawLine(kInfoBtnY, kInfoBtnH, font_small, [&](TFT_eSprite& s) {
-      s.fillSmoothRoundRect(10, 0, kScreenW - 20, kInfoBtnH, 8, C->faint, C->bg);
-      s.setTextDatum(MC_DATUM);
-      s.setTextColor(C->text, C->faint);
-      s.drawString("Change Wi-Fi network", kScreenW / 2, kInfoBtnH / 2 + 1);
+      const char* labels[] = {"Wi-Fi", "Storage", "Update"};
+      for (int b = 0; b < 3; ++b) {
+        const int16_t x = 10 + b * 102;
+        s.fillSmoothRoundRect(x, 0, 96, kInfoBtnH, 8, C->faint, C->bg);
+        s.setTextDatum(MC_DATUM);
+        s.setTextColor(C->text, C->faint);
+        s.drawString(labels[b], x + 48, kInfoBtnH / 2 + 1);
+      }
     });
   }
   for (int i = 0; i < v.count && i < InfoView::kMaxRows; ++i) {
@@ -656,30 +697,9 @@ void DisplayManager::showInfoScreen(const InfoView& v) {
       int16_t x = kInfoValueX;
       const InfoBar& bar = v.bars[i];
       if (bar.total > 0) {
-        // One continuous bar like a phone's storage bar: segments side by side,
-        // free space (faint) at the end. Non-empty segments get at least 2 px.
-        const uint16_t colors[3] = {pal_.top, pal_.bottom, C->text};
-        int16_t edge[3];
-        int16_t at = 0;
-        uint64_t sum = 0;
-        for (int k = 0; k < 3; ++k) {
-          sum += bar.seg[k];
-          int16_t to = min<int64_t>(kInfoBarW, (int64_t)(kInfoBarW * sum / bar.total));
-          if (bar.seg[k] && to < at + 2) to = min<int16_t>(kInfoBarW, at + 2);
-          edge[k] = at = max(at, to);
-        }
-        const int16_t y = (kInfoRowH - kInfoBarH) / 2;
-        for (int16_t px = 0; px < kInfoBarW; ++px) {
-          uint16_t c = C->faint;
-          for (int k = 0; k < 3; ++k) {
-            if (px < edge[k]) {
-              c = colors[k];
-              break;
-            }
-          }
-          const int16_t inset = (px == 0 || px == kInfoBarW - 1) ? 1 : 0;  // rounded ends
-          s.drawFastVLine(x + px, y + inset, kInfoBarH - 2 * inset, c);
-        }
+        const uint16_t color = pal_.top;
+        drawSegmentBar(s, x, (kInfoRowH - kInfoBarH) / 2, kInfoBarW, kInfoBarH, bar.total,
+                       &bar.used, &color, 1);
         x += kInfoBarW + 8;
       }
       s.setTextColor(C->text, C->bg);
@@ -688,9 +708,119 @@ void DisplayManager::showInfoScreen(const InfoView& v) {
   }
 }
 
-bool DisplayManager::infoButtonHit(int16_t x, int16_t y) const {
+DisplayManager::InfoButton DisplayManager::infoButtonHit(int16_t x, int16_t y) const {
   // Generous: the touch mapping can be ~15 px off before calibration.
-  return mode_ == Mode::Info && y >= kInfoBtnY - 14;
+  if (mode_ != Mode::Info || y < kInfoBtnY - 14) return InfoButton::None;
+  if (x < 109) return InfoButton::Wifi;
+  if (x < 211) return InfoButton::Storage;
+  return InfoButton::Update;
+}
+
+void DisplayManager::showStorageScreen(const StorageView& v) {
+  enterMode(Mode::Storage);
+  drawScreenTitle("Storage");
+  char a[24], b[24];
+  auto header = [&](int16_t y, const char* left, const char* right) {
+    drawLine(y, 20, font_small, [&](TFT_eSprite& s) {
+      s.setTextDatum(ML_DATUM);
+      s.setTextColor(C->text, C->bg);
+      s.drawString(left, 12, 10);
+      s.setTextDatum(MR_DATUM);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(right, kScreenW - 12, 10);
+    });
+  };
+  auto bar = [&](int16_t y, uint32_t total, const uint32_t* seg, const uint16_t* colors, int n) {
+    drawLine(y, 14, font_small, [&](TFT_eSprite& s) {
+      drawSegmentBar(s, 12, 2, kScreenW - 24, 10, total, seg, colors, n);
+    });
+  };
+  // Legend rows: colour square, name, size.
+  auto row = [&](int16_t y, uint16_t color, const char* name, uint32_t bytes) {
+    drawLine(y, 18, font_small, [&](TFT_eSprite& s) {
+      s.fillSmoothRoundRect(14, 4, 9, 9, 2, color, C->bg);
+      s.setTextDatum(ML_DATUM);
+      s.setTextColor(C->text, C->bg);
+      s.drawString(name, 30, 9);
+      char size[16];
+      formatSize(size, sizeof(size), bytes);
+      s.setTextDatum(MR_DATUM);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(size, kScreenW - 12, 9);
+    });
+  };
+
+  const uint32_t flashUsed = v.firmware + v.updateSlot + v.photos + v.system;
+  formatSize(a, sizeof(a), v.chip);
+  formatSize(b, sizeof(b), flashUsed);
+  char left[32], right[32];
+  snprintf(left, sizeof(left), "Flash \xC2\xB7 %s", a);
+  snprintf(right, sizeof(right), "%s used", b);
+  header(30, left, right);
+  const uint16_t photoColor = theme::rgb(255, 95, 162);
+  const uint32_t flashSeg[4] = {v.firmware, v.updateSlot, v.photos, v.system};
+  const uint16_t flashColors[4] = {pal_.top, pal_.bottom, photoColor, C->dim};
+  bar(50, v.chip, flashSeg, flashColors, 4);
+  row(66, pal_.top, "Firmware", v.firmware);
+  row(84, pal_.bottom, "Update slot (for updates)", v.updateSlot);
+  row(102, photoColor, "Photos", v.photos);
+  row(120, C->dim, "System (settings, Wi-Fi)", v.system);
+  row(138, C->faint, "Free", v.chip > flashUsed ? v.chip - flashUsed : 0);
+
+  formatSize(a, sizeof(a), v.heapTotal);
+  formatSize(b, sizeof(b), v.heapUsed);
+  snprintf(left, sizeof(left), "RAM \xC2\xB7 %s", a);
+  snprintf(right, sizeof(right), "%s used", b);
+  header(160, left, right);
+  const uint16_t ramColor = pal_.top;
+  bar(180, v.heapTotal, &v.heapUsed, &ramColor, 1);
+  row(196, pal_.top, "In use", v.heapUsed);
+  row(214, C->faint, "Free", v.heapTotal > v.heapUsed ? v.heapTotal - v.heapUsed : 0);
+}
+
+void DisplayManager::showUpdateScreen(const UpdateView& v) {
+  if (mode_ != Mode::Update) {
+    enterMode(Mode::Update);
+    drawScreenTitle("Software update");
+  }
+  drawLine(40, 22, font_small, [&](TFT_eSprite& s) {
+    char t[48];
+    snprintf(t, sizeof(t), "Installed: %s", v.installed);
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->dim, C->bg);
+    s.drawString(t, kScreenW / 2, 11);
+  });
+  drawLine(72, 30, font_date, [&](TFT_eSprite& s) {
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(v.actionIsInstall ? pal_.top : C->text, C->bg);
+    s.drawString(v.status, kScreenW / 2, 15);
+  });
+  drawLine(106, 44, font_small, [&](TFT_eSprite& s) {
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->dim, C->bg);
+    // Up to two lines, split at the first " | ".
+    const char* bar = strstr(v.detail, " | ");
+    if (bar) {
+      char first[64];
+      strlcpy(first, v.detail, min<size_t>(sizeof(first), bar - v.detail + 1));
+      s.drawString(first, kScreenW / 2, 11);
+      s.drawString(bar + 3, kScreenW / 2, 32);
+    } else {
+      s.drawString(v.detail, kScreenW / 2, 11);
+    }
+  });
+  drawLine(kConfirmBtnY, kConfirmBtnH, font_date, [&](TFT_eSprite& s) {
+    s.fillSmoothRoundRect(10, 0, 140, kConfirmBtnH, 12, C->faint, C->bg);
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->text, C->faint);
+    s.drawString("Back", 80, kConfirmBtnH / 2 + 1);
+    if (v.action[0]) {
+      const uint16_t fill = v.actionIsInstall ? pal_.top : C->faint;
+      s.fillSmoothRoundRect(170, 0, 140, kConfirmBtnH, 12, fill, C->bg);
+      s.setTextColor(v.actionIsInstall ? theme::rgb(0, 0, 0) : C->text, fill);
+      s.drawString(v.action, 240, kConfirmBtnH / 2 + 1);
+    }
+  });
 }
 
 void DisplayManager::showWifiResetScreen(const char* savedSsid, const char* portalSsid) {
@@ -730,7 +860,9 @@ void DisplayManager::showWifiResetScreen(const char* savedSsid, const char* port
 }
 
 DisplayManager::ConfirmHit DisplayManager::confirmHitTest(int16_t x, int16_t y) const {
-  if (mode_ != Mode::Confirm || y < kConfirmBtnY - 24) return ConfirmHit::None;
+  if ((mode_ != Mode::Confirm && mode_ != Mode::Update) || y < kConfirmBtnY - 24) {
+    return ConfirmHit::None;
+  }
   // A gap in the middle so a touch between the buttons does nothing.
   if (x < 150) return ConfirmHit::Cancel;
   if (x >= 170) return ConfirmHit::Confirm;

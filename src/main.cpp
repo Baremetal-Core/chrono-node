@@ -54,9 +54,10 @@ bool nightActive = false;
 // Screens, in swipe order. The forecast is skipped while there is no data,
 // the photo screen while there are no photos. WifiReset (the confirmation
 // opened from Info) isn't in the swipe order.
-enum class Screen : uint8_t { Clock, Forecast, Photo, Info, Settings, WifiReset };
-constexpr int kScreenCount = 5;
-const char* const kScreenNames[] = {"clock", "forecast", "photo", "info", "settings", "wifi-reset"};
+enum class Screen : uint8_t { Clock, Forecast, Photo, Info, Settings, WifiReset, Storage, Update };
+constexpr int kScreenCount = 5;  // in the swipe order; the rest open from Info
+const char* const kScreenNames[] = {"clock",      "forecast", "photo",  "info",
+                                    "settings",   "wifi-reset", "storage", "update"};
 Screen screenOn = Screen::Clock;
 Screen screenWanted = Screen::Clock;  // target of the current/next transition
 // Automatic screens (forecast/photo from a cycle, a SHOW command or the
@@ -275,6 +276,60 @@ void buildSettingsView(SettingsView& v) {
   }
 }
 
+void buildStorageView(StorageView& v) {
+  const ota::FlashLayout fl = ota::flashLayout();
+  v.chip = fl.chip;
+  v.firmware = fl.firmware;
+  v.updateSlot = fl.updateSlot;
+  v.photos = photos::usedBytes();
+  v.system = fl.system();
+  v.heapTotal = ESP.getHeapSize();
+  v.heapUsed = v.heapTotal - ESP.getFreeHeap();
+  v.heapPeak = v.heapTotal - ESP.getMinFreeHeap();
+}
+
+// The update screen shows the state of the GitHub check.
+ota::CheckState shownCheck = ota::CheckState::Idle;
+char shownCheckText[64] = "";
+
+void showUpdate() {
+  UpdateView v = {};
+  snprintf(v.installed, sizeof(v.installed), "v%s", config::kFirmwareVersion);
+  char text[64];
+  const ota::CheckState st = ota::checkState(text, sizeof(text));
+  shownCheck = st;
+  strlcpy(shownCheckText, text, sizeof(shownCheckText));
+  switch (st) {
+    case ota::CheckState::Idle:
+    case ota::CheckState::Checking:
+      strlcpy(v.status, "Checking for updates...", sizeof(v.status));
+      strlcpy(v.detail, "Asking GitHub for the newest version", sizeof(v.detail));
+      break;
+    case ota::CheckState::Available:
+      snprintf(v.status, sizeof(v.status), "%s is available", text);
+      strlcpy(v.detail, "About a minute, then the clock restarts. | If anything fails, it keeps this version.", sizeof(v.detail));
+      snprintf(v.action, sizeof(v.action), "Install");
+      v.actionIsInstall = true;
+      break;
+    case ota::CheckState::UpToDate:
+      strlcpy(v.status, "This is the latest version", sizeof(v.status));
+      snprintf(v.detail, sizeof(v.detail), "Newest release on GitHub: %s", text);
+      strlcpy(v.action, "Check again", sizeof(v.action));
+      break;
+    case ota::CheckState::Failed:
+      strlcpy(v.status, "Couldn't check for updates", sizeof(v.status));
+      strlcpy(v.detail, text, sizeof(v.detail));
+      strlcpy(v.action, "Try again", sizeof(v.action));
+      break;
+  }
+  if (!net::isConnected() && st != ota::CheckState::Available) {
+    strlcpy(v.status, "Not connected to Wi-Fi", sizeof(v.status));
+    strlcpy(v.detail, "Updates are downloaded from GitHub.", sizeof(v.detail));
+    strlcpy(v.action, "Try again", sizeof(v.action));
+  }
+  display.showUpdateScreen(v);
+}
+
 void buildInfoView(InfoView& v) {
   v.count = 0;
   auto add = [&](const char* label, const char* fmt, auto... args) {
@@ -307,20 +362,14 @@ void buildInfoView(InfoView& v) {
   const uint32_t up = millis() / 1000;
   add("Uptime", "%lud %02lu:%02lu:%02lu", (unsigned long)(up / 86400),
       (unsigned long)(up / 3600 % 24), (unsigned long)(up / 60 % 60), (unsigned long)(up % 60));
-  const uint32_t heap = ESP.getHeapSize(), heapUsed = heap - ESP.getFreeHeap();
-  v.bars[v.count].total = heap;
-  v.bars[v.count].seg[0] = heapUsed;
-  add("RAM", "%u / %u KB", heapUsed / 1024, heap / 1024);
-  // Flash: system + firmware, the update slot, photos; free is the room left in
-  // the firmware slot and the photo partition.
-  const ota::FlashLayout fl = ota::flashLayout();
-  InfoBar& fb = v.bars[v.count];
-  fb.total = fl.chip;
-  fb.seg[0] = fl.system() + fl.firmware;
-  fb.seg[1] = fl.updateSlot;
-  fb.seg[2] = photos::usedBytes();
-  const uint32_t flashUsed = fb.seg[0] + fb.seg[1] + fb.seg[2];
-  add("Flash", "%.1f / %.0f MB", flashUsed / 1048576.0f, fl.chip / 1048576.0f);
+  StorageView sv;
+  buildStorageView(sv);
+  v.bars[v.count] = {sv.heapTotal, sv.heapUsed};
+  add("RAM", "%u / %u KB", sv.heapUsed / 1024, sv.heapTotal / 1024);
+  // Flash in use: firmware, the update slot (reserved), photos and system data.
+  const uint32_t flashUsed = sv.firmware + sv.updateSlot + sv.photos + sv.system;
+  v.bars[v.count] = {sv.chip, flashUsed};
+  add("Flash", "%.1f / %.0f MB", flashUsed / 1048576.0f, sv.chip / 1048576.0f);
   if (hasTemp) {
     add("RTC", "DS3231, %.1f \xC2\xB0" "C%s", tempC, rtcLostPower ? ", lost power" : "");
   } else {
@@ -387,7 +436,9 @@ void applySettingsAction(SettingsAction a) {
 }
 
 Screen neighbour(Screen from, int dir) {
-  if (from == Screen::WifiReset) return Screen::Info;
+  if (from == Screen::WifiReset || from == Screen::Storage || from == Screen::Update) {
+    return Screen::Info;
+  }
   const bool hasForecast = weather::version() != 0;
   const bool hasPhotos = photos::count() > 0;
   int i = static_cast<int>(from);
@@ -432,8 +483,45 @@ void handleTouch() {
         requestScreen(Screen::Photo, true);
       }
       if (screenOn == Screen::Settings) applySettingsAction(display.settingsHitTest(ev.at.x, ev.at.y));
-      if (screenOn == Screen::Info && display.infoButtonHit(ev.at.x, ev.at.y)) {
-        requestScreen(Screen::WifiReset);
+      if (screenOn == Screen::Info) {
+        switch (display.infoButtonHit(ev.at.x, ev.at.y)) {
+          case DisplayManager::InfoButton::Wifi:
+            requestScreen(Screen::WifiReset);
+            break;
+          case DisplayManager::InfoButton::Storage:
+            requestScreen(Screen::Storage);
+            break;
+          case DisplayManager::InfoButton::Update:
+            if (net::isConnected()) ota::requestCheck();
+            requestScreen(Screen::Update);
+            break;
+          case DisplayManager::InfoButton::None:
+            break;
+        }
+      } else if (screenOn == Screen::Storage) {
+        requestScreen(Screen::Info);  // a tap anywhere goes back
+      } else if (screenOn == Screen::Update) {
+        char tag[64];
+        const ota::CheckState st = ota::checkState(tag, sizeof(tag));
+        switch (display.confirmHitTest(ev.at.x, ev.at.y)) {
+          case DisplayManager::ConfirmHit::Cancel:
+            requestScreen(Screen::Info);
+            break;
+          case DisplayManager::ConfirmHit::Confirm:
+            if (st == ota::CheckState::Available) {
+              // Touching the clock proves presence: no code needed here.
+              if (ota::requestRelease(tag)) {
+                Serial.printf("[OTA] Install of %s requested on the screen\n", tag);
+                requestScreen(Screen::Clock);  // shows "Updating firmware... N%"
+              }
+            } else if (st != ota::CheckState::Checking && net::isConnected()) {
+              ota::requestCheck();
+              showUpdate();
+            }
+            break;
+          case DisplayManager::ConfirmHit::None:
+            break;
+        }
       }
       if (screenOn == Screen::WifiReset) {
         switch (display.confirmHitTest(ev.at.x, ev.at.y)) {
@@ -483,6 +571,15 @@ void finishTransition() {
     }
     case Screen::Settings:
       showSettings();
+      break;
+    case Screen::Storage: {
+      StorageView v;
+      buildStorageView(v);
+      display.showStorageScreen(v);
+      break;
+    }
+    case Screen::Update:
+      showUpdate();
       break;
     case Screen::WifiReset: {
       char saved[33];
@@ -657,6 +754,11 @@ bool requestScreenByName(const char* name) {
   else if (strcasecmp(name, "info") == 0) s = Screen::Info;
   else if (strcasecmp(name, "settings") == 0) s = Screen::Settings;
   else if (strcasecmp(name, "wifi-reset") == 0) s = Screen::WifiReset;
+  else if (strcasecmp(name, "storage") == 0) s = Screen::Storage;
+  else if (strcasecmp(name, "update") == 0) {
+    if (net::isConnected()) ota::requestCheck();
+    s = Screen::Update;
+  }
   else return false;
   autoScreen = false;
   previewCount = 0;
@@ -757,6 +859,12 @@ void loop() {
     InfoView v;
     buildInfoView(v);
     display.showInfoScreen(v);
+  }
+  if (screenOn == Screen::Update && !transitioning) {
+    char text[64];
+    if (ota::checkState(text, sizeof(text)) != shownCheck || strcmp(text, shownCheckText) != 0) {
+      showUpdate();
+    }
   }
 
   if (clock_sync::loop(rtc)) {

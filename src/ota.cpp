@@ -25,9 +25,64 @@ std::atomic<int> uploadProgress{-1};
 bool pendingVerify = false;
 FlashLayout layout;
 
-// Release install: requested and run on the network task.
+// Release install and update check: requested from any task, run on the
+// network task. Guarded by requestLock.
+portMUX_TYPE requestLock = portMUX_INITIALIZER_UNLOCKED;
 bool releaseRequested = false;
 char releaseTag[32] = "";
+bool checkRequested = false;
+CheckState checkResult = CheckState::Idle;
+char checkText[64] = "";  // tag or error
+
+void setCheck(CheckState state, const char* text) {
+  portENTER_CRITICAL(&requestLock);
+  checkResult = state;
+  strlcpy(checkText, text, sizeof(checkText));
+  portEXIT_CRITICAL(&requestLock);
+}
+
+// "v1.2.3" > "1.2.2"? Compares up to three numbers; missing ones are 0.
+bool newerVersion(const char* tag, const char* current) {
+  int a[3] = {}, b[3] = {};
+  sscanf(tag[0] == 'v' ? tag + 1 : tag, "%d.%d.%d", &a[0], &a[1], &a[2]);
+  sscanf(current, "%d.%d.%d", &b[0], &b[1], &b[2]);
+  for (int i = 0; i < 3; ++i) {
+    if (a[i] != b[i]) return a[i] > b[i];
+  }
+  return false;
+}
+
+// github.com/<repo>/releases/latest redirects to .../releases/tag/<tag>; the
+// redirect names the newest release without using the (rate limited) API.
+void runCheck() {
+  setCheck(CheckState::Checking, "");
+  char url[128];
+  snprintf(url, sizeof(url), "https://github.com/%s/releases/latest", config::kReleaseRepo);
+  WiFiClientSecure client;
+  client.setCACertBundle(ca_bundle);
+  client.setTimeout(15);
+  HTTPClient http;
+  http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+  http.setConnectTimeout(15000);
+  http.setTimeout(15000);
+  http.useHTTP10(true);
+  const char* headers[] = {"Location"};
+  http.collectHeaders(headers, 1);
+  if (!http.begin(client, url)) return setCheck(CheckState::Failed, "bad address");
+  const int code = http.sendRequest("HEAD");
+  const String location = http.header("Location");
+  http.end();
+  if (code < 0) return setCheck(CheckState::Failed, HTTPClient::errorToString(code).c_str());
+  const int at = location.indexOf("/releases/tag/");
+  if (code / 100 != 3 || at < 0) {
+    return setCheck(CheckState::Failed, code / 100 == 3 ? "no releases yet" : "unexpected answer");
+  }
+  const String tag = location.substring(at + 14);
+  Serial.printf("[OTA] Newest release: %s (running v%s)\n", tag.c_str(), config::kFirmwareVersion);
+  setCheck(newerVersion(tag.c_str(), config::kFirmwareVersion) ? CheckState::Available
+                                                               : CheckState::UpToDate,
+           tag.c_str());
+}
 portMUX_TYPE errorLock = portMUX_INITIALIZER_UNLOCKED;
 char lastError[80] = "";
 uint32_t lastErrorMs = 0;
@@ -201,19 +256,43 @@ bool checkPin(uint32_t candidate) {
 }
 
 bool requestRelease(const char* tag) {
-  if (releaseRequested || uploadProgress >= 0 || !validTag(tag)) return false;
-  strlcpy(releaseTag, tag, sizeof(releaseTag));
+  if (uploadProgress >= 0 || !validTag(tag)) return false;
+  portENTER_CRITICAL(&requestLock);
+  const bool busy = releaseRequested;
+  if (!busy) {
+    strlcpy(releaseTag, tag, sizeof(releaseTag));
+    releaseRequested = true;
+  }
+  portEXIT_CRITICAL(&requestLock);
+  if (busy) return false;
   portENTER_CRITICAL(&errorLock);
   lastErrorMs = 0;  // a new attempt: forget the previous failure
   portEXIT_CRITICAL(&errorLock);
-  releaseRequested = true;
   return true;
 }
 
+void requestCheck() {
+  portENTER_CRITICAL(&requestLock);
+  checkRequested = true;
+  checkResult = CheckState::Checking;
+  portEXIT_CRITICAL(&requestLock);
+}
+
+CheckState checkState(char* tagOrError, size_t len) {
+  portENTER_CRITICAL(&requestLock);
+  const CheckState s = checkResult;
+  if (tagOrError) strlcpy(tagOrError, checkText, len);
+  portEXIT_CRITICAL(&requestLock);
+  return s;
+}
+
 void serviceNet() {
-  if (!releaseRequested) return;
-  releaseRequested = false;
-  installRelease();
+  portENTER_CRITICAL(&requestLock);
+  const bool install = releaseRequested, check = checkRequested;
+  releaseRequested = checkRequested = false;
+  portEXIT_CRITICAL(&requestLock);
+  if (check) runCheck();
+  if (install) installRelease();
 }
 
 bool recentError(char* buf, size_t len) {
