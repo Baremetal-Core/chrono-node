@@ -409,8 +409,9 @@ void printInfo(RtcManager& rtc) {
   const esp_partition_t* part = esp_ota_get_running_partition();
   Serial.printf("[INFO] %s %s v%s (%s)\n", config::kProjectName, config::kFirmwareName,
                 config::kFirmwareVersion, config::kGitRevision);
-  Serial.printf("[INFO] Uptime %lus, heap free %u B (min %u B), partition %s\n",
+  Serial.printf("[INFO] Uptime %lus, heap free %u B (min %u B, largest block %u B), partition %s\n",
                 (unsigned long)(millis() / 1000), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
+                ESP.getMaxAllocHeap(),
                 part ? part->label : "?");
   Serial.printf("[INFO] TZ=%s, NTP=%s\n", settings::timezone(), settings::ntpServer());
   float tempC;

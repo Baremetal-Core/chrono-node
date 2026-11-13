@@ -184,7 +184,7 @@ class DisplayManager {
   void drawBigDigit(int index, float progress);
   void drawSeconds(float progress);
   void drawBar(bool full, bool recolor);
-  void syncDateSprite();
+  void syncFxBuffers();
   void drawMeridiem();
   void drawScreenTitle(const char* title);
   int16_t barX() const;

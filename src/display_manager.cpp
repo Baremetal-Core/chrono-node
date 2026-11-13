@@ -22,7 +22,7 @@ TFT_eSprite digitSprite(&tft);   // one big digit cell, reused for every digit a
 TFT_eSprite secondsSprite(&tft); // both seconds digits
 TFT_eSprite bannerSprite(&tft);  // scrolling banner on the bottom line
 TFT_eSprite barSprite(&tft);     // the minute bar, pushed in one go (no tearing)
-TFT_eSprite dateSprite(&tft);    // the date line; kept only while the colours animate
+TFT_eSprite dateSprite(&tft);    // a strip of the date line; kept only while the colours animate
 bool barOk = false;
 bool dateOk = false;
 
@@ -103,10 +103,16 @@ int16_t shineX = kNoShine;
 
 // Glyph shapes kept between colour frames, so animated styles only re-tint
 // them: the coverage (0-63) of each settled big digit and of the date line.
-uint8_t digitCov[4][kDigitW * kDigitH];
+// Allocated only while something animates (see syncFxBuffers): the network
+// task needs ~50 KB of free heap for TLS.
+struct FxCache {
+  uint8_t digit[4][kDigitW * kDigitH];
+  uint8_t date[kScreenW * kDateH];
+};
+FxCache* fxCache = nullptr;
 char digitCovChar[4] = {};
-uint8_t dateCov[kScreenW * kDateH];
 int32_t dateCovKey = -1;  // year * 400 + day of year
+constexpr int16_t kDateStripH = 10;  // the date is tinted and pushed in strips
 
 void saveCoverage(const uint16_t* px, uint8_t* cov, int n) {
   for (int i = 0; i < n; ++i) cov[i] = px[i] ? (((px[i] >> 8) | (px[i] << 8)) >> 5) & 0x3F : 0;
@@ -122,8 +128,8 @@ void restoreCoverage(uint16_t* px, const uint8_t* cov, int n) {
 // Glow: the glyph coverage blurred into a halo (box blur, two passes).
 constexpr int kGlowRadius = 4;
 constexpr uint8_t kGlowStrength = 150;  // 0-255
-uint8_t glowA[kDigitW * kDigitH];
-uint8_t glowB[kDigitW * kDigitH];
+uint8_t* glowA = nullptr;  // two kDigitW * kDigitH buffers, only while glow is on
+uint8_t* glowB = nullptr;
 
 // Repaint intervals: a colour frame (time row, bar and date, re-tinting kept
 // glyph shapes) takes ~30 ms (~46 ms with glow), so colour styles run at
@@ -203,7 +209,7 @@ void tintSprite(TFT_eSprite& s, int16_t w, int16_t h, int16_t y0, int16_t y1, co
   const uint16_t bgSwapped = swap16(bg);
   const bool uniform = p.palette || fieldUniform;
   const theme::Palette pal = p.palette ? *p.palette : theme::Palette{fieldTop[0], fieldBottom[0]};
-  const bool glow = p.glow && w * h <= kDigitW * kDigitH;
+  const bool glow = p.glow && glowA && w * h <= kDigitW * kDigitH;
   if (glow) blurCoverage(px, w, h);
   const bool shine = p.shine && shineX != kNoShine;
   static int shineT[kShineW];  // shine strength by distance from the band's centre
@@ -399,7 +405,7 @@ void DisplayManager::refreshField(uint32_t now) {
 
 void DisplayManager::setColors(const ColorSettings& colors) {
   colors_ = colors;
-  syncDateSprite();
+  syncFxBuffers();
   shineX = kNoShine;
   if (mode_ != Mode::Clock || !palValid_) {
     // Other screens use the accent colour; the clock face repaints on return.
@@ -567,12 +573,16 @@ void DisplayManager::drawBigDigit(int index, float progress) {
     const char from[2] = {r.from, '\0'};
     drawGlyphString(digitSprite, from, 0, kDigitW, kDigitBaseline - shift);
     drawGlyphString(digitSprite, to, 0, kDigitW, kDigitBaseline + kDigitH - shift);
-  } else if (digitCovChar[index] == to[0]) {
-    restoreCoverage(static_cast<uint16_t*>(digitSprite.getPointer()), digitCov[index], kDigitW * kDigitH);
+  } else if (fxCache && digitCovChar[index] == to[0]) {
+    restoreCoverage(static_cast<uint16_t*>(digitSprite.getPointer()), fxCache->digit[index],
+                    kDigitW * kDigitH);
   } else {
     drawGlyphString(digitSprite, to, 0, kDigitW, kDigitBaseline);
-    saveCoverage(static_cast<uint16_t*>(digitSprite.getPointer()), digitCov[index], kDigitW * kDigitH);
-    digitCovChar[index] = to[0];
+    if (fxCache) {
+      saveCoverage(static_cast<uint16_t*>(digitSprite.getPointer()), fxCache->digit[index],
+                   kDigitW * kDigitH);
+      digitCovChar[index] = to[0];
+    }
   }
   Paint paint;
   paint.screenX = digitX(index, timeOffset_);
@@ -663,7 +673,7 @@ uint16_t DisplayManager::barColor(int x) const {
 // The date line in the clock's colours: the weekday at full strength and the
 // rest a little dimmer (drawn in grey, so the tint gives it less coverage).
 // Night mode keeps the quiet night look. Animated styles repaint it every
-// colour frame through a kept sprite (see syncDateSprite).
+// colour frame from its kept shape (see syncFxBuffers).
 void DisplayManager::drawDate(const struct tm& local) {
   auto layout = [&](TFT_eSprite& s, uint16_t weekdayColor, uint16_t restColor, uint16_t bg) {
     // Long weekday/month combinations (e.g. WEDNESDAY, September) don't fit:
@@ -690,49 +700,71 @@ void DisplayManager::drawDate(const struct tm& local) {
              [&](TFT_eSprite& s) { layout(s, pal_.top, C->date, C->bg); });
     return;
   }
-  auto render = [&](TFT_eSprite& s) {
-    uint16_t* px = static_cast<uint16_t*>(s.getPointer());
-    const int32_t key = local.tm_year * 400 + local.tm_yday;
-    if (&s == &dateSprite && key == dateCovKey) {
-      restoreCoverage(px, dateCov, kScreenW * kDateH);
+  const int16_t y0 = kDateH / 2 - 9, y1 = kDateH / 2 + 8;  // gradient rows
+  const int32_t key = local.tm_year * 400 + local.tm_yday;
+  if (!fxCache || !dateOk || key != dateCovKey) {
+    // Lay the text out in a temporary full-height sprite.
+    TFT_eSprite s(&tft);
+    s.setColorDepth(16);
+    if (!s.createSprite(kScreenW, kDateH)) return;
+    s.loadFont(font_date);
+    s.fillSprite(TFT_BLACK);
+    layout(s, TFT_WHITE, theme::rgb(190, 190, 190), TFT_BLACK);
+    s.unloadFont();
+    if (fxCache && dateOk) {
+      saveCoverage(static_cast<uint16_t*>(s.getPointer()), fxCache->date, kScreenW * kDateH);
+      dateCovKey = key;
+      s.deleteSprite();
     } else {
-      s.fillSprite(TFT_BLACK);
-      layout(s, TFT_WHITE, theme::rgb(190, 190, 190), TFT_BLACK);
-      if (&s == &dateSprite) {
-        saveCoverage(px, dateCov, kScreenW * kDateH);
-        dateCovKey = key;
-      }
+      Paint paint;
+      paint.screenY = kDateTop;
+      tintSprite(s, kScreenW, kDateH, y0, y1, paint);
+      s.pushSprite(0, kDateTop);
+      s.deleteSprite();
+      return;
     }
-    Paint paint;
-    paint.screenY = kDateTop;
-    tintSprite(s, kScreenW, kDateH, kDateH / 2 - 9, kDateH / 2 + 8, paint);
-    s.pushSprite(0, kDateTop);
-  };
-  if (dateOk) {
-    render(dateSprite);
-    return;
   }
-  TFT_eSprite s(&tft);
-  s.setColorDepth(16);
-  if (!s.createSprite(kScreenW, kDateH)) return;
-  s.loadFont(font_date);
-  render(s);
-  s.unloadFont();
-  s.deleteSprite();
+  // Animated styles: re-tint the kept shape strip by strip.
+  for (int16_t sy = 0; sy < kDateH; sy += kDateStripH) {
+    const int16_t h = min<int16_t>(kDateStripH, kDateH - sy);
+    restoreCoverage(static_cast<uint16_t*>(dateSprite.getPointer()), fxCache->date + sy * kScreenW,
+                    kScreenW * h);
+    Paint paint;
+    paint.screenY = kDateTop + sy;
+    tintSprite(dateSprite, kScreenW, h, y0 - sy, y1 - sy, paint);
+    dateSprite.pushSprite(0, kDateTop + sy, 0, 0, kScreenW, h);
+  }
 }
 
-// Animated styles repaint the date every colour frame: keep its sprite (with
-// the font loaded) only then, so static styles don't hold the 19 KB.
-void DisplayManager::syncDateSprite() {
-  const bool want = !night_ && theme::styleAnimated(colors_.style);
-  if (want && !dateOk) {
+// Buffers for animation, allocated only while something animates so the
+// network task keeps enough heap for TLS: glyph shapes (32 KB) and a date
+// strip (6 KB) for animated styles and the shine, glow buffers (11 KB) for glow.
+void DisplayManager::syncFxBuffers() {
+  const bool animated = !night_ && theme::styleAnimated(colors_.style);
+  const bool cache = animated || (effectsOn() && (colors_.effects & (theme::kFxShine | theme::kFxGlow)));
+  const bool glow = effectsOn() && (colors_.effects & theme::kFxGlow);
+  if (cache && !fxCache) {
+    fxCache = static_cast<FxCache*>(malloc(sizeof(FxCache)));
+    memset(digitCovChar, 0, sizeof(digitCovChar));
+    dateCovKey = -1;
+  } else if (!cache && fxCache) {
+    free(fxCache);
+    fxCache = nullptr;
+  }
+  if (animated && !dateOk) {
     dateSprite.setColorDepth(16);
-    dateOk = dateSprite.createSprite(kScreenW, kDateH) != nullptr;
-    if (dateOk) dateSprite.loadFont(font_date);
-  } else if (!want && dateOk) {
-    dateSprite.unloadFont();
+    dateOk = dateSprite.createSprite(kScreenW, kDateStripH) != nullptr;
+    dateCovKey = -1;
+  } else if (!animated && dateOk) {
     dateSprite.deleteSprite();
     dateOk = false;
+  }
+  if (glow && !glowA) {
+    glowA = static_cast<uint8_t*>(malloc(2 * kDigitW * kDigitH));
+    glowB = glowA ? glowA + kDigitW * kDigitH : nullptr;
+  } else if (!glow && glowA) {
+    free(glowA);
+    glowA = glowB = nullptr;
   }
 }
 
@@ -797,7 +829,7 @@ void DisplayManager::setNightMode(bool night) {
   if (night == night_) return;
   night_ = night;
   C = night ? &theme::kNightColors : &theme::kDayColors;
-  syncDateSprite();
+  syncFxBuffers();
   // Repaint everything with the new colours on the next showTime().
   mode_ = Mode::None;
 }

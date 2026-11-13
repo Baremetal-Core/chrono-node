@@ -291,6 +291,10 @@ between frames and only re-coloured, so a frame takes ~30 ms (~46 ms with glow).
 runs at 20 fps during its 1.4 s sweep. The status icon, buttons and banner use the field's
 middle colour.
 
+Memory: the buffers for animation (glyph shapes, a date strip, glow) are allocated only
+while a moving style or an effect is on, and freed otherwise. The network task needs a
+~45 KB free block for HTTPS (weather, updates); `INFO` shows the largest free block.
+
 The date takes the clock's colours too: the weekday at full strength, the rest a little
 dimmer. The minute bar fills smoothly through the minute instead of stepping every second,
 and it's drawn off-screen and sent in one go, so it never tears.
