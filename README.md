@@ -295,8 +295,9 @@ Memory: the buffers for animation (glyph shapes, a date strip, glow) are allocat
 while a moving style or an effect is on, and freed otherwise. The network task needs a
 ~45 KB free block for HTTPS (weather, updates); `INFO` shows the largest free block.
 
-The date takes the clock's colours too: the weekday at full strength, the rest a little
-dimmer. The minute bar fills smoothly through the minute instead of stepping every second,
+The date takes the clock's colours too, in a bold 24 px face: the weekday at full strength,
+the rest a little dimmer (long months shorten to three letters to fit). The weather line under
+it shows the temperature in the same bold face and the clock's colour. The minute bar fills smoothly through the minute instead of stepping every second,
 and it's drawn off-screen and sent in one go, so it never tears.
 
 ## Scrolling banner

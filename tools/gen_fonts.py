@@ -37,6 +37,7 @@ FONTS = [
     ("font_seconds", 26, 700, 24, DIGITS),
     ("font_date", 20, 500, 20, ASCII + "\u00b0\u00b7" + PUNCT + VIETNAMESE),
     ("font_temp", 54, 700, 32, DIGITS + "-\u00b0"),
+    ("font_face", 24, 700, 24, ASCII + "\u00b0\u00b7"),  # clock face: date, weather temperature
     ("font_small", 15, 500, 14, ASCII + "\u00b0\u00b7" + PUNCT + VIETNAMESE),
 ]
 

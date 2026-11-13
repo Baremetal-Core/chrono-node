@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "fonts/font_date.h"
+#include "fonts/font_face.h"
 #include "fonts/font_seconds.h"
 #include "fonts/font_small.h"
 #include "fonts/font_temp.h"
@@ -696,18 +697,18 @@ void DisplayManager::drawDate(const struct tm& local) {
     s.drawString(rest, x + w1, kDateH / 2);
   };
   if (night_) {
-    drawLine(kDateTop, kDateH, font_date,
+    drawLine(kDateTop, kDateH, font_face,
              [&](TFT_eSprite& s) { layout(s, pal_.top, C->date, C->bg); });
     return;
   }
-  const int16_t y0 = kDateH / 2 - 9, y1 = kDateH / 2 + 8;  // gradient rows
+  const int16_t y0 = kDateH / 2 - 10, y1 = kDateH / 2 + 9;  // gradient rows
   const int32_t key = local.tm_year * 400 + local.tm_yday;
   if (!fxCache || !dateOk || key != dateCovKey) {
     // Lay the text out in a temporary full-height sprite.
     TFT_eSprite s(&tft);
     s.setColorDepth(16);
     if (!s.createSprite(kScreenW, kDateH)) return;
-    s.loadFont(font_date);
+    s.loadFont(font_face);
     s.fillSprite(TFT_BLACK);
     layout(s, TFT_WHITE, theme::rgb(190, 190, 190), TFT_BLACK);
     s.unloadFont();
@@ -922,23 +923,28 @@ void DisplayManager::drawWeatherLine() {
   } else {
     snprintf(detail, sizeof(detail), "%s", weather::describe(w.code));
   }
-  drawLine(kNoticeTop, kNoticeH, font_date, [&](TFT_eSprite& s) {
+  drawLine(kNoticeTop, kNoticeH, font_face, [&](TFT_eSprite& s) {
     const int16_t iconW = 26;
     const int16_t tempW = s.textWidth(temp);
     s.unloadFont();
-    s.loadFont(font_small);
-    const int16_t detailW = s.textWidth(detail);
+    s.loadFont(font_date);
+    int16_t detailW = s.textWidth(detail);
+    if (iconW + 4 + tempW + 10 + detailW > kScreenW - 8) {  // long descriptions
+      s.unloadFont();
+      s.loadFont(font_small);
+      detailW = s.textWidth(detail);
+    }
     int16_t x = (kScreenW - (iconW + 4 + tempW + 10 + detailW)) / 2;
 
     weather_icons::draw(s, x + iconW / 2, kNoticeH / 2, 22, weather::iconFor(w.code), w.isDay,
                         night_ || weatherStale_, C->dim);
     x += iconW + 4;
     s.setTextDatum(ML_DATUM);
-    s.setTextColor(C->dim, C->bg);
+    s.setTextColor(weatherStale_ ? C->dim : C->date, C->bg);
     s.drawString(detail, x + tempW + 10, kNoticeH / 2);
     s.unloadFont();
-    s.loadFont(font_date);
-    s.setTextColor(weatherStale_ ? C->dim : C->text, C->bg);
+    s.loadFont(font_face);
+    s.setTextColor(weatherStale_ ? C->dim : pal_.top, C->bg);
     s.drawString(temp, x, kNoticeH / 2);
   });
 }
