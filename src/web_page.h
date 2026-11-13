@@ -116,15 +116,23 @@ $("time").textContent=s.local_time.slice(11);$("fwcur").textContent="Installed: 
 const w=s.weather?`${s.weather.temp_c}\u00b0C ${s.weather.condition}, ${s.weather.place} (${ago(s.weather.age_s)})`:"no data yet";
 const rows=[["Date",s.local_time.slice(0,10)],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
 ["RTC",s.rtc.present?("DS3231"+(s.rtc.temp_c!==undefined?`, ${s.rtc.temp_c}\u00b0C`:"")+(s.rtc.lost_power?", LOST POWER":"")):"not detected"],
-["Weather",w],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)],["Memory",{html:memBar(s)}]];
+["Weather",w],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)],["RAM",{html:memBar(s)}],["Flash",{html:flashBar(s.flash)}]];
 $("status").innerHTML=rows.map(r=>`<div>${r[0]}</div><div>${r[1].html||esc(String(r[1]))}</div>`).join("")}catch(e){$("sub").textContent="Clock not reachable"}}
 const kb=b=>(b<10240?(b/1024).toFixed(1):Math.round(b/1024))+" KB";
+const mb=b=>b>=1048576?(b/1048576).toFixed(2)+" MB":kb(b);
 // Stacked bar: parts [{v,c,t}] out of total, then a legend with the same colours.
-function bar(parts,total,free){return`<div class="bar">${parts.map(p=>`<i style="width:${Math.max(0,100*p.v/total).toFixed(2)}%;background:${p.c}" title="${esc(p.t)}"></i>`).join("")}</div>
-<div class="legend">${parts.concat([{c:"#0b0f22;border:1px solid var(--line)",t:"Free "+kb(free)}]).map(p=>`<span><span class="sw" style="background:${p.c}"></span>${esc(p.t)}</span>`).join("")}</div>`}
+// Parts without a label are free space inside the bar (not in the legend).
+function bar(parts,total,free){return`<div class="bar">${parts.map(p=>`<i style="width:${Math.max(0,100*p.v/total).toFixed(2)}%;background:${p.t?p.c:"transparent"}"${p.t?` title="${esc(p.t)}"`:""}></i>`).join("")}</div>
+<div class="legend">${parts.filter(p=>p.t).concat([{c:"#0b0f22;border:1px solid var(--line)",t:"Free "+mb(free)}]).map(p=>`<span><span class="sw" style="background:${p.c}"></span>${esc(p.t)}</span>`).join("")}</div>`}
+// Flash in physical order: system, firmware (+ room left in its slot), the
+// update slot, photos (+ room left in the photo partition).
+function flashBar(f){if(!f)return"";const fwFree=f.slot-f.firmware,phFree=f.photos_total-f.photos_used;
+return bar([{v:f.system,c:"#4a5072",t:"System "+mb(f.system)},{v:f.firmware,c:"var(--accent)",t:"Firmware "+mb(f.firmware)},{v:fwFree},
+{v:f.update_slot,c:"#ff9a1f55",t:"Update slot "+mb(f.update_slot)},{v:f.photos_used,c:"#ff5fa2",t:"Photos "+mb(f.photos_used)},{v:phFree}],f.chip,fwFree+phFree)+
+`<div class="muted">${mb(f.chip)} chip \u00b7 firmware fills ${Math.round(100*f.firmware/f.slot)}% of its ${mb(f.slot)} slot \u00b7 photos get ${mb(f.photos_total)}</div>`}
 // RAM: in use now, plus the extra that was in use at the lowest point since boot.
 function memBar(s){const t=s.heap_total,used=t-s.heap_free,peak=t-s.heap_min;
-return bar([{v:used,c:"var(--accent)",t:"Used "+kb(used)},{v:peak-used,c:"#ff9a1f55",t:"Peak used "+kb(peak)}],t,s.heap_free)+`<div class="muted">${kb(t)} total</div>`}
+return bar([{v:used,c:"var(--accent)",t:"Used "+kb(used)},{v:peak-used,c:"#ff9a1f55",t:"Peak used "+kb(peak)}],t,s.heap_free)+`<div class="muted">${kb(t)} total (of the chip's 520 KB SRAM)</div>`}
 const PHC=["#ff9a1f","#ff5fa2","#8b7bff","#2ec5ff","#3ddc97"];
 function esc(t){return t.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 let S;
@@ -142,7 +150,7 @@ $("phadd").disabled=!P.available||n>=P.max;$("phfree").textContent=P.available?`
 // Files use whole 4 KB blocks; the rest of "used" is file-system overhead.
 const parts=P.items.map(i=>({v:i.bytes,c:PHC[(i.slot-1)%5],t:`Photo ${i.slot} ${kb(i.bytes)}`})),sum=P.items.reduce((a,i)=>a+i.bytes,0);
 parts.push({v:Math.max(0,P.used_bytes-sum),c:"#4a5072",t:"File system "+kb(Math.max(0,P.used_bytes-sum))});
-$("phstore").innerHTML=P.available?`<div class="muted">Storage: ${kb(P.used_bytes)} of ${kb(P.total_bytes)} used</div>`+bar(parts,P.total_bytes,P.total_bytes-P.used_bytes):"";
+$("phstore").innerHTML=P.available?`<div class="muted">Photo storage: ${kb(P.used_bytes)} of ${kb(P.total_bytes)} used (a section of the flash chip; see Status)</div>`+bar(parts,P.total_bytes,P.total_bytes-P.used_bytes):"";
 const sig=P.items.map(i=>i.slot+":"+i.bytes).join();if(sig===phSig)return;phSig=sig;
 $("phlist").innerHTML=P.items.map(i=>`<div class="ph"><img src="/api/photo?n=${i.slot}&v=${i.bytes}" data-show="${i.slot}" title="Show on the clock"><span class="cap"><span class="sw" style="background:${PHC[(i.slot-1)%5]}"></span>Photo ${i.slot} \u00b7 ${kb(i.bytes)}</span><button class="danger" data-del="${i.slot}">&#x2715;</button></div>`).join("")}
 $("phlist").onclick=e=>{const t=e.target;if(t.dataset.show)cmd("PHOTO SHOW "+t.dataset.show,"Showing on the clock");

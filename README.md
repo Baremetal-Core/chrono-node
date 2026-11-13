@@ -61,7 +61,10 @@ forecast, info and settings screens, plus a settings page in the browser at
   - weather location, chosen from the last 5 used locations (`<` / `>`). New locations are
     added with `WEATHER CITY`/`WEATHER LOC`, and later from the web UI (M9).
 - **Info** shows firmware, Wi-Fi and signal, IP, host name, NTP sync, weather age, uptime,
-  RAM and the RTC. It refreshes every 2 s. RAM is a bar with used / total. **Change Wi-Fi network** at the bottom forgets the
+  RAM, flash and the RTC. It refreshes every 2 s.
+  - **RAM** is a bar with used / total.
+  - **Flash** covers the whole 4 MB chip: system data and firmware, the update slot (dimmed),
+    then photos. Free space is what's left in the firmware slot and the photo partition. **Change Wi-Fi network** at the bottom forgets the
   saved network after a confirmation (see Wi-Fi setup).
 - **At night**, any touch raises the backlight to the day level for 10 s.
 - **12-hour mode** shows AM/PM before the minute bar. Hours 1–9 drop the leading digit and
@@ -248,7 +251,12 @@ Your own photos can be shown on the clock, for example a picture of someone you 
 - **Web page:** thumbnails of the stored photos with each one's size. Tap one to show it on
   the clock now, or ✕ to delete it. A storage bar shows each photo's share, file-system
   overhead (files use whole 4 KB blocks) and free space. The Status section shows RAM as a
-  bar too: used now, the peak since boot, and free.
+  bar too: used now, the peak since boot, and free. Next to it, a **Flash** bar shows how the
+  4 MB chip is divided:
+  - system data (bootloader, settings, crash dump): 128 KB
+  - the firmware, in a 1.75 MB slot
+  - the update slot: 1.75 MB, kept free so web updates can roll back
+  - photos: a 384 KB partition
 - **Serial console:** `PHOTO` commands (listed below). Photos larger than the screen, for
   example uploaded with curl, are scaled down by 1/2, 1/4 or 1/8 and centred. Progressive
   JPEGs are rejected because the decoder (tjpgd) can't read them.

@@ -630,7 +630,7 @@ void DisplayManager::drawScreenTitle(const char* title) {
 }
 
 namespace {
-constexpr int16_t kInfoTop = 30, kInfoRowH = 20;
+constexpr int16_t kInfoTop = 30, kInfoRowH = 18;
 constexpr int16_t kInfoBtnY = 212, kInfoBtnH = 26;
 constexpr int16_t kInfoValueX = 100;
 constexpr int16_t kInfoBarW = 110, kInfoBarH = 8;
@@ -648,20 +648,28 @@ void DisplayManager::showInfoScreen(const InfoView& v) {
       s.drawString("Change Wi-Fi network", kScreenW / 2, kInfoBtnH / 2 + 1);
     });
   }
-  for (int i = 0; i < v.count && i < 9; ++i) {
+  for (int i = 0; i < v.count && i < InfoView::kMaxRows; ++i) {
     drawLine(kInfoTop + i * kInfoRowH, kInfoRowH, font_small, [&](TFT_eSprite& s) {
       s.setTextDatum(ML_DATUM);
       s.setTextColor(C->dim, C->bg);
       s.drawString(v.rows[i][0], 12, kInfoRowH / 2);
       int16_t x = kInfoValueX;
-      if (i == v.barRow && v.barTotal > 0) {
-        // Used (accent) over the whole capacity (faint).
+      const InfoBar& bar = v.bars[i];
+      if (bar.total > 0) {
+        // Segments as small blocks with 1 px gaps over the free (faint) track.
+        const uint16_t colors[3] = {pal_.top, theme::mix(pal_.top, C->faint, 120), pal_.bottom};
         const int16_t y = (kInfoRowH - kInfoBarH) / 2;
-        const int16_t used = min<int64_t>(kInfoBarW, (int64_t)kInfoBarW * v.barUsed / v.barTotal);
-        s.fillSmoothRoundRect(x, y, kInfoBarW, kInfoBarH, kInfoBarH / 2, C->faint, C->bg);
-        if (used > 0) {
-          s.fillSmoothRoundRect(x, y, max<int16_t>(used, kInfoBarH), kInfoBarH, kInfoBarH / 2,
-                                pal_.top, C->faint);
+        s.fillSmoothRoundRect(x, y, kInfoBarW, kInfoBarH, 2, C->faint, C->bg);
+        uint64_t sum = 0;
+        int16_t from = 0;
+        for (int k = 0; k < 3; ++k) {
+          if (!bar.seg[k]) continue;
+          sum += bar.seg[k];
+          const int16_t to = min<int64_t>(kInfoBarW, (int64_t)(kInfoBarW * sum / bar.total));
+          if (to - from >= 2) {
+            s.fillSmoothRoundRect(x + from, y, to - from - 1, kInfoBarH, 2, colors[k], C->faint);
+          }
+          from = to;
         }
         x += kInfoBarW + 8;
       }

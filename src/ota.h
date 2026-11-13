@@ -29,4 +29,16 @@ int progress();
 
 void printStatus();
 
+// How the flash chip is divided, for status displays (bytes).
+struct FlashLayout {
+  uint32_t chip = 0;        // whole chip
+  uint32_t firmware = 0;    // running firmware image
+  uint32_t slot = 0;        // the slot it runs from
+  uint32_t updateSlot = 0;  // the other slot, kept free for updates
+  uint32_t data = 0;        // LittleFS partition (photos)
+  uint32_t system() const { return chip - slot - updateSlot - data; }  // boot, NVS, core dump
+};
+// Any task. The firmware size is measured once in begin().
+FlashLayout flashLayout();
+
 }  // namespace ota

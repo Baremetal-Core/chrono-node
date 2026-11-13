@@ -14,13 +14,18 @@
 #include "ui_theme.h"
 #include "weather.h"
 
+// Usage bar on an info row: up to three segments out of `total`, drawn in the
+// accent colour, a dimmed accent and the palette's second colour; the rest is free.
+struct InfoBar {
+  uint32_t total = 0;  // 0: no bar
+  uint32_t seg[3] = {};
+};
+
 struct InfoView {
-  char rows[9][2][40];  // label, value
+  static constexpr int kMaxRows = 10;
+  char rows[kMaxRows][2][40];  // label, value
+  InfoBar bars[kMaxRows];
   int count = 0;
-  // Optional usage bar (used of total) drawn in this row before its value text.
-  int barRow = -1;
-  uint32_t barTotal = 0;
-  uint32_t barUsed = 0;
 };
 
 struct SettingsView {

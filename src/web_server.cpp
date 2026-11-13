@@ -72,6 +72,15 @@ void handleStatus() {
   doc["heap_total"] = ESP.getHeapSize();
   doc["heap_free"] = ESP.getFreeHeap();
   doc["heap_min"] = ESP.getMinFreeHeap();
+  const ota::FlashLayout fl = ota::flashLayout();
+  JsonObject flash = doc["flash"].to<JsonObject>();
+  flash["chip"] = fl.chip;
+  flash["system"] = fl.system();
+  flash["firmware"] = fl.firmware;
+  flash["slot"] = fl.slot;
+  flash["update_slot"] = fl.updateSlot;
+  flash["photos_total"] = fl.data;
+  flash["photos_used"] = photos::usedBytes();
 
   struct timeval tv;
   gettimeofday(&tv, nullptr);

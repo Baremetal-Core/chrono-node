@@ -19,6 +19,7 @@ std::atomic<uint32_t> pin{0};
 std::atomic<uint32_t> pinExpiresMs{0};
 std::atomic<int> uploadProgress{-1};
 bool pendingVerify = false;
+FlashLayout layout;
 
 const char* stateName(esp_ota_img_states_t s) {
   switch (s) {
@@ -35,6 +36,14 @@ const char* stateName(esp_ota_img_states_t s) {
 
 void begin() {
   const esp_partition_t* running = esp_ota_get_running_partition();
+  const esp_partition_t* next = esp_ota_get_next_update_partition(nullptr);
+  const esp_partition_t* data =
+      esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
+  layout.chip = ESP.getFlashChipSize();
+  layout.firmware = ESP.getSketchSize();  // reads the image headers: do it once
+  layout.slot = running ? running->size : 0;
+  layout.updateSlot = next ? next->size : 0;
+  layout.data = data ? data->size : 0;
   esp_ota_img_states_t state;
   if (running && esp_ota_get_state_partition(running, &state) == ESP_OK &&
       state == ESP_OTA_IMG_PENDING_VERIFY) {
@@ -75,6 +84,8 @@ bool checkPin(uint32_t candidate) {
 void setProgress(int percent) { uploadProgress = percent; }
 
 int progress() { return uploadProgress; }
+
+FlashLayout flashLayout() { return layout; }
 
 void printStatus() {
   const esp_partition_t* running = esp_ota_get_running_partition();

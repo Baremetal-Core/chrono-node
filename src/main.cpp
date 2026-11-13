@@ -247,7 +247,7 @@ void buildSettingsView(SettingsView& v) {
 void buildInfoView(InfoView& v) {
   v.count = 0;
   auto add = [&](const char* label, const char* fmt, auto... args) {
-    if (v.count >= 9) return;
+    if (v.count >= InfoView::kMaxRows) return;
     strlcpy(v.rows[v.count][0], label, sizeof(v.rows[0][0]));
     snprintf(v.rows[v.count][1], sizeof(v.rows[0][1]), fmt, args...);
     ++v.count;
@@ -276,10 +276,20 @@ void buildInfoView(InfoView& v) {
   const uint32_t up = millis() / 1000;
   add("Uptime", "%lud %02lu:%02lu:%02lu", (unsigned long)(up / 86400),
       (unsigned long)(up / 3600 % 24), (unsigned long)(up / 60 % 60), (unsigned long)(up % 60));
-  v.barRow = v.count;
-  v.barTotal = ESP.getHeapSize();
-  v.barUsed = v.barTotal - ESP.getFreeHeap();
-  add("Memory", "%u / %u KB", v.barUsed / 1024, v.barTotal / 1024);
+  const uint32_t heap = ESP.getHeapSize(), heapUsed = heap - ESP.getFreeHeap();
+  v.bars[v.count].total = heap;
+  v.bars[v.count].seg[0] = heapUsed;
+  add("RAM", "%u / %u KB", heapUsed / 1024, heap / 1024);
+  // Flash: system + firmware, the update slot, photos; free is the room left in
+  // the firmware slot and the photo partition.
+  const ota::FlashLayout fl = ota::flashLayout();
+  InfoBar& fb = v.bars[v.count];
+  fb.total = fl.chip;
+  fb.seg[0] = fl.system() + fl.firmware;
+  fb.seg[1] = fl.updateSlot;
+  fb.seg[2] = photos::usedBytes();
+  const uint32_t flashUsed = fb.seg[0] + fb.seg[1] + fb.seg[2];
+  add("Flash", "%.1f / %.0f MB", flashUsed / 1048576.0f, fl.chip / 1048576.0f);
   if (hasTemp) {
     add("RTC", "DS3231, %.1f \xC2\xB0" "C%s", tempC, rtcLostPower ? ", lost power" : "");
   } else {
