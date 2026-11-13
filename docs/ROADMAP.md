@@ -51,6 +51,8 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - Custom anti-aliased digit font (e.g. a large Inter/Rajdhani/DSEG variant), seconds as a progress arc or small digits.
 - Layout: a big time display, date with weekday, a status bar (Wi-Fi, NTP, indoor temperature from the DS3231's sensor).
 - Themes: dark/minimal, accent colours, colour by time-of-day. Smooth digit transitions.
+- ✅ Colour styles (v0.15): rainbow flow, colour cycle, per-digit colours, six preset gradients and
+  custom colours, plus shine, pulse and glow effects; chosen on the web page or the clock.
 - Turn the always-on RGB LED off (or use it as a subtle status light).
 
 ## M6 – Touch & screens ✅ (calibration on this unit pending a stylus)
@@ -71,7 +73,7 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - Weather line on the clock face plus a periodic forecast screen; icons drawn with AA primitives.
   Refresh every 15 min; cached data shown with its age when offline.
 
-## M9 – Web configuration UI
+## M9 – Web configuration UI ✅
 - A small web page at `chrono-node.local` for all settings, Wi-Fi reset, status/diagnostics (heap, RSSI, drift, uptime).
 - JSON API (`/api/status`, `/api/settings`) for future integrations.
 - Weather location:
@@ -88,15 +90,30 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
     - Browser GPS: the browser only allows it on HTTPS pages, and the clock serves plain
       HTTP.
 
-## M10 – OTA updates & releases
-- Firmware upload from the web UI (and ArduinoOTA for dev).
-- GitHub Actions: tag `v*` → release with `chrono-node-fw.bin`. Optional: the device checks GitHub releases.
-- Rollback on boot failure (app-rollback partition flag).
+## M10 – OTA updates & releases ✅
+- Firmware upload from the web UI, authorised by a one-time PIN shown on the clock.
+- GitHub Actions: tag `v*` → release with `chrono-node-fw.bin` (OTA) and `chrono-node-fw-full.bin`.
+- Rollback: new images are confirmed after 60 s of normal running.
+- Not done: ArduinoOTA (another open port), and a device-side release check (the repo is private,
+  so the device would need a token).
 
-## M11 – Alarms & sound (optional)
+## M11 – Custom scrolling banner ✅
+- Up to 5 user messages (Vietnamese diacritics supported) scroll across the clock face's
+  bottom line in the time-of-day colours. Each message has its own timer (every N minutes or
+  non-stop); messages due together scroll one after another.
+- Set from the web page and the serial console; saved in NVS; shown at night too (dimmed).
+
+## M12 – Photo slideshow ✅
+- Up to 5 personal photos uploaded from the web page. The browser crops (drag/zoom) and
+  compresses them to a 320×240 baseline JPEG (≤64 KB), so the device only decodes.
+- Stored in LittleFS: they survive OTA/USB firmware updates and are never in the repository.
+- Photo screen in the swipe order (tap for the next photo) and an automatic slideshow every
+  N minutes (default 5) for 12 s, never at night.
+
+## M13 – Alarms & sound (optional)
 - Alarms stored in NVS and edited via touch/web; speaker on GPIO26 (tones/DAC), snooze by tap.
 
-## M12 – Sensors & smart-home (optional)
+## M14 – Sensors & smart-home (optional)
 - An I2C environment sensor (SHT4x/BME280/SCD41) on the existing GPIO27/22 bus next to the DS3231.
 - Optional I2C light sensor (e.g. BH1750) on the same bus for auto-brightness (the CYD LDR is unusable).
 - Indoor climate display and history graph. MQTT with Home Assistant auto-discovery.
@@ -105,4 +122,4 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 
 ### Suggested order
 M2 → M3 → M4 makes it a correct internet clock. M5 makes it gorgeous. M7 makes it livable
-at night. M8 adds weather. Then M6, M9, M10, and finally M11 and M12 as extras.
+at night. M8 adds weather. Then M6, M9, M10, M11 (banner) and M12 (photos) on request, and finally M13 and M14 as extras.

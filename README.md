@@ -3,13 +3,14 @@
 Chrono Node is an offline-first desktop smart clock built on the ESP32-2432S028R
 ("Cheap Yellow Display", CYD) with an external DS3231 RTC as its time source.
 
-**Current state (M6 + M8):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
+**Current state (M6, M8, M9, M10):** a 24-hour clock driven by the DS3231 (which holds UTC), shown in
 local time using a configurable POSIX timezone stored in NVS. Wi-Fi with a setup portal, mDNS
 (`chrono-node.local`) and NTP that keeps the DS3231 accurate. The UI uses bold anti-aliased
 gradient digits, rolling transitions and colours that follow the time of day, plus a dimmed
 night mode on a schedule, weather from Open-Meteo, and touch navigation between the clock,
-forecast, info and settings screens. See [docs/ROADMAP.md](docs/ROADMAP.md) for upcoming
-milestones.
+forecast, info and settings screens, plus a settings page in the browser at
+`http://chrono-node.local`, and firmware updates over Wi-Fi with automatic rollback. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for upcoming milestones.
 
 | Clock with weather | Forecast screen |
 |--------------------|-----------------|
@@ -47,20 +48,53 @@ milestones.
 
 ## Touch and screens
 
-- **Screens**, in swipe order: Clock → Forecast → Info → Settings, then back to Clock. Swipe
-  left for the next screen and right for the previous one. The forecast is skipped until
-  weather data exists. Screen changes happen behind a quick backlight dip.
+- **Screens**, in swipe order: Clock → Forecast → Photo → Info → Settings, then back to
+  Clock. Swipe left for the next screen and right for the previous one. The forecast is
+  skipped until weather data exists, and the photo screen while there are no photos. Screen changes happen behind a quick backlight dip.
+- **Touch and hold** (0.8 s) anywhere on any other screen goes straight back to the clock.
+  Nothing else happens when you let go, so a hold on Settings never presses a button.
 - After 30 s without touch the clock comes back. The automatic forecast cycle (see Weather)
   still runs on the clock screen.
+- **Timeouts are settable** (web page *Display* section, or `TIMEOUT`): how long the forecast
+  (default 10 s) and each photo (12 s) stay up when they come up by themselves, and how long
+  other screens wait without touch before the clock returns (30 s). The time counts from when
+  the screen has faded in.
+- **Screen change animation** (web page *Display* section, or `TRANSITION`), for swipes and
+  for the forecast, photos and the return to the clock:
+  - **Wipe** (default): black sweeps across the old screen in the direction you'd swipe,
+    then the new one fades in.
+  - **Slide:** the old screen slides off (using the ST7789's hardware scroll), then the new
+    one fades in.
+  - **Blinds:** eight stripes close over the old screen, then the new one fades in.
+  - **Fade:** a quick backlight dip.
+  - **Instant:** no animation.
+
+  The switch between day and night always fades. The CYD has no RAM for a second frame
+  buffer, so the new screen is drawn with the backlight off and then faded in. The ST7789's
+  partial display could reveal it instead, but on this panel its hidden area shows white
+  (tested with both non-display settings), so it isn't used.
+- **Preview** (web page, or `PREVIEW`): shows the forecast and then each photo once, for
+  their set times, also at night when the automatic cycles are paused. A tap or swipe stops it.
 - **Settings** (tap):
   - day brightness (±10 %) and night brightness (±5 %)
   - night mode on/off (the schedule itself is set with `NIGHT HH:MM HH:MM`)
   - 12/24-hour time
-  - forecast cycle on/off
+  - colour style (`<` / `>`, see Colours); the forecast cycle is switched on the web page or
+    with `WEATHER CYCLE`
   - weather location, chosen from the last 5 used locations (`<` / `>`). New locations are
     added with `WEATHER CITY`/`WEATHER LOC`, and later from the web UI (M9).
 - **Info** shows firmware, Wi-Fi and signal, IP, host name, NTP sync, weather age, uptime,
-  memory and the RTC. It refreshes every 2 s.
+  RAM and flash (used / total bars) and the RTC. It refreshes every 2 s. Three buttons along
+  the bottom open:
+  - **Wi-Fi:** forget the saved network after a confirmation (see Wi-Fi setup).
+  - **Storage:** how the 4 MB flash and the RAM are used, with a colour legend: firmware, the
+    update slot (kept free so updates can roll back), photos, system data, free. Tap to go back.
+  - **Update:** the clock checks GitHub for a newer release and offers **Install** (see
+    Firmware updates).
+
+| Info | Storage | Update |
+|------|---------|--------|
+| ![Info](docs/images/screen-info.png) | ![Storage](docs/images/screen-storage.png) | ![Update](docs/images/screen-update.png) |
 - **At night**, any touch raises the backlight to the day level for 10 s.
 - **12-hour mode** shows AM/PM before the minute bar. Hours 1–9 drop the leading digit and
   the time stays centred.
@@ -73,6 +107,131 @@ milestones.
   calibrated, a generic mapping is used, which can be ~15 px off near the edges.
   `TOUCH` prints raw and mapped readings for 10 s.
 
+## Web settings
+
+Open `http://chrono-node.local` (or the clock's IP, shown on the Info screen) from a device
+on the same network. The page shows live status and changes every setting while the clock
+stays online:
+
+- **Status:** time, Wi-Fi, IP, NTP sync, RTC, weather, current screen, uptime, memory.
+- **Display:** day/night brightness, night mode and its hours, 12/24-hour time, forecast cycle.
+- **Time:** time zone by name (common zones are mapped to POSIX strings, **Detect** uses the
+  browser's zone, or enter a custom POSIX string), NTP server, **Sync now**, and **Set clock
+  from this device** for networks without NTP (accurate to about a second).
+- **Weather location:** search a city or district (Open-Meteo geocoding, top 5 matches with
+  province, country and population, *Vietnam only* on by default), or enter coordinates, or
+  pick a recent location (✕ removes one from the list).
+- **Wi-Fi & device:** open the setup portal, forget the Wi-Fi network, reboot.
+
+![Web settings](docs/images/web-ui.png)
+
+The web server runs in the network task and is stopped while the setup portal is open
+(the portal needs port 80). Changes are sent as **console commands** to the main task, so
+they go through the same validation as the serial console, and all RTC and display work
+stays in one task.
+
+> **No password:** anyone on the same network can change settings (an open question; see #18).
+
+### JSON API
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/status` | Live status: time, Wi-Fi, NTP, RTC, weather, screen, uptime, memory |
+| `GET /api/settings` | All settings, including recent locations |
+| `GET /api/geocode?q=<name>[&country=VN]` | Up to 5 location matches |
+| `POST /api/command` | Body (`text/plain`): one console command. Returns `202 {"queued":true}` |
+| `GET /api/photo?n=<slot>` | A stored photo (JPEG) |
+| `POST /api/photo` | Multipart field `photo`: a baseline JPEG ≤ 64 KB, saved in a free slot. Returns `200 {"ok":true,"slot":n}` or `400 {"error":...}` |
+| `POST /api/ota/release?tag=vX.Y.Z&pin=NNNN` | The clock downloads and installs that GitHub release (`tag=latest`: the newest). Returns `202`, then restarts; failures show in `/api/status` → `ota.error` |
+| `POST /api/ota/pin` | Shows a one-time update PIN on the clock (2 min) |
+| `POST /api/ota?pin=NNNN` | Multipart firmware upload. Returns `200`, `403` (PIN) or `500` (image) |
+
+Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
+`WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
+`PHOTO`.
+Blocking or diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
+
+```bash
+curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-node.local/api/command
+```
+
+## Firmware updates (OTA) and releases
+
+**On the clock** (Info → **Update**): the clock asks GitHub for the newest release (it reads
+where `github.com/<repo>/releases/latest` redirects to, which isn't rate limited). If it's
+newer than the installed version, tap **Install**: the clock downloads and installs it, shows
+the progress, and restarts. Touching the clock proves someone is there, so no code is needed.
+
+**From the web page, the easy way** (*Firmware* section): the page asks GitHub for the
+latest release of `kReleaseRepo` (`Baremetal-Core/chrono-node`). If it's newer than the
+clock's version:
+
+1. The page shows **vX.Y.Z is available** with a link to the release notes. Click
+   **Install vX.Y.Z**.
+2. A 4-digit code appears at the bottom of the clock's screen for 2 minutes; type it into
+   the page. The page has no password, so the code proves someone is standing at the clock.
+3. The clock downloads `chrono-node-fw.bin` from the release itself, over HTTPS with
+   certificate checks (about a minute, progress on its screen), and restarts. The page
+   waits and confirms the new version.
+
+GitHub answers at most 60 update checks an hour per network address. On a shared address
+(office, mobile carrier, VPN) the check can be refused; the page then offers **Install
+latest release**, and the clock downloads `releases/latest/download/chrono-node-fw.bin`,
+which isn't limited.
+
+If the download fails, the clock keeps its current firmware and shows *Update failed: …*
+for a minute, and the page shows the reason. This needs the repository to be **public**:
+GitHub doesn't serve a private repository's release files without a login.
+
+**From the web page, with a file** (*Install a .bin file instead*):
+
+1. Click **Show code on the clock**.
+2. Enter the code, choose `chrono-node-fw.bin` from a release (or `.pio/build/cyd/` after
+   `pio run`) and click **Install**. The upload goes to the inactive OTA slot (about 35 s
+   over Wi-Fi), with progress shown on the clock and in the page, and then the clock reboots.
+
+From a terminal (the PIN still has to be read off the clock):
+
+```bash
+curl -X POST http://chrono-node.local/api/ota/pin
+curl -F firmware=@.pio/build/cyd/chrono-node-fw.bin "http://chrono-node.local/api/ota?pin=1234"
+curl -X POST "http://chrono-node.local/api/ota/release?tag=v0.13.0&pin=1234"   # from GitHub
+```
+
+**Rollback:** a newly installed image starts as *pending verify* and is confirmed after
+60 s of normal running (`[OTA] New firmware confirmed`). If it crashes or resets before
+that, the bootloader returns to the previous firmware on the next boot. `OTA` on the serial
+console shows the running slot and its state.
+
+To test rollback, build an image that crashes after 20 s, install it over OTA, and check
+that the clock comes back on the previous slot:
+
+```bash
+PLATFORMIO_BUILD_FLAGS="-DCHRONO_CRASH_AFTER_MS=20000" pio run
+```
+
+**Releases:** pushing a tag `vX.Y.Z` that matches `kFirmwareVersion` in `include/config.h`
+runs `.github/workflows/release.yml`, which builds and publishes a GitHub release with:
+
+| File | Use |
+|------|-----|
+| `chrono-node-fw.bin` | OTA image: installed by the web page's **Install** button, or uploaded by hand |
+| `chrono-node-fw-full.bin` | Complete image for a **new or recovered** board. **Erases all settings, including Wi-Fi** |
+| `SHA256SUMS` | Checksums |
+
+```bash
+git tag v0.10.0 && git push origin v0.10.0
+esptool.py --chip esp32 --port /dev/cu.usbserial-XXXX write_flash 0x0 chrono-node-fw-full.bin
+```
+
+> **Warning:** the full image covers the whole flash from 0x0, including the settings
+> area (NVS at 0x9000–0xDFFF), which `merge_bin` fills with blank bytes. Writing it erases
+> Wi-Fi credentials, the time zone, recent locations and touch calibration. To update a
+> configured clock, use the OTA image (web page) or `pio run -t upload`, which leave the
+> settings alone.
+
+A USB upload (`pio run -t upload`) always resets the boot slot to `app0`.
+
 ## Weather
 
 - The source is [Open-Meteo](https://open-meteo.com) (free, no API key): current conditions,
@@ -81,10 +240,10 @@ milestones.
 - The default location is Ho Chi Minh City. Change it with `WEATHER CITY <name>` (looked up
   with Open-Meteo geocoding) or `WEATHER LOC <lat> <lon> [name]`. The location is saved in NVS.
 - **Forecast screen:** the current conditions with feels-like, humidity and rain chance; the
-  next hours in 3 h steps; and today plus 3 days with rain probability. Until touch arrives
-  (M6), it cycles in every 2 minutes at second 45 for 10 s, behind a quick backlight dip.
-  It's never shown at night or while a notice is shown. Turn it off with `WEATHER CYCLE OFF`.
-  `WEATHER SHOW` shows it for 30 s.
+  next hours in 3 h steps; and today plus 3 days with rain probability. It cycles in every
+  2 minutes at second 45 for 10 s (settable), behind a quick backlight dip. It's never shown
+  at night or while a notice is shown. Turn it off with `WEATHER CYCLE OFF`. `WEATHER SHOW`
+  shows it now.
 - **Offline:** the last data stays on screen. After 2 h it's dimmed and marked "old". The
   data is kept in RAM only, so a reboot without network shows no weather.
 - Icons are drawn from anti-aliased circles, lines and rounded rectangles (sun, moon, clouds,
@@ -95,6 +254,115 @@ milestones.
 
 ```bash
 uv run --with cryptography tools/gen_ca_bundle.py
+```
+
+## Colours
+
+![Colour styles](docs/images/colour-styles.png)
+
+The clock face can be coloured in different styles (web page *Colours* section, the clock's
+Settings → **Colours** `<` `>`, or `COLOR`):
+
+| Style | Look |
+|-------|------|
+| **Time of day** (default) | The day-cycle palettes: dawn, day, dusk, evening |
+| **Rainbow flow** | A rainbow across the digits that keeps flowing (one screen width every 18 s) |
+| **Colour cycle** | The whole clock slowly shifts through all colours (once a minute) |
+| **Per digit** | Each digit its own colour, turning slowly (every 30 s) |
+| **Sunset, Ocean, Aurora, Neon, Fire, Candy** | Fixed gradients |
+| **Custom** | Two colours you pick on the web page (top and bottom) |
+| **Mix** | Takes turns through the colourful styles, changing every 1–60 minutes (default 5) |
+
+**Speed** of the moving styles (Rainbow flow, Colour cycle, Per digit): Slow (×0.5), Normal,
+Fast (×2) or Very fast (×4).
+
+Effects can be added to any style:
+- **Shine:** a glint sweeps across the digits every 8 s.
+- **Pulse:** the colon gently breathes.
+- **Glow:** a soft halo around the digits.
+
+At night the clock keeps its dim night colours and the effects pause.
+
+How it works: colours come from a *colour field*, a top and a bottom colour for every screen
+column. Static styles fill it with one gradient (exactly the old look); rainbow and per-digit
+styles vary it across the screen. Animated styles repaint the time, the bar and the date 12
+times a second (8 with glow). The glyph shapes of the settled digits and the date are kept
+between frames and only re-coloured, so a frame takes ~30 ms (~46 ms with glow). The shine
+runs at 20 fps during its 1.4 s sweep. The status icon, buttons and banner use the field's
+middle colour.
+
+Memory: the buffers for animation (glyph shapes, a date strip, glow) are allocated only
+while a moving style or an effect is on, and freed otherwise. The network task needs a
+~45 KB free block for HTTPS (weather, updates); `INFO` shows the largest free block.
+
+The date takes the clock's colours too, in a bold 24 px face: the weekday at full strength,
+the rest a little dimmer (long months shorten to three letters to fit). The weather line under
+it shows the temperature in the same bold face and the clock's colour. The minute bar fills smoothly through the minute instead of stepping every second,
+and it's drawn off-screen and sent in one go, so it never tears.
+
+## Scrolling banner
+
+![Banner on the clock face](docs/images/banner.png)
+
+Your own short messages scroll across the bottom line of the clock face.
+
+- **Messages:** up to 5, each up to 120 bytes of UTF-8.
+- **Characters:** Latin and Vietnamese letters are supported (e.g. "Chúc mừng năm mới"), plus
+  curly quotes, dashes, • and …. Emoji and other scripts aren't in the font, so they're skipped.
+- **Timing:** each message has its own timer: every 1–60 minutes (at second 15), or non-stop.
+  Messages due in the same minute scroll one after another with a 2 s pause. Non-stop
+  messages take turns in between. New messages start at every minute.
+- **Speed:** slow (45 px/s), normal (70 px/s) or fast (110 px/s). The text uses the clock's
+  time-of-day colours and fades out at both edges.
+- **Sharing the screen:**
+  - While a message scrolls, it replaces the weather line.
+  - Notices (Wi-Fi setup, update PIN, RTC warnings) take priority over the banner.
+  - Switching screens stops the current message. This includes the forecast cycle and
+    swiping.
+  - The banner keeps running at night, in the night colours.
+- **Web page:** the Banner section turns it on or off, sets the speed, and edits the messages
+  and each one's timer. **Save messages** replaces the whole list; **Show now** scrolls the next
+  message immediately.
+- **Serial console:** `BANNER` commands (listed below).
+
+![Banner section of the web page](docs/images/web-banner.png)
+
+## Photos
+
+Your own photos can be shown on the clock, for example a picture of someone you love.
+
+- **Adding a photo:** on the web page's Photos section, choose **+ Add photo** and pick a
+  picture (JPEG, PNG, or HEIC on an iPhone). The browser shows exactly what the clock will
+  show: drag to frame it, and use the slider or mouse wheel to zoom. **Upload to clock**
+  sends a 320×240 JPEG of at most 64 KB (usually 20–40 KB) and shows it on the clock.
+- **What's sent:** the original photo never leaves your phone or computer; only the small
+  cropped version is uploaded. Photos aren't part of the firmware or the repository.
+- **Storage:** up to 5 photos, kept in the LittleFS data partition (384 KB). Firmware
+  updates over the web or `pio run -t upload` keep them. Writing the `-full` image at 0x0
+  (see Firmware updates) erases them, like the Wi-Fi settings.
+- **On the clock:**
+  - The **Photo** screen is in the swipe order. Tap it for the next photo. It returns to the
+    clock after 30 s (settable).
+  - The **slideshow** shows the next photo for 12 s (settable) every 5 minutes, at second 28, so it
+    doesn't collide with the banner or forecast. You can choose every 1–60 minutes, or off.
+  - The slideshow never runs at night, or while a notice is showing (setup, update PIN).
+    You can still swipe to your photos at night.
+- **Web page:** thumbnails of the stored photos with each one's size. Tap one to show it on
+  the clock now, or ✕ to delete it. A storage bar shows each photo's share, file-system
+  overhead (files use whole 4 KB blocks) and free space.
+- **Storage section of the web page** (like a phone's storage screen): one bar and a list
+  for each of flash and RAM, with every part's size and what it's for. Flash (4 MB):
+  - firmware, in a 1.75 MB slot
+  - the update slot: 1.75 MB, kept free so web updates can roll back
+  - photos: a 384 KB partition
+  - system: bootloader, settings (including Wi-Fi), crash log, 128 KB
+  - free: room left for photos and for the firmware to grow
+- **Serial console:** `PHOTO` commands (listed below). Photos larger than the screen, for
+  example uploaded with curl, are scaled down by 1/2, 1/4 or 1/8 and centred. Progressive
+  JPEGs are rejected because the decoder (tjpgd) can't read them.
+
+```bash
+curl -F "photo=@me.jpg" http://chrono-node.local/api/photo   # baseline JPEG, max 64 KB
 ```
 
 ## Brightness and night mode
@@ -109,7 +377,7 @@ uv run --with cryptography tools/gen_ca_bundle.py
   in NVS (`BRIGHT`, `NIGHT` commands below).
 - There's no automatic brightness. The CYD's on-board light sensor (LDR on GPIO34) read 0
   under any light on this unit, whether covered or under a phone flashlight. An external I2C
-  light sensor could add it later (see roadmap M12).
+  light sensor could add it later (see roadmap M14).
 
 Fonts are generated from the Inter variable font (SIL Open Font License, see
 `tools/fonts/OFL.txt`) into `src/fonts/*.h` by `tools/gen_fonts.py`. The headers are
@@ -223,6 +491,16 @@ connecting, scanning and the portal never pause the clock.
 
 Credentials are stored in ESP32 NVS by the Wi-Fi stack, never in the repository.
 
+**Moving to another place:**
+- **Automatic:** after a reboot where the saved network isn't in range, the portal opens on
+  its own for 180 s.
+- **On the clock:** swipe to **Info**, tap **Wi-Fi**, then tap **Forget**. A
+  confirmation screen names the saved network and the setup network before anything is
+  erased; Cancel or 30 s without touch leaves everything as it was.
+- **Web page or serial console:** **Forget Wi-Fi**, or `WIFI FORGET`, does the same.
+
+![Change Wi-Fi confirmation](docs/images/screen-wifi-reset.png)
+
 Behaviour:
 - Before each attempt the clock scans and connects to the **strongest** access point for the
   saved network, by BSSID. Office networks broadcast one name from many access points, and
@@ -263,14 +541,46 @@ NIGHT 22:00 06:30           # set and save the night window (may wrap past midni
 NIGHT OFF                   # disable night mode (NIGHT ON to re-enable)
 WEATHER                     # location, current weather, 4-day forecast, last error
 WEATHER UPDATE              # fetch now
-WEATHER SHOW                # show the forecast screen for 30 s
+WEATHER SHOW                # show the forecast screen now (for its set time)
 WEATHER CITY Da Nang        # look up a city and save it as the location
 WEATHER LOC 10.82 106.63 Home   # save a location by coordinates (name optional)
+WEATHER FORGET Home         # remove a location from the recent list
 WEATHER CYCLE OFF           # stop the periodic forecast screen (ON to re-enable)
+BANNER                      # banner settings and messages
+BANNER ADD Chúc mừng năm mới!   # add a message (up to 5, 120 bytes each)
+BANNER SET 2 Họp lúc 10:00  # replace message 2
+BANNER DEL 2                # delete message 2 (BANNER CLEAR deletes all)
+BANNER ON                   # enable the banner (BANNER OFF to disable)
+BANNER EVERY 2 5            # message 2 every 5 min (0 = non-stop, 1-60)
+BANNER EVERY 5              # every message (and new ones) every 5 min
+BANNER SPEED 70             # scroll speed in px/s (20-200)
+BANNER SHOW                 # scroll the next message now
+PHOTO                       # stored photos, sizes, slideshow period, storage use
+PHOTO SHOW                  # show the next photo now (PHOTO SHOW 2 for photo 2)
+PHOTO DEL 2                 # delete photo 2 (PHOTO CLEAR deletes all)
+PHOTO EVERY 5               # slideshow every 5 min (0 = off, 1-60)
+COLOR                       # colour style, custom colours, effects, and the list of styles
+COLOR RAINBOW               # time, rainbow, cycle, digits, sunset, ocean, aurora, neon, fire, candy, custom
+COLOR CUSTOM #FFE600 #FF0080   # pick the custom style's top and bottom colours, and use it
+EFFECT GLOW ON              # SHINE, PULSE or GLOW, ON or OFF
+COLOR SPEED FAST            # moving colours: SLOW, NORMAL, FAST, VERYFAST
+COLOR MIX                   # take turns through the colourful styles
+COLOR MIX EVERY 5           # Mix changes style every 5 minutes (1-60)
+TRANSITION WIPE             # screen changes: FADE, WIPE, SLIDE, BLINDS, NONE
+TIMEOUT                     # how long automatic screens stay up, and the idle timeout
+TIMEOUT FORECAST 10         # the forecast stays up 10 s (3-120)
+TIMEOUT PHOTO 12            # each photo stays up 12 s (3-120)
+TIMEOUT IDLE 30             # other screens go back to the clock after 30 s without touch (5-600)
+PREVIEW                     # show the forecast and each photo once now, even at night
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
-SCREEN SETTINGS             # go to CLOCK, FORECAST, INFO or SETTINGS
+SCREEN SETTINGS             # CLOCK, FORECAST, PHOTO, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
+SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web page)
+REBOOT                      # restart the clock
+OTA                         # running slot, OTA state (pending/valid), next slot
+OTA CHECK                   # ask GitHub for the newest release (shown on the Update screen)
+OTA INSTALL v0.14.0         # download and install a release (or: OTA INSTALL latest)
 HELP
 ```
 
@@ -324,20 +634,25 @@ src/time_utils.*                UTC <-> local conversion using the POSIX TZ
 src/settings.*                  NVS-backed settings (timezone, NTP server)
 src/net_manager.*               Wi-Fi task: connect/backoff, WiFiManager portal, mDNS, SNTP
 src/clock_sync.*                DS3231 <-> system clock <-> NTP discipline
-src/display_manager.*           UI: status bar, rolling digits, minute bar, date, notices, SHOT
+src/display_manager.*           UI: status bar, rolling digits, minute bar, date, notices, banner, SHOT
 src/ui_theme.*                  day/night UI colours and time-of-day gradient palettes
 src/backlight.*                 gamma-corrected PWM backlight with fades
 src/weather.*                   Open-Meteo fetch/parse (HTTPS + ArduinoJson), geocoding
 src/weather_icons.*             weather icons from anti-aliased primitives
 src/touch.*                     XPT2046 driver, affine calibration, tap/swipe gestures
 src/screens.h                   screen navigation requests (SCREEN command)
+src/web_server.*                LAN web server and JSON API (network task)
+src/web_page.h                  the embedded settings page (HTML/CSS/JS)
+src/ota.*                       update PIN, upload progress, rollback confirmation
+.github/workflows/release.yml   tag -> GitHub release with OTA and full flash images
 src/certs/ca_bundle.h           generated Mozilla root CA bundle (do not edit)
 tools/gen_ca_bundle.py          CA bundle generator
 src/fonts/*.h                   generated Inter smooth fonts (do not edit)
 tools/gen_fonts.py              font generator (FreeType -> TFT_eSPI VLW arrays)
 tools/screenshot.py             screen capture over USB serial
 tools/fonts/                    Inter variable font + OFL licence
-src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, TOUCH, SCREEN, ...)
+src/photos.*                    photo storage in LittleFS: slots, uploads, JPEG header check
+src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)
 ```
 
 ## Troubleshooting
@@ -347,13 +662,17 @@ src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, TO
   failure:
   `2` auth expired (the access point didn't answer), `15`/`202` wrong password,
   `201` network not found, `203` association rejected, `204` handshake timeout.
-  WPA2-Enterprise (802.1X, e.g. `Axon_Corp`) isn't supported. Run `WIFI PORTAL` to
+  WPA2-Enterprise (802.1X, common on corporate networks) isn't supported. Run `WIFI PORTAL` to
   re-enter credentials.
-- **Office Wi-Fi with many access points (e.g. `Axon_Open`):** connecting works, but some
+- **Office Wi-Fi with many access points:** connecting works, but some
   access points often ignore the ESP32's authentication (reason 2) even at −50 dBm, so a
   connection can take a few retries (~10–90 s). If it never connects, ask IT whether the
   network uses MAC allow-listing or client exclusion. The clock's Wi-Fi MAC is shown by
-  `esptool` at upload (e.g. `48:af:f3:70:57:a0`).
+  `esptool` at upload (e.g. `24:0a:c4:12:34:56`).
+- **Clock restarts a few seconds after joining Wi-Fi (`task_wdt: IDLE0`):** fixed in v0.12.
+  A TLS handshake with Open-Meteo takes ~7 s on the ESP32, mostly one CPU-bound step
+  (software ECDSA P-384 certificate checks). With the default 5 s task watchdog this reset
+  the clock on every weather update. The watchdog now allows 15 s (`kTaskWatchdogS`).
 - **Time is off by whole hours after upgrading from v0.1.0:** v0.1.0 stored local time in
   the DS3231. Run `SET` once with the current local time.
 - **White background, wrong or washed-out colours:** CYD batches use different panels. This

@@ -19,9 +19,17 @@
 //   WEATHER LOC <lat> <lon> [name]  save a location by coordinates
 //   WEATHER CYCLE ON|OFF      periodic forecast screen
 //   FORMAT 12|24              12- or 24-hour clock (saved)
+//   BANNER                    list banner messages and settings
+//   BANNER ADD <text>         add a message (UTF-8, up to 120 bytes; max 5)
+//   BANNER SET <n> <text>     replace message n;  BANNER DEL <n>;  BANNER CLEAR
+//   BANNER ON|OFF             enable/disable;  BANNER EVERY <min> (0 = continuous)
+//   BANNER SPEED <px/s>       scroll speed (20-200);  BANNER SHOW: scroll the next one now
 //   TOUCH                     print touch readings for 10 s
 //   TOUCH CAL                 on-screen touch calibration (saved)
 //   SCREEN <name>             go to CLOCK, FORECAST, INFO or SETTINGS
+//   SETEPOCH <unix>           set the DS3231 from a UTC Unix time (used by the web UI)
+//   REBOOT                    restart the clock
+//   OTA                       firmware partitions and update state
 //   TEST                      colour test pattern for 20 s (panel variant check)
 //   TEST PALETTE              the five day-cycle palettes side by side for 30 s
 //   SHOT                      dump the screen (tools/screenshot.py turns it into a PNG)
@@ -34,5 +42,8 @@ class RtcManager;
 // Non-blocking; call from loop(). Returns true if the RTC time, timezone,
 // brightness or night schedule changed.
 bool serialConsolePoll(RtcManager& rtc, DisplayManager& display);
+
+// Runs one command line as if typed (used by the web UI). Main task only.
+bool serialConsoleExecute(RtcManager& rtc, DisplayManager& display, const char* command);
 
 void serialConsolePrintHelp();

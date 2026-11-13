@@ -24,15 +24,21 @@ FONT_FILE = ROOT / "tools" / "fonts" / "Inter-Variable.ttf"
 OUT_DIR = ROOT / "src" / "fonts"
 
 ASCII = "".join(chr(c) for c in range(0x21, 0x7F))
+# Vietnamese: precomposed vowels with tone marks plus ă â đ ê ô ơ ư.
+VIETNAMESE = ("ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõùúýĂăĐđĨĩŨũƠơƯư"
+              + "".join(chr(c) for c in range(0x1EA0, 0x1EFA)))
+# Punctuation that phones and editors insert automatically: – — ‘ ’ “ ” • …
+PUNCT = "\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u2026"
 DIGITS = "0123456789"
 
 # name, pixel size, weight (100-900), optical size (14-32), characters
 FONTS = [
     ("font_time", 104, 700, 32, DIGITS + ":"),
     ("font_seconds", 26, 700, 24, DIGITS),
-    ("font_date", 20, 500, 20, ASCII + "\u00b0\u00b7"),
+    ("font_date", 20, 500, 20, ASCII + "\u00b0\u00b7" + PUNCT + VIETNAMESE),
     ("font_temp", 54, 700, 32, DIGITS + "-\u00b0"),
-    ("font_small", 15, 500, 14, ASCII + "\u00b0\u00b7"),
+    ("font_face", 24, 700, 24, ASCII + "\u00b0\u00b7"),  # clock face: date, weather temperature
+    ("font_small", 15, 500, 14, ASCII + "\u00b0\u00b7" + PUNCT + VIETNAMESE),
 ]
 
 

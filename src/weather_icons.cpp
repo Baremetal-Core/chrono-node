@@ -67,11 +67,10 @@ void dots(TFT_eSprite& s, float cx, float top, float size, int n, uint16_t c) {
 }  // namespace
 
 void draw(TFT_eSprite& s, int16_t cx, int16_t cy, int16_t size, weather::Icon icon, bool isDay,
-          bool mono, uint16_t monoColor) {
+          uint16_t bg, bool mono, uint16_t monoColor) {
   Palette p = kColor;
   if (mono) p = {monoColor, monoColor, monoColor, monoColor, monoColor,
                  monoColor, monoColor, monoColor, monoColor};
-  const uint16_t bg = s.readPixel(cx, cy - size / 2);
   const float w = size * 0.92f;
   const float cloudBottom = cy + size * 0.12f;  // cloud sits above any precipitation
 

@@ -14,8 +14,31 @@
 #include "ui_theme.h"
 #include "weather.h"
 
+// Usage bar on an info row: used out of `total`; the rest is free.
+struct InfoBar {
+  uint32_t total = 0;  // 0: no bar
+  uint32_t used = 0;
+};
+
+// The storage screen: how the flash chip and RAM are used (bytes).
+struct StorageView {
+  uint32_t chip, firmware, updateSlot, photos, system;
+  uint32_t heapTotal, heapUsed, heapPeak;
+};
+
+// The software update screen.
+struct UpdateView {
+  char installed[24];  // "v0.13.0"
+  char status[48];     // main line, e.g. "v0.14.0 is available"
+  char detail[96];     // smaller line under it; " | " starts a second line
+  char action[16];     // right button label ("Install", "Check again"); empty: none
+  bool actionIsInstall;
+};
+
 struct InfoView {
-  char rows[9][2][40];  // label, value
+  static constexpr int kMaxRows = 10;
+  char rows[kMaxRows][2][40];  // label, value
+  InfoBar bars[kMaxRows];
   int count = 0;
 };
 
@@ -25,15 +48,23 @@ struct SettingsView {
   bool nightOn;
   char nightWindow[16];  // e.g. "22:00-06:30"
   bool hour12;
-  bool cycleOn;
+  char colorName[24];  // current colour style
   char place[32];
   int recentIndex;  // position of the current place in the recent list (-1 if not in it)
   int recentCount;
 };
 
 enum class SettingsAction : uint8_t {
-  None, DayMinus, DayPlus, NightMinus, NightPlus, NightToggle, FormatToggle, CycleToggle,
-  LocationPrev, LocationNext
+  None, DayMinus, DayPlus, NightMinus, NightPlus, NightToggle, FormatToggle, ColorPrev,
+  ColorNext, LocationPrev, LocationNext
+};
+
+// How the clock face is coloured (see theme::Style and the kFx flags).
+struct ColorSettings {
+  theme::Style style = theme::Style::TimeOfDay;
+  theme::Palette custom = {0, 0};
+  uint8_t effects = 0;
+  uint8_t speedQuarters = 4;  // animation speed: 4 = x1
 };
 
 struct StatusInfo {
@@ -64,6 +95,12 @@ class DisplayManager {
   // Bottom notice line; nullptr clears it. Redrawn only when changed.
   void setNotice(const char* text, NoticeKind kind);
 
+  // Scrolls `text` (UTF-8) once across the clock face's bottom line in the
+  // time-of-day colours. Returns false if it can't start now (another screen,
+  // or a notice is showing). Animated by tick().
+  bool startBanner(const char* text, uint8_t pxPerSecond);
+  bool bannerActive() const { return bannerActive_; }
+
   // Weather shown on the clock face's bottom line when there is no notice.
   // Pass nullptr to clear. `stale` dims it and marks it as old.
   void setWeather(const weather::Data* data, bool stale);
@@ -74,13 +111,32 @@ class DisplayManager {
   void showInfoScreen(const InfoView& view);
   void showSettingsScreen(const SettingsView& view);
   SettingsAction settingsHitTest(int16_t x, int16_t y) const;
+  // The info screen's buttons along the bottom.
+  enum class InfoButton : uint8_t { None, Wifi, Storage, Update };
+  InfoButton infoButtonHit(int16_t x, int16_t y) const;
+  void showStorageScreen(const StorageView& view);
+  // Redraws in place when called again.
+  void showUpdateScreen(const UpdateView& view);
+
+  // Confirmation before forgetting the Wi-Fi network: Cancel / Forget. The
+  // update screen uses the same two buttons (Back / action).
+  void showWifiResetScreen(const char* savedSsid, const char* portalSsid);
+  enum class ConfirmHit : uint8_t { None, Cancel, Confirm };
+  ConfirmHit confirmHitTest(int16_t x, int16_t y) const;
 
   // Leaves the forecast/info/settings screen; the clock face is repainted on
   // the next showTime().
   void endOverlayScreen();
 
+  // Full-screen photo (a JPEG file in LittleFS), scaled down to fit and
+  // centred on black. Returns false if it can't be decoded.
+  bool showPhoto(const char* path);
+
   // Touch calibration target (crosshair) with an instruction line.
   void showCalibrationTarget(int16_t x, int16_t y, const char* text);
+
+  // Colour style and effects for the clock face; repaints it if it's showing.
+  void setColors(const ColorSettings& colors);
 
   // 12-hour clock with AM/PM.
   void setHour12(bool enabled);
@@ -102,9 +158,15 @@ class DisplayManager {
   // Streams the screen as big-endian RGB565 between "[SHOT] BEGIN w h" and
   // "[SHOT] END" lines. Blocks for ~14 s at 115200 baud (development only).
   void screenshot(Print& out);
+  // Screen change animations (theme::Transition): animates the old screen
+  // away, leaving it black. `dir` +1: towards the left, as when the new screen
+  // comes from the right (swipe left); -1 the other way. Fade and None don't
+  // animate here; the new screen then fades in.
+  void transitionOut(theme::Transition t, int dir);
 
  private:
-  enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate };
+  enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo, Confirm,
+                    Storage, Update };
   struct Roll {
     char from = ' ';
     char to = ' ';
@@ -116,16 +178,22 @@ class DisplayManager {
   void drawStatusBar();
   void drawNotice();
   void drawWeatherLine();
+  void drawBanner(uint32_t now);
   void drawDate(const struct tm& local);
   void drawColon();
   void drawBigDigit(int index, float progress);
   void drawSeconds(float progress);
-  void drawProgress(int targetPx, bool animate);
+  void drawBar(bool full, bool recolor);
+  void syncFxBuffers();
   void drawMeridiem();
   void drawScreenTitle(const char* title);
   int16_t barX() const;
   int16_t barW() const;
   void setPalette(const theme::Palette& palette);
+  theme::Palette basePalette(const struct tm& local, uint32_t now);
+  void refreshField(uint32_t now);
+  uint16_t barColor(int x) const;
+  bool effectsOn() const;
 
   Mode mode_ = Mode::None;
   bool spritesOk_ = false;
@@ -136,11 +204,8 @@ class DisplayManager {
   Roll secRoll_[2];
   bool secAnimating_ = false;
 
-  int barPx_ = -1;      // drawn bar length
-  int barFrom_ = 0;
-  int barTo_ = 0;
-  uint32_t barStartMs_ = 0;
-  bool barAnimating_ = false;
+  int barPx_ = -1;              // drawn bar length (-1: redraw everything)
+  uint32_t secondStartMs_ = 0;  // millis() when the shown second began (smooth bar)
 
   theme::Palette pal_{0, 0};
   bool palValid_ = false;
@@ -160,5 +225,15 @@ class DisplayManager {
   uint32_t testUntilMs_ = 0;
   bool hour12_ = false;
   int16_t timeOffset_ = 0;
+  bool bannerOk_ = false;
+  bool bannerActive_ = false;
+  char bannerText_[128] = "";
+  int16_t bannerW_ = 0;
+  uint8_t bannerSpeed_ = 70;
+  uint32_t bannerStartMs_ = 0;
   bool pm_ = false;
+  ColorSettings colors_;
+  uint32_t lastAnimMs_ = 0;
+  uint32_t animPhaseMs_ = 0;  // animation clock, advancing at the chosen speed
+  uint32_t lastPhaseMs_ = 0;
 };

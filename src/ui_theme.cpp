@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <strings.h>
 
 namespace theme {
 namespace {
@@ -107,6 +108,104 @@ int namedPaletteCount() { return sizeof(kNamed) / sizeof(kNamed[0]); }
 Palette namedPalette(int index, const char** name) {
   if (name) *name = kNames[index];
   return {blend(kNamed[index][0], kNamed[index][0], 0, 1), blend(kNamed[index][1], kNamed[index][1], 0, 1)};
+}
+
+uint16_t hsv(float h, float s, float v) {
+  h = fmodf(h, 360);
+  if (h < 0) h += 360;
+  return fromHsv({h, s, v});
+}
+
+namespace {
+
+struct StyleInfo {
+  const char* key;
+  const char* name;
+  Rgb top, bottom;  // presets only
+};
+
+// Presets are saturated like the day-cycle palettes (pastels wash out).
+constexpr StyleInfo kStyles[] = {
+    {"time", "Time of day", {}, {}},
+    {"rainbow", "Rainbow flow", {}, {}},
+    {"cycle", "Colour cycle", {}, {}},
+    {"digits", "Per digit", {}, {}},
+    {"sunset", "Sunset", {255, 176, 0}, {255, 45, 111}},
+    {"ocean", "Ocean", {0, 229, 255}, {41, 98, 255}},
+    {"aurora", "Aurora", {61, 255, 138}, {138, 92, 255}},
+    {"neon", "Neon", {0, 255, 240}, {255, 0, 200}},
+    {"fire", "Fire", {255, 224, 0}, {255, 42, 0}},
+    {"candy", "Candy", {255, 138, 216}, {155, 92, 255}},
+    {"custom", "Custom", {}, {}},
+    {"mix", "Mix", {}, {}},
+};
+static_assert(sizeof(kStyles) / sizeof(kStyles[0]) == static_cast<size_t>(Style::Count), "styles");
+
+}  // namespace
+
+const char* styleName(Style s) { return kStyles[static_cast<int>(s) % static_cast<int>(Style::Count)].name; }
+
+const char* styleKey(Style s) { return kStyles[static_cast<int>(s) % static_cast<int>(Style::Count)].key; }
+
+bool styleFromKey(const char* key, Style& out) {
+  for (int i = 0; i < static_cast<int>(Style::Count); ++i) {
+    if (strcasecmp(key, kStyles[i].key) == 0) {
+      out = static_cast<Style>(i);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool styleAnimated(Style s) {
+  return s == Style::Rainbow || s == Style::Cycle || s == Style::PerDigit;
+}
+
+bool presetPalette(Style s, Palette& out) {
+  if (s < Style::Sunset || s > Style::Candy) return false;
+  const StyleInfo& i = kStyles[static_cast<int>(s)];
+  out = {rgb(i.top.r, i.top.g, i.top.b), rgb(i.bottom.r, i.bottom.g, i.bottom.b)};
+  return true;
+}
+
+Style mixStyleAt(int minuteOfDay, uint8_t everyMinutes) {
+  static constexpr Style kTurns[] = {Style::Rainbow, Style::Sunset, Style::Cycle, Style::Ocean,
+                                     Style::PerDigit, Style::Aurora, Style::Neon, Style::Fire,
+                                     Style::Candy};
+  constexpr int n = sizeof(kTurns) / sizeof(kTurns[0]);
+  const int turn = minuteOfDay / (everyMinutes ? everyMinutes : 1);
+  return kTurns[turn % n];
+}
+
+namespace {
+constexpr const char* kSpeedKeys[] = {"slow", "normal", "fast", "veryfast"};
+constexpr const char* kTransitionKeys[] = {"fade", "wipe", "slide", "blinds", "none"};
+}  // namespace
+
+const char* speedKey(Speed s) { return kSpeedKeys[static_cast<int>(s) % 4]; }
+
+bool speedFromKey(const char* key, Speed& out) {
+  for (int i = 0; i < 4; ++i) {
+    if (strcasecmp(key, kSpeedKeys[i]) == 0) {
+      out = static_cast<Speed>(i);
+      return true;
+    }
+  }
+  return false;
+}
+
+uint8_t speedQuarters(Speed s) { return 2 << (static_cast<int>(s) % 4); }
+
+const char* transitionKey(Transition t) { return kTransitionKeys[static_cast<int>(t) % 5]; }
+
+bool transitionFromKey(const char* key, Transition& out) {
+  for (int i = 0; i < 5; ++i) {
+    if (strcasecmp(key, kTransitionKeys[i]) == 0) {
+      out = static_cast<Transition>(i);
+      return true;
+    }
+  }
+  return false;
 }
 
 uint16_t mix(uint16_t a, uint16_t b, uint8_t t) {

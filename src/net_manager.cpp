@@ -12,8 +12,10 @@
 
 #include "clock_sync.h"
 #include "config.h"
+#include "ota.h"
 #include "settings.h"
 #include "weather.h"
+#include "web_server.h"
 
 namespace net {
 namespace {
@@ -145,6 +147,7 @@ void scheduleRetry() {
 }
 
 void openPortal(uint32_t timeoutS) {
+  web::stop();  // the portal needs port 80
   clearEvents();
   WiFi.disconnect();
   wm.setConfigPortalTimeout(timeoutS);
@@ -183,6 +186,7 @@ void onConnected() {
     if (mdnsStarted) Serial.printf("[WIFI] mDNS: %s.local\n", config::kHostname);
   }
   startNtp();
+  web::start();
 }
 
 void onAttemptFailed(const char* why) {
@@ -341,7 +345,11 @@ void step() {
       break;
 
     case State::Connected:
-      if (!evtDisconnected) weather::service();
+      if (!evtDisconnected) {
+        web::loop();
+        ota::serviceNet();  // a requested release install (restarts on success)
+        weather::service();
+      }
       if (evtDisconnected) {
         Serial.printf("[WIFI] Disconnected (reason %u)\n", evtReason);
         clearEvents();
@@ -392,6 +400,11 @@ void ip(char* buf, size_t len) {
   } else if (len) {
     buf[0] = '\0';
   }
+}
+
+void savedSsid(char* buf, size_t len) {
+  // Reads the stored station config (esp_wifi_get_config is safe from any task).
+  strlcpy(buf, wm.getWiFiSSID(true).c_str(), len);
 }
 
 const char* portalSsid() { return apSsid; }

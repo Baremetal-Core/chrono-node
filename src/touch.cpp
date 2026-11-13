@@ -30,6 +30,7 @@ uint32_t downMs = 0;
 Point start = {0, 0};
 Point last = {0, 0};
 bool havePos = false;
+bool held = false;  // this touch already reported Hold
 
 int16_t bestTwoAvg(int16_t a, int16_t b, int16_t c) {
   int16_t ab = abs(a - b), ac = abs(a - c), bc = abs(b - c);
@@ -150,6 +151,7 @@ Event poll() {
       down = true;
       downMs = now;
       havePos = false;
+      held = false;
       ev.gesture = Gesture::Down;
     }
     if (z >= config::kTouchFirmPressure) {
@@ -160,13 +162,20 @@ Event poll() {
       }
       last = p;
     }
-    if (ev.gesture == Gesture::Down) ev.at = havePos ? start : Point{0, 0};
+    if (ev.gesture == Gesture::Down) {
+      ev.at = havePos ? start : Point{0, 0};
+    } else if (!held && havePos && now - downMs >= config::kTouchHoldMs &&
+               abs(last.x - start.x) <= kTapMaxMovePx && abs(last.y - start.y) <= kTapMaxMovePx) {
+      held = true;
+      ev.gesture = Gesture::Hold;
+      ev.at = start;
+    }
     return ev;
   }
   if (!down || ++upCount < kReleaseSamples) return ev;
 
   down = false;
-  if (!havePos) return ev;  // never pressed firmly enough for a reliable position
+  if (!havePos || held) return ev;  // no reliable position, or already reported as Hold
   const int16_t dx = last.x - start.x;
   const int16_t dy = last.y - start.y;
   ev.at = start;

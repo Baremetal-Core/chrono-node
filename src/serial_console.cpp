@@ -11,16 +11,19 @@
 #include "config.h"
 #include "display_manager.h"
 #include "net_manager.h"
+#include "ota.h"
+#include "photos.h"
 #include "rtc_manager.h"
 #include "screens.h"
 #include "settings.h"
 #include "time_utils.h"
 #include "touch.h"
+#include "ui_theme.h"
 #include "weather.h"
 
 namespace {
 
-constexpr size_t kLineMax = 96;
+constexpr size_t kLineMax = 200;  // banner text is up to 120 bytes of UTF-8
 char line[kLineMax];
 size_t lineLen = 0;
 bool overflow = false;
@@ -142,6 +145,259 @@ void calibrateTouch(DisplayManager& display) {
   }
 }
 
+void printBanners() {
+  Serial.printf("[BANNER] %s, %u px/s, %d message(s), new ones every %u min\n",
+                settings::bannerEnabled() ? "on" : "off", settings::bannerSpeed(),
+                settings::bannerCount(), settings::bannerEveryMinutes());
+  for (int i = 0; i < settings::bannerCount(); ++i) {
+    const uint8_t every = settings::bannerEveryMinutes(i);
+    char when[16];
+    if (every == 0) {
+      strlcpy(when, "continuous", sizeof(when));
+    } else {
+      snprintf(when, sizeof(when), "every %u min", every);
+    }
+    Serial.printf("[BANNER]   %d (%s): %s\n", i + 1, when, settings::bannerText(i));
+  }
+}
+
+bool handleBanner(const char* arg) {
+  while (*arg == ' ') ++arg;
+  bool ok = true;
+  int n = 0, m = 0, consumed = 0;
+  if (*arg == '\0') {
+    printBanners();
+    return false;
+  } else if (strncasecmp(arg, "ADD ", 4) == 0) {
+    ok = settings::addBanner(arg + 4);
+  } else if (strncasecmp(arg, "SET ", 4) == 0 && sscanf(arg + 4, "%d %n", &n, &consumed) == 1 &&
+             consumed > 0) {
+    ok = settings::setBanner(n - 1, arg + 4 + consumed);
+  } else if (strncasecmp(arg, "DEL ", 4) == 0 && sscanf(arg + 4, "%d", &n) == 1) {
+    ok = settings::removeBanner(n - 1);
+  } else if (strcasecmp(arg, "CLEAR") == 0) {
+    ok = settings::clearBanners();
+  } else if (strcasecmp(arg, "ON") == 0 || strcasecmp(arg, "OFF") == 0) {
+    ok = settings::setBannerEnabled(strcasecmp(arg, "ON") == 0);
+  } else if (strncasecmp(arg, "EVERY ", 6) == 0 && (consumed = sscanf(arg + 6, "%d %d", &n, &m)) >= 1) {
+    // "EVERY min" sets all messages; "EVERY n min" sets message n.
+    const int index = consumed == 2 ? n - 1 : -1;
+    const int minutes = consumed == 2 ? m : n;
+    ok = minutes >= 0 && minutes <= 60 && (index >= 0 || consumed == 1) &&
+         settings::setBannerEveryMinutes(index, minutes);
+  } else if (strncasecmp(arg, "SPEED ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1 && n > 0) {
+    ok = n <= 255 && settings::setBannerSpeed(n);
+  } else if (strcasecmp(arg, "SHOW") == 0) {
+    requestBannerNow();
+    return false;
+  } else {
+    Serial.println("[CONSOLE] Usage: BANNER [ADD text|SET n text|DEL n|CLEAR|ON|OFF|EVERY [n] min|"
+                   "SPEED px/s|SHOW]");
+    return false;
+  }
+  if (!ok) {
+    Serial.printf("[CONSOLE] ERROR: rejected (max %d messages of %u bytes, every 0-60 min, "
+                  "speed 20-200 px/s)\n", config::kBannerMaxMessages, (unsigned)config::kBannerMaxLen);
+    return false;
+  }
+  printBanners();
+  return true;
+}
+
+void printPhotos() {
+  if (!photos::available()) {
+    Serial.println("[PHOTO] Storage unavailable");
+    return;
+  }
+  const uint8_t every = settings::photoEveryMinutes();
+  Serial.printf("[PHOTO] %d of %d photo(s), slideshow %s%u%s, %u of %u KB used\n", photos::count(),
+                config::kPhotoSlots, every ? "every " : "off", every ? every : 0,
+                every ? " min" : "", (unsigned)(photos::usedBytes() / 1024),
+                (unsigned)(photos::totalBytes() / 1024));
+  int slots[config::kPhotoSlots];
+  const int n = photos::list(slots, config::kPhotoSlots);
+  for (int i = 0; i < n; ++i) {
+    uint16_t w = 0, h = 0;
+    String err;
+    photos::checkJpeg(photos::path(slots[i]), w, h, err);
+    Serial.printf("[PHOTO]   %d: %ux%u, %u bytes\n", slots[i], w, h,
+                  (unsigned)photos::sizeOf(slots[i]));
+  }
+}
+
+bool handlePhoto(const char* arg) {
+  while (*arg == ' ') ++arg;
+  int n = 0;
+  if (*arg == '\0') {
+    printPhotos();
+    return false;
+  } else if (strncasecmp(arg, "DEL ", 4) == 0 && sscanf(arg + 4, "%d", &n) == 1) {
+    if (!photos::remove(n)) {
+      Serial.printf("[CONSOLE] ERROR: no photo %d\n", n);
+      return false;
+    }
+  } else if (strcasecmp(arg, "CLEAR") == 0) {
+    photos::clear();
+  } else if (strncasecmp(arg, "EVERY ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1 && n >= 0 &&
+             n <= 60) {
+    settings::setPhotoEveryMinutes(n);
+  } else if (strcasecmp(arg, "SHOW") == 0 || (strncasecmp(arg, "SHOW ", 5) == 0 &&
+                                              sscanf(arg + 5, "%d", &n) == 1)) {
+    if (photos::count() == 0 || (n && !photos::exists(n))) {
+      Serial.println("[CONSOLE] ERROR: no such photo (upload photos on the web page)");
+      return false;
+    }
+    requestPhotoNow(n);
+    return false;
+  } else {
+    Serial.println("[CONSOLE] Usage: PHOTO [DEL n|CLEAR|EVERY min|SHOW [n]]");
+    return false;
+  }
+  printPhotos();
+  return false;
+}
+
+// "#RRGGBB" -> RGB565.
+bool parseColor(const char* text, uint16_t& out) {
+  unsigned r, g, b;
+  if (sscanf(text, "#%2x%2x%2x", &r, &g, &b) != 3) return false;
+  out = theme::rgb(r, g, b);
+  return true;
+}
+
+void printColors() {
+  const uint8_t fx = settings::effects();
+  const uint32_t custom = settings::customColors();
+  auto hex = [](uint16_t c, char* buf) {
+    snprintf(buf, 8, "#%02X%02X%02X", (c >> 11) << 3, ((c >> 5) & 0x3F) << 2, (c & 0x1F) << 3);
+  };
+  char top[8], bottom[8];
+  hex(custom >> 16, top);
+  hex(custom & 0xFFFF, bottom);
+  const uint8_t style = settings::colorStyle() % static_cast<uint8_t>(theme::Style::Count);
+  Serial.printf("[COLOR] Style %s (%s), speed %s, mix every %u min; custom %s %s; effects:%s%s%s%s\n",
+                theme::styleKey(static_cast<theme::Style>(style)),
+                theme::styleName(static_cast<theme::Style>(style)),
+                theme::speedKey(static_cast<theme::Speed>(settings::colorSpeed())),
+                settings::mixEveryMinutes(), top, bottom,
+                fx & theme::kFxShine ? " shine" : "", fx & theme::kFxPulse ? " pulse" : "",
+                fx & theme::kFxGlow ? " glow" : "", fx ? "" : " none");
+  Serial.print("[COLOR] Styles:");
+  for (int i = 0; i < static_cast<int>(theme::Style::Count); ++i) {
+    Serial.printf(" %s", theme::styleKey(static_cast<theme::Style>(i)));
+  }
+  Serial.println();
+}
+
+bool handleColor(const char* arg) {
+  while (*arg == ' ') ++arg;
+  if (*arg == '\0') {
+    printColors();
+    return false;
+  }
+  int n = 0;
+  if (strncasecmp(arg, "SPEED ", 6) == 0) {
+    theme::Speed speed;
+    if (!theme::speedFromKey(arg + 6, speed)) {
+      Serial.println("[CONSOLE] Usage: COLOR SPEED SLOW|NORMAL|FAST|VERYFAST");
+      return false;
+    }
+    settings::setColorSpeed(static_cast<uint8_t>(speed));
+  } else if (strncasecmp(arg, "MIX EVERY ", 10) == 0 && sscanf(arg + 10, "%d", &n) == 1) {
+    if (n < 1 || n > 60 || !settings::setMixEveryMinutes(n)) {
+      Serial.println("[CONSOLE] ERROR: 1-60 minutes");
+      return false;
+    }
+  } else if (strncasecmp(arg, "CUSTOM ", 7) == 0) {
+    uint16_t top, bottom;
+    char a[16] = "", b[16] = "";
+    if (sscanf(arg + 7, "%15s %15s", a, b) != 2 || !parseColor(a, top) || !parseColor(b, bottom)) {
+      Serial.println("[CONSOLE] Usage: COLOR CUSTOM #RRGGBB #RRGGBB (top, bottom)");
+      return false;
+    }
+    settings::setCustomColors(top, bottom);
+    settings::setColorStyle(static_cast<uint8_t>(theme::Style::Custom));
+  } else {
+    theme::Style style;
+    if (!theme::styleFromKey(arg, style)) {
+      Serial.println("[CONSOLE] Usage: COLOR [style|CUSTOM #RRGGBB #RRGGBB|SPEED s|MIX EVERY min]");
+      return false;
+    }
+    settings::setColorStyle(static_cast<uint8_t>(style));
+  }
+  printColors();
+  return true;
+}
+
+bool handleEffect(const char* arg) {
+  while (*arg == ' ') ++arg;
+  char name[8] = "", state[4] = "";
+  if (*arg == '\0') {
+    printColors();
+    return false;
+  }
+  uint8_t flag = 0;
+  if (sscanf(arg, "%7s %3s", name, state) == 2) {
+    if (strcasecmp(name, "SHINE") == 0) flag = theme::kFxShine;
+    if (strcasecmp(name, "PULSE") == 0) flag = theme::kFxPulse;
+    if (strcasecmp(name, "GLOW") == 0) flag = theme::kFxGlow;
+  }
+  const bool on = strcasecmp(state, "ON") == 0;
+  if (!flag || (!on && strcasecmp(state, "OFF") != 0)) {
+    Serial.println("[CONSOLE] Usage: EFFECT SHINE|PULSE|GLOW ON|OFF");
+    return false;
+  }
+  settings::setEffects(on ? settings::effects() | flag : settings::effects() & ~flag);
+  printColors();
+  return true;
+}
+
+bool handleTransition(const char* arg) {
+  while (*arg == ' ') ++arg;
+  theme::Transition t;
+  if (*arg && theme::transitionFromKey(arg, t)) {
+    settings::setTransition(static_cast<uint8_t>(t));
+  } else if (*arg) {
+    Serial.println("[CONSOLE] Usage: TRANSITION FADE|WIPE|SLIDE|BLINDS|NONE");
+    return false;
+  }
+  Serial.printf("[SCREEN] Transition: %s\n",
+                theme::transitionKey(static_cast<theme::Transition>(settings::transition())));
+  return *arg != '\0';
+}
+
+void printTimeouts() {
+  Serial.printf("[SCREEN] Forecast stays %us, photos %us; other screens return to the clock "
+                "after %us without touch\n", settings::forecastShowSeconds(),
+                settings::photoShowSeconds(), settings::screenIdleSeconds());
+}
+
+bool handleTimeout(const char* arg) {
+  while (*arg == ' ') ++arg;
+  int s = 0;
+  bool ok;
+  if (*arg == '\0') {
+    printTimeouts();
+    return false;
+  } else if (strncasecmp(arg, "FORECAST ", 9) == 0 && sscanf(arg + 9, "%d", &s) == 1) {
+    ok = s >= 0 && s <= 255 && settings::setForecastShowSeconds(s);
+  } else if (strncasecmp(arg, "PHOTO ", 6) == 0 && sscanf(arg + 6, "%d", &s) == 1) {
+    ok = s >= 0 && s <= 255 && settings::setPhotoShowSeconds(s);
+  } else if (strncasecmp(arg, "IDLE ", 5) == 0 && sscanf(arg + 5, "%d", &s) == 1) {
+    ok = s >= 0 && s <= 65535 && settings::setScreenIdleSeconds(s);
+  } else {
+    Serial.println("[CONSOLE] Usage: TIMEOUT [FORECAST s|PHOTO s|IDLE s]");
+    return false;
+  }
+  if (!ok) {
+    Serial.printf("[CONSOLE] ERROR: forecast/photo %u-%us, idle %u-%us\n", settings::kMinShowS,
+                  settings::kMaxShowS, settings::kMinIdleS, settings::kMaxIdleS);
+    return false;
+  }
+  printTimeouts();
+  return true;
+}
+
 void printBrightness() {
   Serial.printf("[NIGHT] Brightness day %u%%, night %u%%; night mode %s, %02u:%02u-%02u:%02u\n",
                 settings::brightnessDay(), settings::brightnessNight(),
@@ -153,8 +409,9 @@ void printInfo(RtcManager& rtc) {
   const esp_partition_t* part = esp_ota_get_running_partition();
   Serial.printf("[INFO] %s %s v%s (%s)\n", config::kProjectName, config::kFirmwareName,
                 config::kFirmwareVersion, config::kGitRevision);
-  Serial.printf("[INFO] Uptime %lus, heap free %u B (min %u B), partition %s\n",
+  Serial.printf("[INFO] Uptime %lus, heap free %u B (min %u B, largest block %u B), partition %s\n",
                 (unsigned long)(millis() / 1000), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
+                ESP.getMaxAllocHeap(),
                 part ? part->label : "?");
   Serial.printf("[INFO] TZ=%s, NTP=%s\n", settings::timezone(), settings::ntpServer());
   float tempC;
@@ -171,6 +428,28 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   if (*text == '\0') return false;
 
   if (strncasecmp(text, "SET ", 4) == 0) return handleSet(rtc, text + 4);
+  if (strncasecmp(text, "SETEPOCH ", 9) == 0) {
+    char* end = nullptr;
+    unsigned long epoch = strtoul(text + 9, &end, 10);
+    DateTime utc(static_cast<uint32_t>(epoch));
+    if (!end || *end != '\0' || epoch < 1577836800UL || !utc.isValid() || utc.year() > 2099) {
+      Serial.println("[CONSOLE] Usage: SETEPOCH <unix time, UTC>");
+      return false;
+    }
+    if (!rtc.isPresent() || !rtc.setTime(utc)) {
+      Serial.println("[RTC] ERROR: could not set time");
+      return false;
+    }
+    Serial.println("[RTC] Time set");
+    printRtcTime(rtc);
+    return true;
+  }
+  if (strcasecmp(text, "REBOOT") == 0) {
+    Serial.println("[CONSOLE] Rebooting");
+    Serial.flush();
+    delay(200);
+    ESP.restart();
+  }
   if (strcasecmp(text, "TZ") == 0 || strncasecmp(text, "TZ ", 3) == 0) {
     return handleTz(rtc, text + 2);
   }
@@ -230,7 +509,7 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     } else if (strcasecmp(arg, "UPDATE") == 0) {
       weather::requestUpdate();
     } else if (strcasecmp(arg, "SHOW") == 0) {
-      weather::requestScreen(30000);
+      requestForecastNow();
     } else if (strncasecmp(arg, "CITY ", 5) == 0 && arg[5]) {
       weather::requestCity(arg + 5);
     } else if (strncasecmp(arg, "LOC ", 4) == 0 &&
@@ -241,19 +520,52 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
       } else {
         Serial.println("[CONSOLE] ERROR: invalid coordinates");
       }
+    } else if (strncasecmp(arg, "FORGET ", 7) == 0 && arg[7]) {
+      if (settings::forgetRecentLocation(arg + 7)) {
+        Serial.printf("[WEATHER] Removed %s from recent locations\n", arg + 7);
+      } else {
+        Serial.println("[CONSOLE] ERROR: no recent location with that name");
+      }
     } else if (strcasecmp(arg, "CYCLE ON") == 0 || strcasecmp(arg, "CYCLE OFF") == 0) {
       settings::setWeatherCycle(strcasecmp(arg, "CYCLE ON") == 0);
       weather::printStatus();
     } else {
-      Serial.println("[CONSOLE] Usage: WEATHER [UPDATE|SHOW|CITY name|LOC lat lon [name]|CYCLE ON|OFF]");
+      Serial.println("[CONSOLE] Usage: WEATHER [UPDATE|SHOW|CITY name|LOC lat lon [name]|FORGET name|CYCLE ON|OFF]");
     }
     return false;
+  }
+  if (strncasecmp(text, "PHOTO", 5) == 0 && (text[5] == '\0' || text[5] == ' ')) {
+    return handlePhoto(text + 5);
+  }
+  if (strncasecmp(text, "COLOR", 5) == 0 && (text[5] == '\0' || text[5] == ' ')) {
+    return handleColor(text + 5);
+  }
+  if (strncasecmp(text, "EFFECT", 6) == 0 && (text[6] == '\0' || text[6] == ' ')) {
+    return handleEffect(text + 6);
+  }
+  if (strncasecmp(text, "TRANSITION", 10) == 0 && (text[10] == '\0' || text[10] == ' ')) {
+    return handleTransition(text + 10);
+  }
+  if (strncasecmp(text, "TIMEOUT", 7) == 0 && (text[7] == '\0' || text[7] == ' ')) {
+    return handleTimeout(text + 7);
+  }
+  if (strcasecmp(text, "PREVIEW") == 0) {
+    const int n = startPreview();
+    if (n) {
+      Serial.printf("[SCREEN] Preview: %d screen(s)\n", n);
+    } else {
+      Serial.println("[SCREEN] Nothing to preview yet (no weather data or photos)");
+    }
+    return false;
+  }
+  if (strncasecmp(text, "BANNER", 6) == 0 && (text[6] == '\0' || text[6] == ' ')) {
+    return handleBanner(text + 6);
   }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
     if (!requestScreenByName(text + 7)) {
-      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|INFO|SETTINGS");
+      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|INFO|SETTINGS|STORAGE|UPDATE|WIFI-RESET");
     }
   } else if (strcasecmp(text, "TOUCH CAL") == 0) {
     calibrateTouch(display);
@@ -275,6 +587,15 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
         Serial.printf("[TOUCH] raw %4u,%4u z %4u -> %3d,%3d\n", rx, ry, z, p.x, p.y);
       }
       delay(10);
+    }
+  } else if (strcasecmp(text, "OTA") == 0) {
+    ota::printStatus();
+  } else if (strcasecmp(text, "OTA CHECK") == 0) {
+    ota::requestCheck();  // the result is logged and shown on the update screen
+  } else if (strncasecmp(text, "OTA INSTALL ", 12) == 0) {
+    // The serial console is local, like a tap on the screen: no code needed.
+    if (!ota::requestRelease(text + 12)) {
+      Serial.println("[CONSOLE] ERROR: give a release tag like v0.13.0, or latest");
     }
   } else if (strcasecmp(text, "INFO") == 0) {
     printInfo(rtc);
@@ -309,11 +630,18 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
 
 }  // namespace
 
+bool serialConsoleExecute(RtcManager& rtc, DisplayManager& display, const char* command) {
+  char buf[kLineMax];
+  strlcpy(buf, command, sizeof(buf));
+  return handleLine(rtc, display, buf);
+}
+
 void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | TOUCH [CAL] | SCREEN name | SHOT | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
+      "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }
 

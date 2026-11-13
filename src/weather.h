@@ -65,10 +65,6 @@ uint32_t ageSeconds();
 void requestUpdate();
 void requestCity(const char* name);  // geocode, save the location, then update
 
-// UI hint: show the forecast screen for `ms` (used by the WEATHER SHOW command).
-void requestScreen(uint32_t ms);
-uint32_t screenRequestedUntil();  // millis() deadline
-
 const char* describe(uint8_t code);  // e.g. "Light drizzle"
 Icon iconFor(uint8_t code);
 

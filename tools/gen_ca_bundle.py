@@ -54,7 +54,7 @@ def main():
         "#include <pgmspace.h>",
         "#include <stdint.h>",
         "",
-        "const uint8_t ca_bundle[] PROGMEM = {",
+        "inline const uint8_t ca_bundle[] PROGMEM = {  // inline: one copy for all users",
     ]
     for i in range(0, len(data), 24):
         lines.append("  " + ", ".join(f"0x{b:02X}" for b in data[i:i + 24]) + ",")

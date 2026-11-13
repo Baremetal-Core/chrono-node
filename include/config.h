@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.8.0";
+constexpr const char* kFirmwareVersion = "0.16.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -39,6 +39,7 @@ constexpr int kTouchMisoPin = 39;
 constexpr int kTouchCsPin = 33;
 constexpr int32_t kTouchPressure = 400;       // minimum Z to count as a press
 constexpr int32_t kTouchFirmPressure = 1000;  // minimum Z for a reliable position
+constexpr uint32_t kTouchHoldMs = 800;        // touch and hold (back to the clock)
 
 // CYD on-board RGB LED (active-low); kept off.
 constexpr int kLedRedPin = 4;
@@ -66,17 +67,47 @@ constexpr size_t kPlaceMaxLen = 31;
 constexpr uint32_t kWeatherRefreshMs = 15UL * 60 * 1000;
 constexpr uint32_t kWeatherRetryMs = 60UL * 1000;
 constexpr uint32_t kWeatherStaleS = 2UL * 60 * 60;  // shown as old after this
-// Forecast screen: shown every kWeatherCycleMinutes for kWeatherShowS seconds,
-// starting at second kWeatherShowAtSecond (not in night mode).
+// Forecast screen: shown every kWeatherCycleMinutes, starting at second
+// kWeatherShowAtSecond (not in night mode), for a settable time.
 constexpr int kWeatherCycleMinutes = 2;
 constexpr int kWeatherShowAtSecond = 45;
-constexpr uint32_t kWeatherShowS = 10;
-// Back to the clock after this long without touch (forecast/info/settings).
-constexpr uint32_t kScreenIdleMs = 30000;
+// How long automatic screens stay up, and how long other screens wait without
+// touch before going back to the clock (settable; seconds).
+constexpr uint8_t kDefaultForecastShowS = 10;
+constexpr uint8_t kDefaultPhotoShowS = 12;
+constexpr uint16_t kDefaultScreenIdleS = 30;
 // Touching at night raises the backlight to the day level for this long.
 constexpr uint32_t kNightTapBoostMs = 10000;
 constexpr uint32_t kScreenFadeOutMs = 150;
 constexpr uint32_t kScreenFadeInMs = 300;
+
+// ---- Firmware updates ----
+constexpr uint32_t kOtaConfirmAfterMs = 60000;  // run this long before confirming a new image
+constexpr uint32_t kOtaPinValidMs = 120000;
+// Releases the web page offers to install; the clock downloads the asset from
+// https://github.com/<repo>/releases/download/<tag>/<asset>.
+constexpr const char* kReleaseRepo = "Baremetal-Core/chrono-node";
+constexpr const char* kReleaseAsset = "chrono-node-fw.bin";
+constexpr uint32_t kOtaErrorShowMs = 60000;  // a failed install is reported this long
+
+// ---- Scrolling banner ----
+constexpr int kBannerMaxMessages = 5;
+constexpr size_t kBannerMaxLen = 120;           // bytes of UTF-8 per message
+constexpr uint8_t kDefaultBannerEveryMin = 1;   // 0 = continuous
+constexpr uint8_t kDefaultBannerSpeed = 70;     // pixels per second
+constexpr int kBannerStartSecond = 15;          // periodic banners start at this second
+constexpr uint32_t kBannerGapMs = 2000;         // pause between messages when continuous
+
+// ---- Photos (LittleFS) ----
+constexpr int kPhotoSlots = 5;
+constexpr size_t kPhotoMaxBytes = 64 * 1024;    // per JPEG; the web page compresses to fit
+constexpr uint8_t kDefaultPhotoEveryMin = 5;    // slideshow period, 0 = off
+constexpr int kPhotoShowAtSecond = 28;          // between the banner (15) and forecast (45)
+
+// Task watchdog. A TLS handshake with open-meteo.com takes ~7 s, most of it one
+// uninterruptible CPU-bound step (software ECDSA P-384 certificate checks), which
+// starves core 0's idle task beyond the 5 s default and resets the clock.
+constexpr uint32_t kTaskWatchdogS = 15;
 
 // DS3231 die temperature (shown in the status bar) is read this often.
 constexpr uint32_t kTemperatureIntervalMs = 60000;
