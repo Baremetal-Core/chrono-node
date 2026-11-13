@@ -39,6 +39,7 @@ constexpr int kTouchMisoPin = 39;
 constexpr int kTouchCsPin = 33;
 constexpr int32_t kTouchPressure = 400;       // minimum Z to count as a press
 constexpr int32_t kTouchFirmPressure = 1000;  // minimum Z for a reliable position
+constexpr uint32_t kTouchHoldMs = 800;        // touch and hold (back to the clock)
 
 // CYD on-board RGB LED (active-low); kept off.
 constexpr int kLedRedPin = 4;

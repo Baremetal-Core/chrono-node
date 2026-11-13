@@ -1,7 +1,7 @@
 // Chrono Node - XPT2046 resistive touch on the CYD's dedicated SPI bus.
 //
 // Readings are filtered (best two of three), mapped to screen pixels with a
-// calibration saved in NVS, and turned into gestures: tap and swipe. Only
+// calibration saved in NVS, and turned into gestures: tap, swipe and hold. Only
 // firm presses give positions: light pressure (finger landing or lifting)
 // reads unreliable coordinates on a resistive panel.
 #pragma once
@@ -28,7 +28,7 @@ struct Calibration {
 bool fitCalibration(const Point* screen, const uint16_t* rx, const uint16_t* ry, int n,
                     Calibration& out);
 
-enum class Gesture : uint8_t { None, Down, Tap, SwipeLeft, SwipeRight };
+enum class Gesture : uint8_t { None, Down, Tap, SwipeLeft, SwipeRight, Hold };
 
 struct Event {
   Gesture gesture = Gesture::None;
@@ -38,7 +38,9 @@ struct Event {
 void begin();
 
 // Polls the controller (rate-limited internally); call every loop iteration.
-// `Down` is reported once when a touch starts, the gesture on release.
+// `Down` is reported once when a touch starts, and tap/swipe on release.
+// `Hold` comes while the finger is still down (kTouchHoldMs without moving);
+// that touch then reports nothing on release.
 Event poll();
 
 // One filtered raw reading. Returns false if the screen isn't pressed.

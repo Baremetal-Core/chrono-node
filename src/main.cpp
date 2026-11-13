@@ -465,7 +465,8 @@ void handleTouch() {
     return;
   }
   if (transitioning) return;
-  static const char* const kGestureNames[] = {"none", "down", "tap", "swipe left", "swipe right"};
+  static const char* const kGestureNames[] = {"none",        "down",        "tap",
+                                              "swipe left",  "swipe right", "hold"};
   Serial.printf("[TOUCH] %s at %d,%d\n", kGestureNames[static_cast<int>(ev.gesture)], ev.at.x,
                 ev.at.y);
   switch (ev.gesture) {
@@ -474,6 +475,14 @@ void handleTouch() {
       autoScreen = false;
       previewCount = 0;
       requestScreen(neighbour(screenOn, ev.gesture == touch::Gesture::SwipeLeft ? 1 : -1));
+      break;
+    case touch::Gesture::Hold:
+      // Touch and hold anywhere: straight back to the clock.
+      if (screenOn != Screen::Clock) {
+        autoScreen = false;
+        previewCount = 0;
+        requestScreen(Screen::Clock);
+      }
       break;
     case touch::Gesture::Tap:
       if (screenOn == Screen::Forecast || screenOn == Screen::Photo) previewCount = 0;
