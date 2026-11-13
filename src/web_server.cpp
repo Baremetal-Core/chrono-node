@@ -39,7 +39,8 @@ ClockState clockState = {};
 const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BRIGHT ",
                                 "NIGHT ",       "FORMAT ",     "WEATHER LOC ", "WEATHER CYCLE ",
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
-                                "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO"};
+                                "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
+                                "TIMEOUT",      "PREVIEW"};
 
 bool allowed(const String& cmd) {
   if (cmd.length() == 0 || cmd.length() >= kCommandLen || cmd.indexOf('\n') >= 0 ||
@@ -152,6 +153,10 @@ void handleSettings() {
   night["end"] = hm;
   doc["hour12"] = settings::hour12();
   doc["forecast_cycle"] = settings::weatherCycle();
+  JsonObject timeouts = doc["timeouts"].to<JsonObject>();
+  timeouts["forecast_s"] = settings::forecastShowSeconds();
+  timeouts["photo_s"] = settings::photoShowSeconds();
+  timeouts["idle_s"] = settings::screenIdleSeconds();
   JsonObject banner = doc["banner"].to<JsonObject>();
   banner["enabled"] = settings::bannerEnabled();
   banner["every_min"] = settings::bannerEveryMinutes();  // default for new messages

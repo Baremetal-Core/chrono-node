@@ -31,6 +31,9 @@ constexpr const char* kKeyBannerEvs = "bn_evs";      // per-message period, one 
 constexpr const char* kKeyBannerSpeed = "bn_speed";
 constexpr const char* kKeyBannerText = "bn_text";  // all messages, '\n'-separated
 constexpr const char* kKeyPhotoEvery = "ph_every";
+constexpr const char* kKeyForecastShow = "fc_show";
+constexpr const char* kKeyPhotoShow = "ph_show";
+constexpr const char* kKeyScreenIdle = "idle_s";
 
 char banners[config::kBannerMaxMessages][config::kBannerMaxLen + 1] = {};
 uint8_t bannerEvs[config::kBannerMaxMessages] = {};
@@ -40,6 +43,9 @@ bool bannerOn = true;
 uint8_t bannerEvery = config::kDefaultBannerEveryMin;
 uint8_t bannerPxPerS = config::kDefaultBannerSpeed;
 uint8_t photoEvery = config::kDefaultPhotoEveryMin;
+uint8_t forecastShow = config::kDefaultForecastShowS;
+uint8_t photoShow = config::kDefaultPhotoShowS;
+uint16_t screenIdle = config::kDefaultScreenIdleS;
 
 void splitBanners(const char* joined) {
   bannerN = 0;
@@ -136,6 +142,9 @@ void begin() {
     bannerEvery = prefs.getUChar(kKeyBannerEvery, bannerEvery);
     bannerPxPerS = prefs.getUChar(kKeyBannerSpeed, bannerPxPerS);
     photoEvery = prefs.getUChar(kKeyPhotoEvery, photoEvery);
+    forecastShow = prefs.getUChar(kKeyForecastShow, forecastShow);
+    photoShow = prefs.getUChar(kKeyPhotoShow, photoShow);
+    screenIdle = prefs.getUShort(kKeyScreenIdle, screenIdle);
     if (prefs.isKey(kKeyBannerText)) {
       String joined = prefs.getString(kKeyBannerText, "");
       splitBanners(joined.c_str());
@@ -378,6 +387,31 @@ bool setBannerEveryMinutes(int index, uint8_t minutes) {
 }
 
 uint32_t bannerVersion() { return bannerVer; }
+
+uint8_t forecastShowSeconds() { return forecastShow; }
+uint8_t photoShowSeconds() { return photoShow; }
+uint16_t screenIdleSeconds() { return screenIdle; }
+
+bool setForecastShowSeconds(uint8_t s) {
+  if (s < kMinShowS || s > kMaxShowS) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyForecastShow, s) > 0; });
+  if (ok) forecastShow = s;
+  return ok;
+}
+
+bool setPhotoShowSeconds(uint8_t s) {
+  if (s < kMinShowS || s > kMaxShowS) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyPhotoShow, s) > 0; });
+  if (ok) photoShow = s;
+  return ok;
+}
+
+bool setScreenIdleSeconds(uint16_t s) {
+  if (s < kMinIdleS || s > kMaxIdleS) return false;
+  bool ok = save([&](Preferences& p) { return p.putUShort(kKeyScreenIdle, s) > 0; });
+  if (ok) screenIdle = s;
+  return ok;
+}
 
 uint8_t photoEveryMinutes() { return photoEvery; }
 

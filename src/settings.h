@@ -71,6 +71,17 @@ uint32_t bannerVersion();
 uint8_t bannerSpeed();         // pixels per second
 bool setBannerSpeed(uint8_t pxPerSecond);
 
+// How long the forecast and photos stay up when they come up by themselves,
+// and how long other screens wait without touch before the clock returns.
+constexpr uint8_t kMinShowS = 3, kMaxShowS = 120;
+constexpr uint16_t kMinIdleS = 5, kMaxIdleS = 600;
+uint8_t forecastShowSeconds();
+bool setForecastShowSeconds(uint8_t s);
+uint8_t photoShowSeconds();
+bool setPhotoShowSeconds(uint8_t s);
+uint16_t screenIdleSeconds();
+bool setScreenIdleSeconds(uint16_t s);
+
 // Photo slideshow period in minutes (0 = off).
 uint8_t photoEveryMinutes();
 bool setPhotoEveryMinutes(uint8_t minutes);

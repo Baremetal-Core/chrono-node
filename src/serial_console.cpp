@@ -256,6 +256,38 @@ bool handlePhoto(const char* arg) {
   return false;
 }
 
+void printTimeouts() {
+  Serial.printf("[SCREEN] Forecast stays %us, photos %us; other screens return to the clock "
+                "after %us without touch\n", settings::forecastShowSeconds(),
+                settings::photoShowSeconds(), settings::screenIdleSeconds());
+}
+
+bool handleTimeout(const char* arg) {
+  while (*arg == ' ') ++arg;
+  int s = 0;
+  bool ok;
+  if (*arg == '\0') {
+    printTimeouts();
+    return false;
+  } else if (strncasecmp(arg, "FORECAST ", 9) == 0 && sscanf(arg + 9, "%d", &s) == 1) {
+    ok = s >= 0 && s <= 255 && settings::setForecastShowSeconds(s);
+  } else if (strncasecmp(arg, "PHOTO ", 6) == 0 && sscanf(arg + 6, "%d", &s) == 1) {
+    ok = s >= 0 && s <= 255 && settings::setPhotoShowSeconds(s);
+  } else if (strncasecmp(arg, "IDLE ", 5) == 0 && sscanf(arg + 5, "%d", &s) == 1) {
+    ok = s >= 0 && s <= 65535 && settings::setScreenIdleSeconds(s);
+  } else {
+    Serial.println("[CONSOLE] Usage: TIMEOUT [FORECAST s|PHOTO s|IDLE s]");
+    return false;
+  }
+  if (!ok) {
+    Serial.printf("[CONSOLE] ERROR: forecast/photo %u-%us, idle %u-%us\n", settings::kMinShowS,
+                  settings::kMaxShowS, settings::kMinIdleS, settings::kMaxIdleS);
+    return false;
+  }
+  printTimeouts();
+  return true;
+}
+
 void printBrightness() {
   Serial.printf("[NIGHT] Brightness day %u%%, night %u%%; night mode %s, %02u:%02u-%02u:%02u\n",
                 settings::brightnessDay(), settings::brightnessNight(),
@@ -366,7 +398,7 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     } else if (strcasecmp(arg, "UPDATE") == 0) {
       weather::requestUpdate();
     } else if (strcasecmp(arg, "SHOW") == 0) {
-      weather::requestScreen(30000);
+      requestForecastNow();
     } else if (strncasecmp(arg, "CITY ", 5) == 0 && arg[5]) {
       weather::requestCity(arg + 5);
     } else if (strncasecmp(arg, "LOC ", 4) == 0 &&
@@ -387,6 +419,18 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   }
   if (strncasecmp(text, "PHOTO", 5) == 0 && (text[5] == '\0' || text[5] == ' ')) {
     return handlePhoto(text + 5);
+  }
+  if (strncasecmp(text, "TIMEOUT", 7) == 0 && (text[7] == '\0' || text[7] == ' ')) {
+    return handleTimeout(text + 7);
+  }
+  if (strcasecmp(text, "PREVIEW") == 0) {
+    const int n = startPreview();
+    if (n) {
+      Serial.printf("[SCREEN] Preview: %d screen(s)\n", n);
+    } else {
+      Serial.println("[SCREEN] Nothing to preview yet (no weather data or photos)");
+    }
+    return false;
   }
   if (strncasecmp(text, "BANNER", 6) == 0 && (text[6] == '\0' || text[6] == ' ')) {
     return handleBanner(text + 6);
@@ -463,7 +507,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | PHOTO [...] | TOUCH [CAL] | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | TOUCH [CAL] | "
       "SCREEN name | SETEPOCH n | REBOOT | OTA | SHOT | "
       "TEST [PALETTE] | HELP");
 }

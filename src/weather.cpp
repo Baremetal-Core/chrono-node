@@ -226,14 +226,6 @@ uint32_t ageSeconds() {
 
 void requestUpdate() { updateRequested = true; }
 
-namespace {
-std::atomic<uint32_t> screenUntil{0};
-}
-
-void requestScreen(uint32_t ms) { screenUntil = millis() + ms; }
-
-uint32_t screenRequestedUntil() { return screenUntil; }
-
 void requestCity(const char* name) {
   strlcpy(cityName, name, sizeof(cityName));
   cityRequested = true;

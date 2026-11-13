@@ -48,6 +48,10 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <input type="time" id="nstart"> to <input type="time" id="nend"><button id="nsave">Save</button></div>
 <div class="row"><label>Time format</label><select id="fmt"><option value="24">24-hour</option><option value="12">12-hour</option></select></div>
 <div class="row"><label>Forecast screen every 2 min</label><select id="cyc"><option value="ON">On</option><option value="OFF">Off</option></select></div>
+<div class="row"><label>Forecast stays up for</label><select id="tofc" data-cmd="TIMEOUT FORECAST"></select></div>
+<div class="row"><label>Each photo stays up for</label><select id="toph" data-cmd="TIMEOUT PHOTO"></select></div>
+<div class="row"><label>Other screens go back to the clock after</label><select id="toidle" data-cmd="TIMEOUT IDLE"></select></div>
+<div class="row"><label>Preview the forecast and photos now (also at night)</label><button id="preview">Preview</button></div>
 </section>
 
 <section><h2>Banner</h2>
@@ -189,6 +193,7 @@ let S;
 async function loadSettings(){S=await(await fetch("/api/settings")).json();
 $("bday").value=S.brightness_day;$("bdayv").textContent=S.brightness_day+"%";$("bnight").value=S.brightness_night;$("bnightv").textContent=S.brightness_night+"%";
 $("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("cyc").value=S.forecast_cycle?"ON":"OFF";
+selVal("tofc",S.timeouts.forecast_s,S.timeouts.forecast_s+" seconds");selVal("toph",S.timeouts.photo_s,S.timeouts.photo_s+" seconds");selVal("toidle",S.timeouts.idle_s,S.timeouts.idle_s+" seconds");
 const known=TZ.find(z=>z[1]===S.timezone);$("tz").value=known?known[0]:"custom";$("tzcustom").value=S.timezone;$("tzcustomrow").style.display=known?"none":"flex";
 $("ntp").value=S.ntp_server;
 const B=S.banner;$("bnon").value=B.enabled?"ON":"OFF";selVal("bnspeed",B.speed,B.speed+" px/s");
@@ -252,7 +257,11 @@ $("tz").innerHTML=TZ.map(z=>`<option value="${z[0]}">${z[0].replace("_"," ")}</o
 $("bday").oninput=e=>$("bdayv").textContent=e.target.value+"%";$("bnight").oninput=e=>$("bnightv").textContent=e.target.value+"%";
 $("bday").onchange=e=>cmd("BRIGHT DAY "+e.target.value);$("bnight").onchange=e=>cmd("BRIGHT NIGHT "+e.target.value);
 $("non").onchange=e=>cmd("NIGHT "+e.target.value);$("nsave").onclick=()=>cmd(`NIGHT ${$("nstart").value} ${$("nend").value}`);
-$("fmt").onchange=e=>cmd("FORMAT "+e.target.value);$("cyc").onchange=e=>cmd("WEATHER CYCLE "+e.target.value);
+$("fmt").onchange=e=>cmd("FORMAT "+e.target.value);
+const secs=(id,list)=>{$(id).innerHTML=list.map(s=>`<option value="${s}">${s<60?s+" seconds":s/60+(s===60?" minute":" minutes")}</option>`).join("");
+$(id).onchange=e=>cmd($(id).dataset.cmd+" "+e.target.value)};
+secs("tofc",[5,10,15,20,30,60]);secs("toph",[5,8,12,20,30,60]);secs("toidle",[10,15,30,60,120,300]);
+$("preview").onclick=()=>cmd("PREVIEW","Showing the forecast and photos on the clock");$("cyc").onchange=e=>cmd("WEATHER CYCLE "+e.target.value);
 $("tz").onchange=e=>{const z=TZ.find(t=>t[0]===e.target.value);if(z)cmd("TZ "+z[1],"Time zone: "+z[0]);else $("tzcustomrow").style.display="flex"};
 $("tzsave").onclick=()=>cmd("TZ "+$("tzcustom").value.trim());
 $("tzdetect").onclick=()=>{const n=Intl.DateTimeFormat().resolvedOptions().timeZone,z=TZ.find(t=>t[0]===n);

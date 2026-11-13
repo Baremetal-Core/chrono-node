@@ -53,6 +53,12 @@ forecast, info and settings screens, plus a settings page in the browser at
   skipped until weather data exists, and the photo screen while there are no photos. Screen changes happen behind a quick backlight dip.
 - After 30 s without touch the clock comes back. The automatic forecast cycle (see Weather)
   still runs on the clock screen.
+- **Timeouts are settable** (web page *Display* section, or `TIMEOUT`): how long the forecast
+  (default 10 s) and each photo (12 s) stay up when they come up by themselves, and how long
+  other screens wait without touch before the clock returns (30 s). The time counts from when
+  the screen has faded in.
+- **Preview** (web page, or `PREVIEW`): shows the forecast and then each photo once, for
+  their set times, also at night when the automatic cycles are paused. A tap or swipe stops it.
 - **Settings** (tap):
   - day brightness (±10 %) and night brightness (±5 %)
   - night mode on/off (the schedule itself is set with `NIGHT HH:MM HH:MM`)
@@ -206,10 +212,10 @@ A USB upload (`pio run -t upload`) always resets the boot slot to `app0`.
 - The default location is Ho Chi Minh City. Change it with `WEATHER CITY <name>` (looked up
   with Open-Meteo geocoding) or `WEATHER LOC <lat> <lon> [name]`. The location is saved in NVS.
 - **Forecast screen:** the current conditions with feels-like, humidity and rain chance; the
-  next hours in 3 h steps; and today plus 3 days with rain probability. Until touch arrives
-  (M6), it cycles in every 2 minutes at second 45 for 10 s, behind a quick backlight dip.
-  It's never shown at night or while a notice is shown. Turn it off with `WEATHER CYCLE OFF`.
-  `WEATHER SHOW` shows it for 30 s.
+  next hours in 3 h steps; and today plus 3 days with rain probability. It cycles in every
+  2 minutes at second 45 for 10 s (settable), behind a quick backlight dip. It's never shown
+  at night or while a notice is shown. Turn it off with `WEATHER CYCLE OFF`. `WEATHER SHOW`
+  shows it now.
 - **Offline:** the last data stays on screen. After 2 h it's dimmed and marked "old". The
   data is kept in RAM only, so a reboot without network shows no weather.
 - Icons are drawn from anti-aliased circles, lines and rounded rectangles (sun, moon, clouds,
@@ -264,8 +270,8 @@ Your own photos can be shown on the clock, for example a picture of someone you 
   (see Firmware updates) erases them, like the Wi-Fi settings.
 - **On the clock:**
   - The **Photo** screen is in the swipe order. Tap it for the next photo. It returns to the
-    clock after 30 s.
-  - The **slideshow** shows the next photo for 12 s every 5 minutes, at second 28, so it
+    clock after 30 s (settable).
+  - The **slideshow** shows the next photo for 12 s (settable) every 5 minutes, at second 28, so it
     doesn't collide with the banner or forecast. You can choose every 1–60 minutes, or off.
   - The slideshow never runs at night, or while a notice is showing (setup, update PIN).
     You can still swipe to your photos at night.
@@ -463,7 +469,7 @@ NIGHT 22:00 06:30           # set and save the night window (may wrap past midni
 NIGHT OFF                   # disable night mode (NIGHT ON to re-enable)
 WEATHER                     # location, current weather, 4-day forecast, last error
 WEATHER UPDATE              # fetch now
-WEATHER SHOW                # show the forecast screen for 30 s
+WEATHER SHOW                # show the forecast screen now (for its set time)
 WEATHER CITY Da Nang        # look up a city and save it as the location
 WEATHER LOC 10.82 106.63 Home   # save a location by coordinates (name optional)
 WEATHER CYCLE OFF           # stop the periodic forecast screen (ON to re-enable)
@@ -480,6 +486,11 @@ PHOTO                       # stored photos, sizes, slideshow period, storage us
 PHOTO SHOW                  # show the next photo now (PHOTO SHOW 2 for photo 2)
 PHOTO DEL 2                 # delete photo 2 (PHOTO CLEAR deletes all)
 PHOTO EVERY 5               # slideshow every 5 min (0 = off, 1-60)
+TIMEOUT                     # how long automatic screens stay up, and the idle timeout
+TIMEOUT FORECAST 10         # the forecast stays up 10 s (3-120)
+TIMEOUT PHOTO 12            # each photo stays up 12 s (3-120)
+TIMEOUT IDLE 30             # other screens go back to the clock after 30 s without touch (5-600)
+PREVIEW                     # show the forecast and each photo once now, even at night
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
 SCREEN SETTINGS             # go to CLOCK, FORECAST, PHOTO, INFO, SETTINGS or WIFI-RESET
 TOUCH                       # print raw/mapped touch readings for 10 s

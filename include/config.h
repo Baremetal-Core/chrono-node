@@ -66,13 +66,15 @@ constexpr size_t kPlaceMaxLen = 31;
 constexpr uint32_t kWeatherRefreshMs = 15UL * 60 * 1000;
 constexpr uint32_t kWeatherRetryMs = 60UL * 1000;
 constexpr uint32_t kWeatherStaleS = 2UL * 60 * 60;  // shown as old after this
-// Forecast screen: shown every kWeatherCycleMinutes for kWeatherShowS seconds,
-// starting at second kWeatherShowAtSecond (not in night mode).
+// Forecast screen: shown every kWeatherCycleMinutes, starting at second
+// kWeatherShowAtSecond (not in night mode), for a settable time.
 constexpr int kWeatherCycleMinutes = 2;
 constexpr int kWeatherShowAtSecond = 45;
-constexpr uint32_t kWeatherShowS = 10;
-// Back to the clock after this long without touch (forecast/info/settings).
-constexpr uint32_t kScreenIdleMs = 30000;
+// How long automatic screens stay up, and how long other screens wait without
+// touch before going back to the clock (settable; seconds).
+constexpr uint8_t kDefaultForecastShowS = 10;
+constexpr uint8_t kDefaultPhotoShowS = 12;
+constexpr uint16_t kDefaultScreenIdleS = 30;
 // Touching at night raises the backlight to the day level for this long.
 constexpr uint32_t kNightTapBoostMs = 10000;
 constexpr uint32_t kScreenFadeOutMs = 150;
@@ -100,8 +102,6 @@ constexpr int kPhotoSlots = 5;
 constexpr size_t kPhotoMaxBytes = 64 * 1024;    // per JPEG; the web page compresses to fit
 constexpr uint8_t kDefaultPhotoEveryMin = 5;    // slideshow period, 0 = off
 constexpr int kPhotoShowAtSecond = 28;          // between the banner (15) and forecast (45)
-constexpr uint32_t kPhotoShowS = 12;
-constexpr uint32_t kPhotoRequestShowMs = 20000; // PHOTO SHOW / web "show" duration
 
 // Task watchdog. A TLS handshake with open-meteo.com takes ~7 s, most of it one
 // uninterruptible CPU-bound step (software ECDSA P-384 certificate checks), which

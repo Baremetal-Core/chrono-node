@@ -56,15 +56,27 @@ bool nightActive = false;
 // opened from Info) isn't in the swipe order.
 enum class Screen : uint8_t { Clock, Forecast, Photo, Info, Settings, WifiReset };
 constexpr int kScreenCount = 5;
+const char* const kScreenNames[] = {"clock", "forecast", "photo", "info", "settings", "wifi-reset"};
 Screen screenOn = Screen::Clock;
 Screen screenWanted = Screen::Clock;  // target of the current/next transition
-bool autoScreen = false;  // forecast/photo shown by a cycle or a SHOW command, not by touch
-// Photos: the one showing, the one to show next (0 = next in rotation) and
-// how long a PHOTO SHOW request keeps the screen up.
+// Automatic screens (forecast/photo from a cycle, a SHOW command or the
+// preview) stay up for autoShowMs after they've faded in, then the clock returns.
+bool autoScreen = false;
+uint32_t autoShowMs = 0;
+uint32_t autoUntilMs = 0;
+int lastForecastMinute = -1;  // minute of day the cycle last brought the forecast up
+int lastPhotoMinute = -1;
+// Preview: the forecast and each photo once, one after another, even at night.
+struct AutoStep {
+  Screen screen;
+  int photo;
+};
+AutoStep previewSteps[1 + config::kPhotoSlots];
+int previewCount = 0;
+int previewNext = 0;
+// Photos: the one showing, and the one to show next (0 = next in rotation).
 int photoSlot = 0;
 int photoWanted = 0;
-uint32_t photoRequestedUntilMs = 0;
-uint32_t photoPausedUntilMs = 0;  // after a photo failed to decode
 uint32_t lastTouchMs = 0;
 uint32_t lastInfoMs = 0;
 
@@ -117,33 +129,10 @@ void updateNight(const struct tm& local) {
   }
 }
 
-// Forecast screen: on request, or periodically when enabled (never at night
-// or while a notice needs to be seen).
-bool shouldShowWeather(const struct tm& local, bool hasData) {
-  if (!hasData) return false;
-  if ((int32_t)(millis() - weather::screenRequestedUntil()) < 0) return true;
-  if (nightActive || !settings::weatherCycle() || rtcLostPower ||
-      net::state() == net::State::Portal) {
-    return false;
-  }
-  return local.tm_min % config::kWeatherCycleMinutes == 0 &&
-         local.tm_sec >= config::kWeatherShowAtSecond &&
-         local.tm_sec < config::kWeatherShowAtSecond + (int)config::kWeatherShowS;
-}
-
-// Photo slideshow: on request, or every N minutes (never at night or while
-// a notice needs to be seen).
-bool shouldShowPhoto(const struct tm& local) {
-  if (photos::count() == 0 || (int32_t)(millis() - photoPausedUntilMs) < 0) return false;
-  if ((int32_t)(millis() - photoRequestedUntilMs) < 0) return true;
-  const uint8_t every = settings::photoEveryMinutes();
-  if (nightActive || every == 0 || rtcLostPower || net::state() == net::State::Portal ||
-      ota::activePin() || ota::progress() >= 0) {
-    return false;
-  }
-  return (local.tm_hour * 60 + local.tm_min) % every == 0 &&
-         local.tm_sec >= config::kPhotoShowAtSecond &&
-         local.tm_sec < config::kPhotoShowAtSecond + (int)config::kPhotoShowS;
+// Automatic screens never come up at night or while a notice needs to be seen.
+bool autoScreensAllowed() {
+  return !nightActive && !rtcLostPower && net::state() != net::State::Portal &&
+         !ota::activePin() && ota::progress() < 0;
 }
 
 // Next photo slot in rotation after `slot` (0 if there are no photos).
@@ -155,24 +144,66 @@ int nextPhoto(int slot) {
   return 0;
 }
 
-// Automatic screen changes: the forecast and photo cycles, and back to the
-// clock after a period without touch.
+uint32_t showMsFor(Screen s) {
+  return 1000UL * (s == Screen::Forecast ? settings::forecastShowSeconds()
+                                         : settings::photoShowSeconds());
+}
+
+// Brings up the forecast or a photo (0 = next in rotation) for its set time.
+void showAuto(Screen s, int photo) {
+  autoScreen = true;
+  autoShowMs = showMsFor(s);
+  photoWanted = photo;
+  requestScreen(s, true);
+}
+
+// The next preview step, or back to the clock after the last one.
+void advancePreview() {
+  if (previewNext >= previewCount) {
+    previewCount = 0;
+    requestScreen(Screen::Clock);
+    return;
+  }
+  const AutoStep step = previewSteps[previewNext++];
+  showAuto(step.screen, step.photo);
+}
+
+// Automatic screen changes: the forecast and photo cycles, the preview, and
+// back to the clock after a period without touch.
 void updateAutoScreens(const struct tm& local, bool hasData) {
   if (transitioning) return;
-  Screen want = Screen::Clock;
-  if (shouldShowWeather(local, hasData)) {
-    want = Screen::Forecast;
-  } else if (shouldShowPhoto(local)) {
-    want = Screen::Photo;
+  const uint32_t now = millis();
+  if (autoScreen && screenOn != Screen::Clock) {
+    if ((int32_t)(now - autoUntilMs) >= 0) {
+      if (previewCount) {
+        advancePreview();
+      } else {
+        requestScreen(Screen::Clock);
+      }
+    }
+    return;
   }
-  if (screenOn == Screen::Clock && want != Screen::Clock) {
-    autoScreen = true;
-    requestScreen(want);
-  } else if (autoScreen && screenOn != want) {
-    requestScreen(want);
-  } else if (screenOn != Screen::Clock && !autoScreen &&
-             millis() - lastTouchMs >= config::kScreenIdleMs) {
-    requestScreen(Screen::Clock);
+  if (screenOn != Screen::Clock) {
+    if (now - lastTouchMs >= 1000UL * settings::screenIdleSeconds()) requestScreen(Screen::Clock);
+    return;
+  }
+  if (!autoScreensAllowed()) return;
+  // Each cycle fires once per due minute, within a few seconds of its start
+  // second (a second can be missed while the screen is busy).
+  const int minute = local.tm_hour * 60 + local.tm_min;
+  if (hasData && settings::weatherCycle() && local.tm_min % config::kWeatherCycleMinutes == 0 &&
+      local.tm_sec >= config::kWeatherShowAtSecond && local.tm_sec < config::kWeatherShowAtSecond + 5 &&
+      lastForecastMinute != minute) {
+    lastForecastMinute = minute;
+    showAuto(Screen::Forecast, 0);
+    return;
+  }
+  const uint8_t every = settings::photoEveryMinutes();
+  if (every && photos::count() > 0 && minute % every == 0 &&
+      local.tm_sec >= config::kPhotoShowAtSecond && local.tm_sec < config::kPhotoShowAtSecond + 5 &&
+      lastPhotoMinute != minute) {
+    lastPhotoMinute = minute;
+    showAuto(Screen::Photo, 0);
   }
 }
 
@@ -390,9 +421,11 @@ void handleTouch() {
     case touch::Gesture::SwipeLeft:
     case touch::Gesture::SwipeRight:
       autoScreen = false;
+      previewCount = 0;
       requestScreen(neighbour(screenOn, ev.gesture == touch::Gesture::SwipeLeft ? 1 : -1));
       break;
     case touch::Gesture::Tap:
+      if (screenOn == Screen::Forecast || screenOn == Screen::Photo) previewCount = 0;
       if (screenOn == Screen::Forecast) autoScreen = false;  // keep it while being read
       if (screenOn == Screen::Photo) {
         autoScreen = false;  // tap: next photo, and stay
@@ -433,12 +466,7 @@ void finishTransition() {
     const int slot = photoWanted && photos::exists(photoWanted) ? photoWanted : nextPhoto(photoSlot);
     photoWanted = 0;
     if (slot) photoSlot = slot;  // a broken photo is skipped next time
-    if (slot == 0 || !display.showPhoto(photos::path(slot).c_str())) {
-      // Don't bring the photo screen straight back in this slideshow window.
-      next = Screen::Clock;
-      photoRequestedUntilMs = millis();
-      photoPausedUntilMs = millis() + (config::kPhotoShowS + 2) * 1000;
-    }
+    if (slot == 0 || !display.showPhoto(photos::path(slot).c_str())) next = Screen::Clock;
   }
   switch (next) {
     case Screen::Photo:
@@ -467,7 +495,12 @@ void finishTransition() {
       autoScreen = false;
       break;
   }
+  if (next != screenOn || next == Screen::Photo) {
+    Serial.printf("[SCREEN] %s%s\n", kScreenNames[static_cast<int>(next)],
+                  autoScreen && next != Screen::Clock ? " (automatic)" : "");
+  }
   screenOn = screenWanted = next;
+  autoUntilMs = millis() + autoShowMs;  // counted once the screen is visible
   transitioning = false;
   lastSecond = -1;
   pollRtc();
@@ -610,8 +643,6 @@ void pollRtc(bool forceLog) {
   cs.hasTemp = hasTemp;
   cs.tempC = tempC;
   cs.night = nightActive;
-  static const char* const kScreenNames[] = {"clock", "forecast", "photo", "info", "settings",
-                                             "wifi-reset"};
   strlcpy(cs.screen, kScreenNames[static_cast<int>(screenOn)], sizeof(cs.screen));
   web::publishClockState(cs);
 }
@@ -628,16 +659,31 @@ bool requestScreenByName(const char* name) {
   else if (strcasecmp(name, "wifi-reset") == 0) s = Screen::WifiReset;
   else return false;
   autoScreen = false;
+  previewCount = 0;
   lastTouchMs = millis();
   requestScreen(s);
   return true;
 }
 
 void requestPhotoNow(int slot) {
-  photoWanted = slot;
-  photoRequestedUntilMs = millis() + config::kPhotoRequestShowMs;
-  autoScreen = true;
-  requestScreen(Screen::Photo, true);
+  previewCount = 0;
+  showAuto(Screen::Photo, slot);
+}
+
+void requestForecastNow() {
+  previewCount = 0;
+  showAuto(Screen::Forecast, 0);
+}
+
+int startPreview() {
+  previewCount = 0;
+  if (weather::version() != 0) previewSteps[previewCount++] = {Screen::Forecast, 0};
+  int slots[config::kPhotoSlots];
+  const int n = photos::list(slots, config::kPhotoSlots);
+  for (int i = 0; i < n; ++i) previewSteps[previewCount++] = {Screen::Photo, slots[i]};
+  previewNext = 0;
+  if (previewCount) advancePreview();
+  return previewCount;
 }
 
 void requestBannerNow() {
