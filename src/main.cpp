@@ -526,6 +526,10 @@ void updateStatus() {
     char text[48];
     snprintf(text, sizeof(text), "Updating firmware... %d%%", otaProgress);
     display.setNotice(text, DisplayManager::NoticeKind::Setup);
+  } else if (char otaError[80]; ota::recentError(otaError, sizeof(otaError))) {
+    char text[96];
+    snprintf(text, sizeof(text), "Update failed: %s", otaError);
+    display.setNotice(text, DisplayManager::NoticeKind::Error);
   } else if (ota::activePin()) {
     char text[48];
     snprintf(text, sizeof(text), "Firmware update PIN: %04lu", (unsigned long)ota::activePin());

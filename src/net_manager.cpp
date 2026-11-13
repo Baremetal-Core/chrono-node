@@ -12,6 +12,7 @@
 
 #include "clock_sync.h"
 #include "config.h"
+#include "ota.h"
 #include "settings.h"
 #include "weather.h"
 #include "web_server.h"
@@ -346,6 +347,7 @@ void step() {
     case State::Connected:
       if (!evtDisconnected) {
         web::loop();
+        ota::serviceNet();  // a requested release install (restarts on success)
         weather::service();
       }
       if (evtDisconnected) {

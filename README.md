@@ -113,6 +113,7 @@ stays in one task.
 | `POST /api/command` | Body (`text/plain`): one console command. Returns `202 {"queued":true}` |
 | `GET /api/photo?n=<slot>` | A stored photo (JPEG) |
 | `POST /api/photo` | Multipart field `photo`: a baseline JPEG ≤ 64 KB, saved in a free slot. Returns `200 {"ok":true,"slot":n}` or `400 {"error":...}` |
+| `POST /api/ota/release?tag=vX.Y.Z&pin=NNNN` | The clock downloads and installs that GitHub release. Returns `202`, then restarts; failures show in `/api/status` → `ota.error` |
 | `POST /api/ota/pin` | Shows a one-time update PIN on the clock (2 min) |
 | `POST /api/ota?pin=NNNN` | Multipart firmware upload. Returns `200`, `403` (PIN) or `500` (image) |
 
@@ -127,12 +128,26 @@ curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-
 
 ## Firmware updates (OTA) and releases
 
-**From the web page** (*Firmware* section):
+**From the web page, the easy way** (*Firmware* section): the page asks GitHub for the
+latest release of `kReleaseRepo` (`Baremetal-Core/chrono-node`). If it's newer than the
+clock's version:
 
-1. Click **Show PIN on the clock**. A 4-digit PIN appears at the bottom of the clock's
-   screen for 2 minutes. The page has no password, so the PIN proves someone is standing
-   at the clock before firmware can be replaced.
-2. Enter the PIN, choose `chrono-node-fw.bin` from a release (or `.pio/build/cyd/` after
+1. The page shows **vX.Y.Z is available** with a link to the release notes. Click
+   **Install vX.Y.Z**.
+2. A 4-digit code appears at the bottom of the clock's screen for 2 minutes; type it into
+   the page. The page has no password, so the code proves someone is standing at the clock.
+3. The clock downloads `chrono-node-fw.bin` from the release itself, over HTTPS with
+   certificate checks (about a minute, progress on its screen), and restarts. The page
+   waits and confirms the new version.
+
+If the download fails, the clock keeps its current firmware and shows *Update failed: …*
+for a minute, and the page shows the reason. This needs the repository to be **public**:
+GitHub doesn't serve a private repository's release files without a login.
+
+**From the web page, with a file** (*Install a .bin file instead*):
+
+1. Click **Show code on the clock**.
+2. Enter the code, choose `chrono-node-fw.bin` from a release (or `.pio/build/cyd/` after
    `pio run`) and click **Install**. The upload goes to the inactive OTA slot (about 35 s
    over Wi-Fi), with progress shown on the clock and in the page, and then the clock reboots.
 
@@ -141,6 +156,7 @@ From a terminal (the PIN still has to be read off the clock):
 ```bash
 curl -X POST http://chrono-node.local/api/ota/pin
 curl -F firmware=@.pio/build/cyd/chrono-node-fw.bin "http://chrono-node.local/api/ota?pin=1234"
+curl -X POST "http://chrono-node.local/api/ota/release?tag=v0.13.0&pin=1234"   # from GitHub
 ```
 
 **Rollback:** a newly installed image starts as *pending verify* and is confirmed after
@@ -160,7 +176,7 @@ runs `.github/workflows/release.yml`, which builds and publishes a GitHub releas
 
 | File | Use |
 |------|-----|
-| `chrono-node-fw.bin` | OTA image for the web page |
+| `chrono-node-fw.bin` | OTA image: installed by the web page's **Install** button, or uploaded by hand |
 | `chrono-node-fw-full.bin` | Complete image for a **new or recovered** board. **Erases all settings, including Wi-Fi** |
 | `SHA256SUMS` | Checksums |
 

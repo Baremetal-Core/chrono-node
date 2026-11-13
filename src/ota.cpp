@@ -1,11 +1,15 @@
 #include "ota.h"
 
 #include <Arduino.h>
+#include <HTTPClient.h>
+#include <Update.h>
+#include <WiFiClientSecure.h>
 #include <esp_ota_ops.h>
 #include <esp_random.h>
 
 #include <atomic>
 
+#include "certs/ca_bundle.h"
 #include "config.h"
 
 // Tell the Arduino core not to confirm a new image at startup; ota::loop()
@@ -20,6 +24,114 @@ std::atomic<uint32_t> pinExpiresMs{0};
 std::atomic<int> uploadProgress{-1};
 bool pendingVerify = false;
 FlashLayout layout;
+
+// Release install: requested and run on the network task.
+bool releaseRequested = false;
+char releaseTag[32] = "";
+portMUX_TYPE errorLock = portMUX_INITIALIZER_UNLOCKED;
+char lastError[80] = "";
+uint32_t lastErrorMs = 0;
+
+void fail(const char* fmt, ...) {
+  char text[80];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(text, sizeof(text), fmt, args);
+  va_end(args);
+  Serial.printf("[OTA] Install failed: %s\n", text);
+  portENTER_CRITICAL(&errorLock);
+  strlcpy(lastError, text, sizeof(lastError));
+  lastErrorMs = millis() | 1;
+  portEXIT_CRITICAL(&errorLock);
+}
+
+bool validTag(const char* tag) {
+  const size_t n = strlen(tag);
+  if (n < 2 || n >= sizeof(releaseTag) || tag[0] != 'v') return false;
+  for (size_t i = 1; i < n; ++i) {
+    if (!isalnum((unsigned char)tag[i]) && !strchr(".-_", tag[i])) return false;
+  }
+  return true;
+}
+
+// Downloads the release asset straight into the update slot. GitHub answers
+// with a redirect to its file host; both use TLS with certificate checks.
+void installRelease() {
+  char url[160];
+  snprintf(url, sizeof(url), "https://github.com/%s/releases/download/%s/%s", config::kReleaseRepo,
+           releaseTag, config::kReleaseAsset);
+  Serial.printf("[OTA] Downloading %s\n", url);
+  uploadProgress = 0;  // the clock shows "Updating firmware... 0%"
+
+  WiFiClientSecure client;
+  client.setCACertBundle(ca_bundle);
+  client.setTimeout(20);
+  HTTPClient http;
+  http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+  http.setRedirectLimit(5);
+  http.setConnectTimeout(15000);
+  http.setTimeout(20000);
+  http.useHTTP10(true);
+  http.setUserAgent(String(config::kFirmwareName) + "/" + config::kFirmwareVersion);
+  if (!http.begin(client, url)) {
+    uploadProgress = -1;
+    return fail("bad download address");
+  }
+  const int code = http.GET();
+  const int len = http.getSize();
+  if (code != HTTP_CODE_OK) {
+    http.end();
+    uploadProgress = -1;
+    if (code == HTTP_CODE_NOT_FOUND) return fail("%s has no %s", releaseTag, config::kReleaseAsset);
+    return fail("download failed (%s)", code < 0 ? HTTPClient::errorToString(code).c_str()
+                                                 : String(code).c_str());
+  }
+  if (len <= 0 || (uint32_t)len > layout.updateSlot) {
+    http.end();
+    uploadProgress = -1;
+    return fail("unexpected file size (%d bytes)", len);
+  }
+  if (!Update.begin(len, U_FLASH)) {
+    http.end();
+    uploadProgress = -1;
+    return fail("%s", Update.errorString());
+  }
+  WiFiClient* in = http.getStreamPtr();
+  static uint8_t buf[2048];
+  int done = 0;
+  uint32_t lastDataMs = millis();
+  while (done < len) {
+    const int avail = in->available();
+    if (avail > 0) {
+      const int n = in->read(buf, min<int>(avail, sizeof(buf)));
+      if (n <= 0) continue;
+      if (Update.write(buf, n) != (size_t)n) break;
+      done += n;
+      lastDataMs = millis();
+      uploadProgress = min(99, (int)((int64_t)done * 100 / len));
+    } else if (!in->connected() || millis() - lastDataMs > 20000) {
+      break;
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(5));
+    }
+  }
+  http.end();
+  if (done != len) {
+    const String why = Update.hasError() ? String(Update.errorString()) : String("connection lost");
+    Update.abort();
+    uploadProgress = -1;
+    return fail("download stopped at %d%% (%s)", (int)((int64_t)done * 100 / len), why.c_str());
+  }
+  if (!Update.end(true)) {
+    uploadProgress = -1;
+    return fail("%s", Update.errorString());
+  }
+  uploadProgress = 100;
+  Serial.printf("[OTA] Installed %s (%d bytes), restarting\n", releaseTag, len);
+  Serial.flush();
+  delay(500);
+  ESP.restart();
+}
 
 const char* stateName(esp_ota_img_states_t s) {
   switch (s) {
@@ -79,6 +191,30 @@ bool checkPin(uint32_t candidate) {
   if (p == 0 || candidate != p) return false;
   pin = 0;
   return true;
+}
+
+bool requestRelease(const char* tag) {
+  if (releaseRequested || uploadProgress >= 0 || !validTag(tag)) return false;
+  strlcpy(releaseTag, tag, sizeof(releaseTag));
+  portENTER_CRITICAL(&errorLock);
+  lastErrorMs = 0;  // a new attempt: forget the previous failure
+  portEXIT_CRITICAL(&errorLock);
+  releaseRequested = true;
+  return true;
+}
+
+void serviceNet() {
+  if (!releaseRequested) return;
+  releaseRequested = false;
+  installRelease();
+}
+
+bool recentError(char* buf, size_t len) {
+  portENTER_CRITICAL(&errorLock);
+  const bool recent = lastErrorMs && millis() - lastErrorMs < config::kOtaErrorShowMs;
+  if (recent) strlcpy(buf, lastError, len);
+  portEXIT_CRITICAL(&errorLock);
+  return recent;
 }
 
 void setProgress(int percent) { uploadProgress = percent; }

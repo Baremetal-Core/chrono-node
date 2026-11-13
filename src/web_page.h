@@ -22,7 +22,7 @@ button{cursor:pointer;background:#1b2142}button.primary{background:var(--accent)
 button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-align:right}
 .results button,.recent button{display:block;width:100%;text-align:left;margin:6px 0}
 .results small,.recent small{color:var(--dim)}#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#1b2142;border:1px solid var(--line);padding:8px 14px;border-radius:10px;opacity:0;transition:opacity .3s}
-#toast.show{opacity:1}
+#toast.show{opacity:1}details{margin:10px 0}summary{cursor:pointer;color:var(--dim)}a{color:var(--accent)}
 .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:8px 0}.ph{position:relative}
 .ph img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px;display:block;cursor:pointer;border:1px solid var(--line);background:#000}
 .ph button{position:absolute;top:6px;right:6px;padding:2px 8px;background:#0b0f22d0}
@@ -94,11 +94,16 @@ On the clock, swipe to the Photo screen and tap for the next one. Tap a thumbnai
 <div class="muted">The setup portal disconnects the clock from this network; join "Chrono-Node-XXXX" to continue.</div>
 </section>
 <section><h2>Firmware</h2><div class="muted" id="fwcur"></div>
-<div class="row"><button id="otapin">1. Show PIN on the clock</button><input id="otapinv" placeholder="PIN" size="5" inputmode="numeric">
+<div id="rel" class="muted" style="margin:8px 0">Checking GitHub for updates...</div>
+<div id="relpin" class="row" style="display:none"><label>Code shown on the clock</label><input id="relpinv" placeholder="0000" size="5" maxlength="4" inputmode="numeric">
+<button class="primary" id="relgo">Install</button><button id="relcancel">Cancel</button></div>
+<div id="relstate" class="muted"></div>
+<details><summary>Install a .bin file instead</summary>
+<div class="row"><button id="otapin">1. Show code on the clock</button><input id="otapinv" placeholder="Code" size="5" inputmode="numeric">
 <input type="file" id="otafile" accept=".bin" style="flex:2 1 200px"><button class="primary" id="otago">2. Install</button></div>
 <progress id="otaprog" max="100" value="0" style="width:100%;display:none"></progress>
-<div class="muted">Use <b>chrono-node-fw.bin</b> from a release (not the -full image). The PIN appears at the bottom of the clock's screen for 2 minutes.
-If the new firmware fails within its first minute, the clock returns to the current one automatically.</div></section>
+<div class="muted">Use <b>chrono-node-fw.bin</b> from a release (not the -full image). The code appears at the bottom of the clock's screen for 2 minutes.</div></details>
+<div class="muted" style="margin-top:8px">If new firmware fails within its first minute, the clock goes back to the current version by itself.</div></section>
 <div class="muted">This page has no password: anyone on this network can change settings. Firmware updates need the PIN shown on the clock.</div>
 </main><div id="toast"></div>
 <script>
@@ -117,7 +122,32 @@ async function cmd(c,msg){const r=await fetch("/api/command",{method:"POST",head
 if(r.ok){toast(msg||"Saved");setTimeout(loadSettings,500);setTimeout(loadStatus,700)}else{toast("Error: "+((await r.json()).error||r.status))}}
 function ago(s){return s<90?"just now":s<5400?Math.round(s/60)+" min ago":Math.round(s/3600)+" h ago"}
 function up(s){const d=Math.floor(s/86400),h=Math.floor(s/3600)%24,m=Math.floor(s/60)%60;return(d?d+"d ":"")+h+"h "+m+"m"}
-async function loadStatus(){try{const s=await(await fetch("/api/status")).json();
+// Updates from GitHub: the browser asks GitHub for the latest release; the
+// clock downloads and installs it after the code shown on its screen is typed.
+let REL=null,relChecked=false;
+const ver=t=>String(t||"").replace(/^v/,"").split(/[.-]/).map(x=>parseInt(x)||0);
+function newer(a,b){const x=ver(a),y=ver(b);for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return(x[i]||0)>(y[i]||0)}return false}
+async function checkRelease(st){try{const r=await fetch(`https://api.github.com/repos/${st.release_repo}/releases/latest`,{headers:{Accept:"application/vnd.github+json"}});
+if(r.status===404){$("rel").textContent="No releases have been published on GitHub yet.";return}if(!r.ok)throw new Error(r.status);
+const j=await r.json(),asset=(j.assets||[]).find(a=>a.name===st.release_asset);REL={tag:j.tag_name};
+if(!newer(j.tag_name,st.firmware)){$("rel").textContent=`\u2713 This is the latest version (v${st.firmware}).`;return}
+if(!asset){$("rel").textContent=`${j.tag_name} is out, but it has no ${st.release_asset} yet.`;return}
+$("rel").innerHTML=`<div class="row"><label><b style="color:var(--text)">${esc(j.tag_name)} is available</b> \u00b7 ${esc((j.published_at||"").slice(0,10))}, ${mb(asset.size)} \u00b7 <a href="${esc(j.html_url)}" target="_blank" rel="noopener">What's new</a></label><button class="primary" id="relinst">Install ${esc(j.tag_name)}</button></div>`;
+$("relinst").onclick=startRelease}catch(e){$("rel").textContent="Couldn't reach GitHub to check for updates (is this phone or computer online?)."}}
+async function startRelease(){const r=await fetch("/api/ota/pin",{method:"POST"});if(!r.ok){toast("Couldn't show the code on the clock");return}
+$("relpin").style.display="flex";$("relpinv").value="";$("relpinv").focus();$("relstate").textContent="Look at the bottom of the clock's screen for a 4-digit code."}
+$("relcancel").onclick=()=>{$("relpin").style.display="none";$("relstate").textContent=""};
+$("relgo").onclick=async()=>{const pin=$("relpinv").value.trim();if(!/^\d{4}$/.test(pin)){toast("Enter the 4-digit code from the clock");return}
+const r=await fetch(`/api/ota/release?tag=${encodeURIComponent(REL.tag)}&pin=${pin}`,{method:"POST"});const d=await r.json().catch(()=>({}));
+if(r.status!==202){toast("Couldn't start: "+(d.error||r.status));return}$("relpin").style.display="none";waitForUpdate(REL.tag)};
+function waitForUpdate(tag){const want=tag.replace(/^v/,""),t0=Date.now();
+$("relstate").innerHTML=`<b style="color:var(--text)">Installing ${esc(tag)}...</b> The clock is downloading it (about a minute) and shows the progress on its screen, then restarts. Keep this page open.`;
+const poll=async()=>{let s=null;try{s=await(await fetch("/api/status",{cache:"no-store",signal:AbortSignal.timeout(4000)})).json()}catch(e){}
+if(s&&s.firmware===want){$("relstate").textContent=`\u2713 Updated to ${tag}.`;toast("Updated to "+tag);setTimeout(()=>location.reload(),2000);return}
+if(s&&s.ota&&s.ota.error&&s.ota.progress<0){$("relstate").textContent=`Update failed: ${s.ota.error}. The clock keeps the current version.`;return}
+if(Date.now()-t0>240000){$("relstate").textContent="The clock hasn't come back after 4 minutes. Check its screen; it keeps the current version if anything went wrong.";return}
+setTimeout(poll,3000)};setTimeout(poll,5000)}
+async function loadStatus(){try{const s=await(await fetch("/api/status")).json();if(!relChecked){relChecked=true;checkRelease(s)}
 $("time").textContent=s.local_time.slice(11);$("fwcur").textContent="Installed: v"+s.firmware+" ("+s.revision+")";$("sub").textContent="Firmware "+s.firmware+" ("+s.revision+") \u00b7 "+s.wifi.host;
 const w=s.weather?`${s.weather.temp_c}\u00b0C ${s.weather.condition}, ${s.weather.place} (${ago(s.weather.age_s)})`:"no data yet";
 const rows=[["Date",s.local_time.slice(0,10)],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],

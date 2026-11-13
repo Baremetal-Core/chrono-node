@@ -72,6 +72,12 @@ void handleStatus() {
   doc["heap_total"] = ESP.getHeapSize();
   doc["heap_free"] = ESP.getFreeHeap();
   doc["heap_min"] = ESP.getMinFreeHeap();
+  doc["release_repo"] = config::kReleaseRepo;
+  doc["release_asset"] = config::kReleaseAsset;
+  JsonObject otaState = doc["ota"].to<JsonObject>();
+  otaState["progress"] = ota::progress();
+  char otaError[80];
+  if (ota::recentError(otaError, sizeof(otaError))) otaState["error"] = otaError;
   const ota::FlashLayout fl = ota::flashLayout();
   JsonObject flash = doc["flash"].to<JsonObject>();
   flash["chip"] = fl.chip;
@@ -331,6 +337,23 @@ void handleOtaPin() {
   server->send(200, "application/json", "{\"pin_shown_on_clock\":true}");
 }
 
+// Install a GitHub release: the clock downloads it itself. Needs the PIN too,
+// so nobody else on the network can switch the firmware version.
+void handleOtaRelease() {
+  const String tag = server->arg("tag");
+  if (!ota::checkPin(strtoul(server->arg("pin").c_str(), nullptr, 10))) {
+    server->send(403, "application/json", "{\"error\":\"wrong or expired code\"}");
+    return;
+  }
+  if (!ota::requestRelease(tag.c_str())) {
+    server->send(400, "application/json", "{\"error\":\"invalid release or an update is running\"}");
+    return;
+  }
+  Serial.printf("[OTA] %s asked to install release %s\n",
+                server->client().remoteIP().toString().c_str(), tag.c_str());
+  server->send(202, "application/json", "{\"started\":true}");
+}
+
 void handleOtaUpload() {
   HTTPUpload& up = server->upload();
   switch (up.status) {
@@ -402,6 +425,7 @@ void start() {
   server->on("/api/photo", HTTP_GET, handlePhotoGet);
   server->on("/api/photo", HTTP_POST, handlePhotoDone, handlePhotoUpload);
   server->on("/api/ota/pin", HTTP_POST, handleOtaPin);
+  server->on("/api/ota/release", HTTP_POST, handleOtaRelease);
   server->on("/api/ota", HTTP_POST, handleOtaDone, handleOtaUpload);
   static const char* headers[] = {"Content-Length"};
   server->collectHeaders(headers, 1);

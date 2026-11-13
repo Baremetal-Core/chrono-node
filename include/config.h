@@ -8,7 +8,7 @@ namespace config {
 
 constexpr const char* kProjectName = "Chrono Node";
 constexpr const char* kFirmwareName = "chrono-node-fw";
-constexpr const char* kFirmwareVersion = "0.12.0";
+constexpr const char* kFirmwareVersion = "0.13.0";
 
 #ifdef CHRONO_GIT_REV
 constexpr const char* kGitRevision = CHRONO_GIT_REV;
@@ -81,6 +81,11 @@ constexpr uint32_t kScreenFadeInMs = 300;
 // ---- Firmware updates ----
 constexpr uint32_t kOtaConfirmAfterMs = 60000;  // run this long before confirming a new image
 constexpr uint32_t kOtaPinValidMs = 120000;
+// Releases the web page offers to install; the clock downloads the asset from
+// https://github.com/<repo>/releases/download/<tag>/<asset>.
+constexpr const char* kReleaseRepo = "Baremetal-Core/chrono-node";
+constexpr const char* kReleaseAsset = "chrono-node-fw.bin";
+constexpr uint32_t kOtaErrorShowMs = 60000;  // a failed install is reported this long
 
 // ---- Scrolling banner ----
 constexpr int kBannerMaxMessages = 5;
