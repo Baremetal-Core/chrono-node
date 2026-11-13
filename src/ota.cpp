@@ -46,6 +46,7 @@ void fail(const char* fmt, ...) {
 }
 
 bool validTag(const char* tag) {
+  if (strcmp(tag, "latest") == 0) return true;
   const size_t n = strlen(tag);
   if (n < 2 || n >= sizeof(releaseTag) || tag[0] != 'v') return false;
   for (size_t i = 1; i < n; ++i) {
@@ -58,8 +59,14 @@ bool validTag(const char* tag) {
 // with a redirect to its file host; both use TLS with certificate checks.
 void installRelease() {
   char url[160];
-  snprintf(url, sizeof(url), "https://github.com/%s/releases/download/%s/%s", config::kReleaseRepo,
-           releaseTag, config::kReleaseAsset);
+  if (strcmp(releaseTag, "latest") == 0) {
+    // GitHub redirects this to the newest release's file.
+    snprintf(url, sizeof(url), "https://github.com/%s/releases/latest/download/%s",
+             config::kReleaseRepo, config::kReleaseAsset);
+  } else {
+    snprintf(url, sizeof(url), "https://github.com/%s/releases/download/%s/%s",
+             config::kReleaseRepo, releaseTag, config::kReleaseAsset);
+  }
   Serial.printf("[OTA] Downloading %s\n", url);
   uploadProgress = 0;  // the clock shows "Updating firmware... 0%"
 

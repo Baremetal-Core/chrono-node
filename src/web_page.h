@@ -128,8 +128,13 @@ let REL=null,relChecked=false;
 const ver=t=>String(t||"").replace(/^v/,"").split(/[.-]/).map(x=>parseInt(x)||0);
 function newer(a,b){const x=ver(a),y=ver(b);for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return(x[i]||0)>(y[i]||0)}return false}
 async function checkRelease(st){try{const r=await fetch(`https://api.github.com/repos/${st.release_repo}/releases/latest`,{headers:{Accept:"application/vnd.github+json"}});
-if(r.status===404){$("rel").textContent="No releases have been published on GitHub yet.";return}if(!r.ok)throw new Error(r.status);
-const j=await r.json(),asset=(j.assets||[]).find(a=>a.name===st.release_asset);REL={tag:j.tag_name};
+if(r.status===404){$("rel").textContent="No releases have been published on GitHub yet.";return}
+if(r.status===403||r.status===429){REL={tag:"latest",from:st.firmware};
+// GitHub allows 60 checks an hour per network address; installing doesn't count.
+$("rel").innerHTML=`<div class="row"><label>GitHub didn't answer the update check (too many requests from this network; try again later).</label><button id="relinst">Install latest release</button></div>`;
+$("relinst").onclick=startRelease;return}
+if(!r.ok)throw new Error(r.status);
+const j=await r.json(),asset=(j.assets||[]).find(a=>a.name===st.release_asset);REL={tag:j.tag_name,from:st.firmware};
 if(!newer(j.tag_name,st.firmware)){$("rel").textContent=`\u2713 This is the latest version (v${st.firmware}).`;return}
 if(!asset){$("rel").textContent=`${j.tag_name} is out, but it has no ${st.release_asset} yet.`;return}
 $("rel").innerHTML=`<div class="row"><label><b style="color:var(--text)">${esc(j.tag_name)} is available</b> \u00b7 ${esc((j.published_at||"").slice(0,10))}, ${mb(asset.size)} \u00b7 <a href="${esc(j.html_url)}" target="_blank" rel="noopener">What's new</a></label><button class="primary" id="relinst">Install ${esc(j.tag_name)}</button></div>`;
@@ -139,11 +144,12 @@ $("relpin").style.display="flex";$("relpinv").value="";$("relpinv").focus();$("r
 $("relcancel").onclick=()=>{$("relpin").style.display="none";$("relstate").textContent=""};
 $("relgo").onclick=async()=>{const pin=$("relpinv").value.trim();if(!/^\d{4}$/.test(pin)){toast("Enter the 4-digit code from the clock");return}
 const r=await fetch(`/api/ota/release?tag=${encodeURIComponent(REL.tag)}&pin=${pin}`,{method:"POST"});const d=await r.json().catch(()=>({}));
-if(r.status!==202){toast("Couldn't start: "+(d.error||r.status));return}$("relpin").style.display="none";waitForUpdate(REL.tag)};
-function waitForUpdate(tag){const want=tag.replace(/^v/,""),t0=Date.now();
+if(r.status!==202){toast("Couldn't start: "+(d.error||r.status));return}$("relpin").style.display="none";waitForUpdate(REL.tag,REL.from)};
+function waitForUpdate(tag,from){const want=tag.replace(/^v/,""),t0=Date.now();
 $("relstate").innerHTML=`<b style="color:var(--text)">Installing ${esc(tag)}...</b> The clock is downloading it (about a minute) and shows the progress on its screen, then restarts. Keep this page open.`;
 const poll=async()=>{let s=null;try{s=await(await fetch("/api/status",{cache:"no-store",signal:AbortSignal.timeout(4000)})).json()}catch(e){}
-if(s&&s.firmware===want){$("relstate").textContent=`\u2713 Updated to ${tag}.`;toast("Updated to "+tag);setTimeout(()=>location.reload(),2000);return}
+const restarted=s&&s.uptime_s*1000<Date.now()-t0;
+if(s&&(s.firmware===want||(tag==="latest"&&(s.firmware!==from||restarted)))){tag="v"+s.firmware;$("relstate").textContent=`\u2713 Updated to ${tag}.`;toast("Updated to "+tag);setTimeout(()=>location.reload(),4000);return}
 if(s&&s.ota&&s.ota.error&&s.ota.progress<0){$("relstate").textContent=`Update failed: ${s.ota.error}. The clock keeps the current version.`;return}
 if(Date.now()-t0>240000){$("relstate").textContent="The clock hasn't come back after 4 minutes. Check its screen; it keeps the current version if anything went wrong.";return}
 setTimeout(poll,3000)};setTimeout(poll,5000)}

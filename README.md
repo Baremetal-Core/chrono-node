@@ -113,7 +113,7 @@ stays in one task.
 | `POST /api/command` | Body (`text/plain`): one console command. Returns `202 {"queued":true}` |
 | `GET /api/photo?n=<slot>` | A stored photo (JPEG) |
 | `POST /api/photo` | Multipart field `photo`: a baseline JPEG ≤ 64 KB, saved in a free slot. Returns `200 {"ok":true,"slot":n}` or `400 {"error":...}` |
-| `POST /api/ota/release?tag=vX.Y.Z&pin=NNNN` | The clock downloads and installs that GitHub release. Returns `202`, then restarts; failures show in `/api/status` → `ota.error` |
+| `POST /api/ota/release?tag=vX.Y.Z&pin=NNNN` | The clock downloads and installs that GitHub release (`tag=latest`: the newest). Returns `202`, then restarts; failures show in `/api/status` → `ota.error` |
 | `POST /api/ota/pin` | Shows a one-time update PIN on the clock (2 min) |
 | `POST /api/ota?pin=NNNN` | Multipart firmware upload. Returns `200`, `403` (PIN) or `500` (image) |
 
@@ -139,6 +139,11 @@ clock's version:
 3. The clock downloads `chrono-node-fw.bin` from the release itself, over HTTPS with
    certificate checks (about a minute, progress on its screen), and restarts. The page
    waits and confirms the new version.
+
+GitHub answers at most 60 update checks an hour per network address. On a shared address
+(office, mobile carrier, VPN) the check can be refused; the page then offers **Install
+latest release**, and the clock downloads `releases/latest/download/chrono-node-fw.bin`,
+which isn't limited.
 
 If the download fails, the clock keeps its current firmware and shows *Update failed: …*
 for a minute, and the page shows the reason. This needs the repository to be **public**:

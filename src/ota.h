@@ -23,7 +23,8 @@ uint32_t activePin();
 // Consumes the PIN if it matches (single use).
 bool checkPin(uint32_t pin);
 
-// Install a GitHub release (network task). `tag` must look like "v1.2.3".
+// Install a GitHub release (network task). `tag` must look like "v1.2.3", or be
+// "latest" for the newest release.
 // Returns false if it's not a valid tag or an install is already running. The
 // download happens in serviceNet(); the clock restarts when it succeeds.
 bool requestRelease(const char* tag);
