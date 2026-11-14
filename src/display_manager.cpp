@@ -358,7 +358,8 @@ theme::Palette DisplayManager::basePalette(const struct tm& local, uint32_t now)
     case theme::Style::Cycle:
     case theme::Style::PerDigit:
       // Accents (status icon, buttons, banner) follow the middle of the field.
-      refreshField(now);
+      // The field holds still while the network borrows the animation memory.
+      if (!fxLeased_) refreshField(now);
       return {fieldTop[kScreenW / 2], fieldBottom[kScreenW / 2]};
     default:
       if (theme::presetPalette(colors_.style, p)) return p;
@@ -525,6 +526,7 @@ void DisplayManager::tick() {
     // The network borrows the animation memory: hold the frame meanwhile and
     // repaint the time with the effects when the memory is back.
     syncFxBuffers();
+    lastPhaseMs_ = millis();  // colours carry on from where they held
     if (!fxLeased_ && mode_ == Mode::Clock && palValid_) {
       for (int i = 0; i < 4; ++i) {
         if (!bigRoll_[i].active) drawBigDigit(i, 1.0f);
@@ -733,6 +735,7 @@ void DisplayManager::drawDate(const struct tm& local) {
     TFT_eSprite s(&tft);
     s.setColorDepth(16);
     if (!s.createSprite(kScreenW, kDateH)) return;
+    if (ESP.getMaxAllocHeap() < kFontHeapBytes) return;  // the sprite frees itself
     s.loadFont(font_face);
     s.fillSprite(TFT_BLACK);
     layout(s, TFT_WHITE, TFT_WHITE, TFT_BLACK);
