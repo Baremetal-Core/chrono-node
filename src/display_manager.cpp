@@ -1,5 +1,7 @@
 #include "display_manager.h"
 
+#include "mem_lease.h"
+
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <TFT_eSPI.h>
@@ -247,29 +249,27 @@ void tintSprite(TFT_eSprite& s, int16_t w, int16_t h, int16_t y0, int16_t y1, co
   }
 }
 
+// Room loadFont() needs for its glyph tables; TFT_eSPI doesn't check its mallocs.
+constexpr uint32_t kFontHeapBytes = 6 * 1024;
+
 // Draws one text line through a temporary full-width sprite (no flicker).
-// Tall lines need up to 56 KB; when the heap can't spare that, the line is
-// drawn in strips, re-running `draw` with a viewport shifted onto each strip.
+// Returns false (drawing nothing) when the heap can't spare the sprite.
 template <typename Fn>
-void drawLine(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
+bool drawLine(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
   TFT_eSprite line(&tft);
   line.setColorDepth(16);
-  int16_t band = height;
-  while (!line.createSprite(kScreenW, band)) {
-    if (band <= 8) return;
-    band = (band + 1) / 2;
+  if (!line.createSprite(kScreenW, height)) return false;
+  if (ESP.getMaxAllocHeap() < kFontHeapBytes) {
+    line.deleteSprite();
+    return false;
   }
-  for (int16_t y = 0; y < height; y += band) {
-    line.resetViewport();
-    line.fillSprite(C->bg);
-    if (band < height) line.setViewport(0, -y, kScreenW, height, true);
-    line.loadFont(font);
-    draw(line);
-    line.unloadFont();
-    line.resetViewport();
-    line.pushSprite(0, top + y, 0, 0, kScreenW, min<int16_t>(band, height - y));
-  }
+  line.fillSprite(C->bg);
+  line.loadFont(font);
+  draw(line);
+  line.unloadFont();
+  line.pushSprite(0, top);
   line.deleteSprite();
+  return true;
 }
 
 void drawWifiIcon(TFT_eSprite& s, int16_t cx, int16_t baseY, uint8_t bars, uint16_t on,
@@ -521,6 +521,19 @@ void DisplayManager::showTime(const struct tm& local) {
 }
 
 void DisplayManager::tick() {
+  if (mem_lease::requested() != fxLeased_) {
+    // The network borrows the animation memory: hold the frame meanwhile and
+    // repaint the time with the effects when the memory is back.
+    syncFxBuffers();
+    if (!fxLeased_ && mode_ == Mode::Clock && palValid_) {
+      for (int i = 0; i < 4; ++i) {
+        if (!bigRoll_[i].active) drawBigDigit(i, 1.0f);
+      }
+      if (!secAnimating_) drawSeconds(1.0f);
+      drawColon();
+      drawDate(lastLocal_);
+    }
+  }
   if (mode_ != Mode::Clock || !spritesOk_) return;
   const uint32_t now = millis();
   if (now - lastFrameMs_ < kFrameMs) return;
@@ -542,7 +555,7 @@ void DisplayManager::tick() {
                             : !animatedStyle ? kPulseFrameMs
                             : glow           ? kGlowColorFrameMs
                                              : kColorFrameMs;
-  if ((animatedStyle || pulse || shining) && now - lastAnimMs_ >= interval) {
+  if ((animatedStyle || pulse || shining) && !fxLeased_ && now - lastAnimMs_ >= interval) {
     lastAnimMs_ = now;
     shineX = shineNow;
     if (animatedStyle) refreshField(now);
@@ -754,7 +767,11 @@ void DisplayManager::drawDate(const struct tm& local) {
 // strip (6 KB) for animated styles and the shine, glow buffers (11 KB) for glow.
 // Other screens free them: their tall lines need the room.
 void DisplayManager::syncFxBuffers() {
-  const bool clock = mode_ == Mode::Clock;
+  // Withdraw "released" before looking for a lease: a lease taken meanwhile
+  // then waits for the next sync instead of overlapping our allocations.
+  mem_lease::setReleased(false);
+  fxLeased_ = mem_lease::requested();
+  const bool clock = mode_ == Mode::Clock && !fxLeased_;
   const bool fx = clock && effectsOn();
   const bool animated = clock && !night_ && theme::styleAnimated(colors_.style);
   const bool cache = animated || (fx && (colors_.effects & (theme::kFxShine | theme::kFxGlow)));
@@ -782,6 +799,7 @@ void DisplayManager::syncFxBuffers() {
     free(glowA);
     glowA = glowB = nullptr;
   }
+  mem_lease::setReleased(!fxCache && !dateOk && !glowA);
 }
 
 void DisplayManager::setStatus(const StatusInfo& status) {
@@ -794,7 +812,7 @@ void DisplayManager::setStatus(const StatusInfo& status) {
 void DisplayManager::drawStatusBar() {
   if (mode_ != Mode::Clock || !statusValid_) return;
   const StatusInfo& st = status_;
-  drawLine(0, kStatusH, font_small, [&](TFT_eSprite& s) {
+  statusValid_ = drawLine(0, kStatusH, font_small, [&](TFT_eSprite& s) {
     uint16_t iconColor = C->dim;
     uint8_t bars = 0;
     switch (st.wifi) {

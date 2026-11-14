@@ -10,6 +10,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
 namespace net {
 
@@ -17,6 +18,8 @@ enum class State { Connecting, Connected, WaitingRetry, Portal };
 
 // Starts the network task. Call once from setup().
 void begin();
+// Lowest free stack of the network task so far, in bytes.
+uint32_t stackFree();
 
 State state();
 bool isConnected();

@@ -108,6 +108,12 @@ constexpr int kPhotoShowAtSecond = 28;          // between the banner (15) and f
 // uninterruptible CPU-bound step (software ECDSA P-384 certificate checks), which
 // starves core 0's idle task beyond the 5 s default and resets the clock.
 constexpr uint32_t kTaskWatchdogS = 15;
+// After this many crashes in a row the clock starts in safe mode (plain
+// colours, no effects) until the colours are changed; a crash counts as "in a
+// row" when the previous boot ran less than kSafeModeStableMs.
+constexpr uint8_t kSafeModeAfterCrashes = 3;
+constexpr uint32_t kSafeModeStableMs = 5 * 60 * 1000;
+constexpr uint32_t kSafeModeNoticeMs = 10 * 60 * 1000;
 
 // DS3231 die temperature (shown in the status bar) is read this often.
 constexpr uint32_t kTemperatureIntervalMs = 60000;

@@ -210,6 +210,11 @@ that the clock comes back on the previous slot:
 PLATFORMIO_BUILD_FLAGS="-DCHRONO_CRASH_AFTER_MS=20000" pio run
 ```
 
+**Safe mode:** if the clock crashes 3 times in a row (each run shorter than 5 min), it
+starts with the plain *Time of day* colours and no effects, and shows "Safe mode" on the
+bottom line for 10 minutes. Your saved colours are kept; choosing any colour or effect
+turns safe mode off. `INFO` shows why the clock last restarted (`Last reset: crash`).
+
 **Releases:** pushing a tag `vX.Y.Z` that matches `kFirmwareVersion` in `include/config.h`
 runs `.github/workflows/release.yml`, which builds and publishes a GitHub release with:
 
@@ -292,11 +297,14 @@ runs at 20 fps during its 1.4 s sweep. The status icon, buttons and banner use t
 middle colour.
 
 Memory: the buffers for animation (glyph shapes, a date strip, glow) are allocated only
-while a moving style or an effect is on, and freed otherwise. The network task needs a
-~45 KB free block for HTTPS (weather, updates); `INFO` shows the largest free block.
+while a moving style or an effect is on, and freed otherwise (also off the clock screen).
+The network task needs a ~45 KB free block for HTTPS (weather, updates, place search), so
+while an HTTPS connection is open the clock lends it that memory: the buffers are freed and
+the clock face holds still for those few seconds (`src/mem_lease.*`). `INFO` shows the
+largest free block.
 
-The date takes the clock's colours too, in a bold 24 px face: the weekday at full strength,
-the rest a little dimmer (long months shorten to three letters to fit). The weather line under
+The date takes the clock's colours too, in a bold 24 px face: all at full strength
+(long months shorten to three letters to fit). The weather line under
 it shows the temperature in the same bold face and the clock's colour. The minute bar fills smoothly through the minute instead of stepping every second,
 and it's drawn off-screen and sent in one go, so it never tears.
 
@@ -523,7 +531,7 @@ GET                         # current time, local and UTC
 TZ                          # show the timezone
 TZ <+07>-7                  # set and save a POSIX timezone (UTC+7, no DST)
 TZ CET-1CEST,M3.5.0,M10.5.0/3   # example with DST rules
-INFO                        # firmware/git revision, heap, partition, DS3231 temperature
+INFO                        # firmware, heap, partition, last reset reason, stack headroom, DS3231
 WIFI                        # Wi-Fi state, SSID, IP, RSSI
 WIFI PORTAL                 # open the setup portal (closes after 180 s if credentials exist)
 WIFI FORGET                 # erase saved Wi-Fi credentials and open the portal
@@ -620,6 +628,27 @@ picked up without a reboot.
 
 To disable the once-per-second time log, set `kLogEverySecond = false` in `include/config.h`.
 
+## Stress test
+
+`tools/stress_test.py` drives a connected clock over USB serial and its web API, checking
+that feature combinations hold up over hours. With the clock on USB and Wi-Fi:
+
+```bash
+uv run --with pyserial --with requests --with pillow tools/stress_test.py stress \
+    --host chrono-node.local --minutes 120 --ota-every 30 --bin .pio/build/cyd/chrono-node-fw.bin
+uv run --with pyserial --with requests --with pillow tools/stress_test.py ota-upload .pio/build/cyd/chrono-node-fw.bin
+uv run --with pyserial --with requests --with pillow tools/stress_test.py ota-release v0.13.0
+```
+
+`stress` picks random actions every 2–8 s: colour styles, speeds and effects, transitions,
+quick screen switching, preview, night mode on/off, weather updates, update checks and place
+searches (all HTTPS), photo upload/show/delete, the banner, and bursts of web requests, while
+polling the web API like an open settings page. Every `--ota-every` minutes it installs
+`--bin` through the web page's PIN flow and checks the new image is confirmed. It logs the
+serial output (`--log`) and reports crashes, unexpected restarts, reset reasons, heap and
+stack headroom, failed web requests and error lines. It changes settings: restore yours
+afterwards (or note them from `GET /api/settings` first).
+
 ## Project layout
 
 ```text
@@ -650,6 +679,8 @@ tools/gen_ca_bundle.py          CA bundle generator
 src/fonts/*.h                   generated Inter smooth fonts (do not edit)
 tools/gen_fonts.py              font generator (FreeType -> TFT_eSPI VLW arrays)
 tools/screenshot.py             screen capture over USB serial
+tools/stress_test.py            long-run stress test over USB serial + the web API (incl. OTA)
+src/mem_lease.*                 lends the animation buffers to HTTPS connections
 tools/fonts/                    Inter variable font + OFL licence
 src/photos.*                    photo storage in LittleFS: slots, uploads, JPEG header check
 src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)

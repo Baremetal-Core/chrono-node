@@ -15,6 +15,7 @@
 #include "certs/ca_bundle.h"
 #include "clock_sync.h"
 #include "config.h"
+#include "mem_lease.h"
 #include "net_manager.h"
 #include "ota.h"
 #include "photos.h"
@@ -269,6 +270,7 @@ void handleGeocode() {
   String url = "https://geocoding-api.open-meteo.com/v1/search?count=5&language=en&name=" + urlEncode(q);
   if (server->hasArg("country")) url += "&countryCode=" + urlEncode(server->arg("country"));
 
+  mem_lease::Scope lease;  // room for TLS
   WiFiClientSecure client;
   client.setCACertBundle(ca_bundle);
   client.setTimeout(10);

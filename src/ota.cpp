@@ -11,6 +11,7 @@
 
 #include "certs/ca_bundle.h"
 #include "config.h"
+#include "mem_lease.h"
 
 // Tell the Arduino core not to confirm a new image at startup; ota::loop()
 // does it once the firmware has proven to run.
@@ -58,6 +59,7 @@ void runCheck() {
   setCheck(CheckState::Checking, "");
   char url[128];
   snprintf(url, sizeof(url), "https://github.com/%s/releases/latest", config::kReleaseRepo);
+  mem_lease::Scope lease;  // room for TLS
   WiFiClientSecure client;
   client.setCACertBundle(ca_bundle);
   client.setTimeout(15);
@@ -125,6 +127,7 @@ void installRelease() {
   Serial.printf("[OTA] Downloading %s\n", url);
   uploadProgress = 0;  // the clock shows "Updating firmware... 0%"
 
+  mem_lease::Scope lease;  // room for TLS
   WiFiClientSecure client;
   client.setCACertBundle(ca_bundle);
   client.setTimeout(20);
