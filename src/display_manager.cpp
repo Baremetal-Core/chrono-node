@@ -272,6 +272,29 @@ bool drawLine(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
   return true;
 }
 
+// Like drawLine, for tall blocks: drawn in bands of at most kBandH rows so a
+// screen never needs one big sprite (an 88-row line is 56 KB) while HTTPS
+// runs. `draw(s, y0)` draws the whole block shifted up by y0; the sprite clips.
+constexpr int16_t kBandH = 30;
+template <typename Fn>
+bool drawBlock(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
+  const int16_t bands = (height + kBandH - 1) / kBandH;
+  const int16_t bandH = (height + bands - 1) / bands;
+  TFT_eSprite band(&tft);
+  band.setColorDepth(16);
+  if (!band.createSprite(kScreenW, bandH)) return false;
+  for (int16_t y0 = 0; y0 < height; y0 += bandH) {
+    if (ESP.getMaxAllocHeap() < kFontHeapBytes) return false;  // the sprite frees itself
+    band.fillSprite(C->bg);
+    band.loadFont(font);
+    draw(band, y0);
+    band.unloadFont();
+    band.pushSprite(0, top + y0, 0, 0, kScreenW, min<int16_t>(bandH, height - y0));
+  }
+  band.deleteSprite();
+  return true;
+}
+
 void drawWifiIcon(TFT_eSprite& s, int16_t cx, int16_t baseY, uint8_t bars, uint16_t on,
                   uint16_t off) {
   // Three arcs and a dot fanning upwards; TFT_eSPI arc angles start at 6 o'clock.
@@ -1209,16 +1232,16 @@ void DisplayManager::showUpdateScreen(const UpdateView& v) {
       s.drawString(v.detail, kScreenW / 2, 11);
     }
   });
-  drawLine(kConfirmBtnY, kConfirmBtnH, font_date, [&](TFT_eSprite& s) {
-    s.fillSmoothRoundRect(10, 0, 140, kConfirmBtnH, 12, C->faint, C->bg);
+  drawBlock(kConfirmBtnY, kConfirmBtnH, font_date, [&](TFT_eSprite& s, int16_t y0) {
+    s.fillSmoothRoundRect(10, -y0, 140, kConfirmBtnH, 12, C->faint, C->bg);
     s.setTextDatum(MC_DATUM);
     s.setTextColor(C->text, C->faint);
-    s.drawString("Back", 80, kConfirmBtnH / 2 + 1);
+    s.drawString("Back", 80, kConfirmBtnH / 2 + 1 - y0);
     if (v.action[0]) {
       const uint16_t fill = v.actionIsInstall ? pal_.top : C->faint;
-      s.fillSmoothRoundRect(170, 0, 140, kConfirmBtnH, 12, fill, C->bg);
+      s.fillSmoothRoundRect(170, -y0, 140, kConfirmBtnH, 12, fill, C->bg);
       s.setTextColor(v.actionIsInstall ? theme::rgb(0, 0, 0) : C->text, fill);
-      s.drawString(v.action, 240, kConfirmBtnH / 2 + 1);
+      s.drawString(v.action, 240, kConfirmBtnH / 2 + 1 - y0);
     }
   });
 }
@@ -1248,14 +1271,14 @@ void DisplayManager::showWifiResetScreen(const char* savedSsid, const char* port
       s.drawString(lines[i], kScreenW / 2, 10);
     });
   }
-  drawLine(kConfirmBtnY, kConfirmBtnH, font_date, [&](TFT_eSprite& s) {
-    s.fillSmoothRoundRect(10, 0, 140, kConfirmBtnH, 12, C->faint, C->bg);
-    s.fillSmoothRoundRect(170, 0, 140, kConfirmBtnH, 12, C->error, C->bg);
+  drawBlock(kConfirmBtnY, kConfirmBtnH, font_date, [&](TFT_eSprite& s, int16_t y0) {
+    s.fillSmoothRoundRect(10, -y0, 140, kConfirmBtnH, 12, C->faint, C->bg);
+    s.fillSmoothRoundRect(170, -y0, 140, kConfirmBtnH, 12, C->error, C->bg);
     s.setTextDatum(MC_DATUM);
     s.setTextColor(C->text, C->faint);
-    s.drawString("Cancel", 80, kConfirmBtnH / 2 + 1);
+    s.drawString("Cancel", 80, kConfirmBtnH / 2 + 1 - y0);
     s.setTextColor(theme::rgb(0, 0, 0), C->error);
-    s.drawString("Forget", 240, kConfirmBtnH / 2 + 1);
+    s.drawString("Forget", 240, kConfirmBtnH / 2 + 1 - y0);
   });
 }
 
@@ -1449,33 +1472,33 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
   });
 
   // Now: big icon, temperature, condition, details.
-  drawLine(28, 88, font_temp, [&](TFT_eSprite& s) {
-    weather_icons::draw(s, 54, 44, 74, weather::iconFor(w.code), w.isDay, C->bg);
+  drawBlock(28, 88, font_temp, [&](TFT_eSprite& s, int16_t y0) {
+    weather_icons::draw(s, 54, 44 - y0, 74, weather::iconFor(w.code), w.isDay, C->bg);
     char t[8];
     deg(t, sizeof(t), (int)lroundf(w.temp));
     s.setTextDatum(L_BASELINE);
     s.setTextColor(accent, C->bg);
-    s.drawString(t, 102, 58);
+    s.drawString(t, 102, 58 - y0);
     s.unloadFont();
     s.loadFont(font_date);
     s.setTextColor(C->text, C->bg);
-    s.drawString(weather::describe(w.code), 102, 84);
+    s.drawString(weather::describe(w.code), 102, 84 - y0);
     s.unloadFont();
     s.loadFont(font_small);
     char line[24];
     s.setTextColor(C->dim, C->bg);
     snprintf(line, sizeof(line), "Feels %d\xC2\xB0", (int)lroundf(w.feels));
-    s.drawString(line, 216, 22);
+    s.drawString(line, 216, 22 - y0);
     snprintf(line, sizeof(line), "Humidity %u%%", w.humidity);
-    s.drawString(line, 216, 41);
+    s.drawString(line, 216, 41 - y0);
     if (w.dayCount) {
       snprintf(line, sizeof(line), "Rain %u%%", w.days[0].pop);
-      s.drawString(line, 216, 60);
+      s.drawString(line, 216, 60 - y0);
     }
   });
 
   // Next hours, every 3 h.
-  drawLine(116, 58, font_small, [&](TFT_eSprite& s) {
+  drawBlock(116, 58, font_small, [&](TFT_eSprite& s, int16_t y0) {
     const int cols = 6;
     const int16_t colW = kScreenW / cols;
     for (int c = 0; c < cols; ++c) {
@@ -1490,18 +1513,18 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
       snprintf(label, sizeof(label), "%02d:00", t.tm_hour);
       s.setTextDatum(MC_DATUM);
       s.setTextColor(C->dim, C->bg);
-      s.drawString(label, cx, 8);
-      weather_icons::draw(s, cx, 29, 26, weather::iconFor(h.code), h.isDay, C->bg);
+      s.drawString(label, cx, 8 - y0);
+      weather_icons::draw(s, cx, 29 - y0, 26, weather::iconFor(h.code), h.isDay, C->bg);
       char tv[8];
       deg(tv, sizeof(tv), h.temp);
       s.setTextColor(C->text, C->bg);
-      s.drawString(tv, cx, 50);
+      s.drawString(tv, cx, 50 - y0);
     }
   });
 
   // Next days.
-  drawLine(174, 66, font_small, [&](TFT_eSprite& s) {
-    s.drawFastHLine(10, 0, kScreenW - 20, C->faint);
+  drawBlock(174, 66, font_small, [&](TFT_eSprite& s, int16_t y0) {
+    s.drawFastHLine(10, -y0, kScreenW - 20, C->faint);
     const int16_t colW = kScreenW / weather::kDays;
     static const char* const kShortDays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
     for (int i = 0; i < w.dayCount; ++i) {
@@ -1512,22 +1535,22 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
       localtime_r(&tt, &t);
       s.setTextDatum(MC_DATUM);
       s.setTextColor(i == 0 ? accent : C->text, C->bg);
-      s.drawString(i == 0 ? "Today" : kShortDays[t.tm_wday % 7], cx, 14);
-      weather_icons::draw(s, cx - 13, 34, 22, weather::iconFor(d.code), true, C->bg);
+      s.drawString(i == 0 ? "Today" : kShortDays[t.tm_wday % 7], cx, 14 - y0);
+      weather_icons::draw(s, cx - 13, 34 - y0, 22, weather::iconFor(d.code), true, C->bg);
       char pop[8];
       snprintf(pop, sizeof(pop), "%u%%", d.pop);
       s.setTextDatum(ML_DATUM);
       s.setTextColor(d.pop >= 50 ? theme::rgb(0, 190, 255) : C->dim, C->bg);
-      s.drawString(pop, cx + 2, 34);
+      s.drawString(pop, cx + 2, 34 - y0);
       char hi[8], lo[8];
       deg(hi, sizeof(hi), d.tmax);
       deg(lo, sizeof(lo), d.tmin);
       const int16_t hw = s.textWidth(hi), lw = s.textWidth(lo);
       const int16_t x0 = cx - (hw + 6 + lw) / 2;
       s.setTextColor(C->text, C->bg);
-      s.drawString(hi, x0, 54);
+      s.drawString(hi, x0, 54 - y0);
       s.setTextColor(C->dim, C->bg);
-      s.drawString(lo, x0 + hw + 6, 54);
+      s.drawString(lo, x0 + hw + 6, 54 - y0);
     }
   });
 }
