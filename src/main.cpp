@@ -121,6 +121,7 @@ int bannerIndex = 0;          // next message for SHOW and the continuous rotati
 uint32_t bannerDue = 0;       // bit i: message i is due
 uint32_t bannerSeenVer = 0;   // settings::bannerVersion() the due bits refer to
 bool bannerRequested = false;
+bool updateNoticeDue = false;
 bool bannerWasActive = false;
 uint32_t bannerNextMs = 0;
 
@@ -270,6 +271,25 @@ void updateBanner(const struct tm& local) {
   if (settings::bannerVersion() != bannerSeenVer) {
     bannerSeenVer = settings::bannerVersion();
     bannerDue = 0;  // indices may have moved
+  }
+  // A new release (found by the daily check) scrolls by once an hour.
+  char tag[32];
+  const bool updateAvailable = ota::checkState(tag, sizeof(tag)) == ota::CheckState::Available;
+  if (!updateAvailable) {
+    updateNoticeDue = false;
+  } else if (local.tm_min == config::kUpdateNoticeMinute &&
+             local.tm_sec == config::kBannerStartSecond) {
+    updateNoticeDue = true;
+  }
+  if (updateNoticeDue && !active && (int32_t)(millis() - bannerNextMs) >= 0) {
+    char text[96];
+    snprintf(text, sizeof(text), "Software update %s is available \xE2\x80\x93 Info \xE2\x80\x93 Update", tag);
+    if (display.startBanner(text, settings::bannerSpeed())) {
+      Serial.printf("[BANNER] Update notice (%s)\n", tag);
+      updateNoticeDue = false;
+      bannerWasActive = true;
+    }
+    return;
   }
   const bool enabled = settings::bannerEnabled();
   if (enabled && local.tm_sec == config::kBannerStartSecond) {
@@ -486,6 +506,7 @@ void showUpdate() {
 
 void buildInfoView(InfoView& v) {
   v.count = 0;
+  v.updateAvailable = ota::checkState(nullptr, 0) == ota::CheckState::Available;
   auto add = [&](const char* label, const char* fmt, auto... args) {
     if (v.count >= InfoView::kMaxRows) return;
     strlcpy(v.rows[v.count][0], label, sizeof(v.rows[0][0]));
@@ -831,7 +852,10 @@ void updateStatus() {
   st.hasTemp = hasTemp && !hasWeather;
   st.tempC = static_cast<int8_t>(lroundf(tempC));
   const uint32_t nowUtc = static_cast<uint32_t>(time(nullptr));
-  if (hasWeather && wx.aqi >= 0 && nowUtc - wx.aqiUtc < config::kAirStaleS) st.aqi = wx.aqi;
+  // Signed: a clock set back a little mustn't make a fresh reading look stale.
+  if (hasWeather && wx.aqi >= 0 && static_cast<int32_t>(nowUtc - wx.aqiUtc) < (int32_t)config::kAirStaleS) {
+    st.aqi = wx.aqi;
+  }
   display.setStatus(st);
   const uint32_t age = weather::ageSeconds();
   display.setWeather(hasWeather ? &wx : nullptr, age != UINT32_MAX && age > config::kWeatherStaleS);

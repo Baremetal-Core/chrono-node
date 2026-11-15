@@ -631,6 +631,10 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     }
   } else if (strcasecmp(text, "OTA") == 0) {
     ota::printStatus();
+  } else if (strcasecmp(text, "OTA AUTO ON") == 0 || strcasecmp(text, "OTA AUTO OFF") == 0) {
+    settings::setAutoUpdateCheck(strcasecmp(text, "OTA AUTO ON") == 0);
+    Serial.printf("[OTA] Daily update check %s (saved)\n", settings::autoUpdateCheck() ? "on" : "off");
+    return true;
   } else if (strcasecmp(text, "OTA CHECK") == 0) {
     ota::requestCheck();  // the result is logged and shown on the update screen
   } else if (strncasecmp(text, "OTA INSTALL ", 12) == 0) {
@@ -682,7 +686,7 @@ void serialConsolePrintHelp() {
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
       "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | LUNAR [ON|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
-      "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|INSTALL tag] | SHOT | "
+      "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }
 

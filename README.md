@@ -177,7 +177,8 @@ stays in one task.
 
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
-`PHOTO`, `LUNAR`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`.
+`PHOTO`, `LUNAR`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
+`OTA AUTO`.
 Diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
 ```bash
@@ -185,6 +186,13 @@ curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-
 ```
 
 ## Firmware updates (OTA) and releases
+
+**Update notice:** the clock checks GitHub once a day (first 2 minutes after it starts,
+hourly after a failed check) with the same redirect check as the Update screen. When a newer
+release exists, *Software update vX.Y.Z is available – Info – Update* scrolls across the
+bottom line at :30 every hour, and the **Update** button on the Info screen is highlighted.
+Turn it off on the web page (*Firmware* → *Check for updates every day*) or with
+`OTA AUTO OFF`.
 
 **On the clock** (Info → **Update**): the clock asks GitHub for the newest release (it reads
 where `github.com/<repo>/releases/latest` redirects to, which isn't rate limited). If it's
@@ -631,6 +639,7 @@ SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web 
 REBOOT                      # restart the clock
 OTA                         # running slot, OTA state (pending/valid), next slot
 OTA CHECK                   # ask GitHub for the newest release (shown on the Update screen)
+OTA AUTO OFF                # stop the daily update check and notice (OTA AUTO ON to resume)
 OTA INSTALL v0.14.0         # download and install a release (or: OTA INSTALL latest)
 HELP
 ```

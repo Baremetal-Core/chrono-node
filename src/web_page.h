@@ -121,6 +121,7 @@ On the clock, swipe to the Photo screen and tap for the next one. Tap a thumbnai
 </section>
 <section><h2>Firmware</h2><div class="muted" id="fwcur"></div>
 <div id="rel" class="muted" style="margin:8px 0">Checking GitHub for updates...</div>
+<div class="row"><label>Check for updates every day (the clock shows a note)</label><select id="otaauto"><option value="ON">On</option><option value="OFF">Off</option></select></div>
 <div id="relpin" class="row" style="display:none"><label>Code shown on the clock</label><input id="relpinv" placeholder="0000" size="5" maxlength="4" inputmode="numeric">
 <button class="primary" id="relgo">Install</button><button id="relcancel">Cancel</button></div>
 <div id="relstate" class="muted"></div>
@@ -217,7 +218,7 @@ function esc(t){return t.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;
 let S;
 async function loadSettings(){S=await(await fetch("/api/settings")).json();
 $("bday").value=S.brightness_day;$("bdayv").textContent=S.brightness_day+"%";$("bnight").value=S.brightness_night;$("bnightv").textContent=S.brightness_night+"%";
-$("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("lunar").value=S.lunar?"ON":"OFF";$("cyc").value=S.forecast_cycle?"ON":"OFF";
+$("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("lunar").value=S.lunar?"ON":"OFF";$("otaauto").value=S.update_check?"ON":"OFF";$("cyc").value=S.forecast_cycle?"ON":"OFF";
 clrRender(S.colors);selVal("tofc",S.timeouts.forecast_s,S.timeouts.forecast_s+" seconds");selVal("toph",S.timeouts.photo_s,S.timeouts.photo_s+" seconds");selVal("toidle",S.timeouts.idle_s,S.timeouts.idle_s+" seconds");
 const known=TZ.find(z=>z[1]===S.timezone);$("tz").value=known?known[0]:"custom";$("tzcustom").value=S.timezone;$("tzcustomrow").style.display=known?"none":"flex";
 $("ntp").value=S.ntp_server;
@@ -284,6 +285,7 @@ $("bday").onchange=e=>cmd("BRIGHT DAY "+e.target.value);$("bnight").onchange=e=>
 $("non").onchange=e=>cmd("NIGHT "+e.target.value);$("nsave").onclick=()=>cmd(`NIGHT ${$("nstart").value} ${$("nend").value}`);
 $("fmt").onchange=e=>cmd("FORMAT "+e.target.value);
 $("lunar").onchange=e=>cmd("LUNAR "+e.target.value);
+$("otaauto").onchange=e=>cmd("OTA AUTO "+e.target.value);
 const secs=(id,list)=>{$(id).innerHTML=list.map(s=>`<option value="${s}">${s<60?s+" seconds":s/60+(s===60?" minute":" minutes")}</option>`).join("");
 $(id).onchange=e=>cmd($(id).dataset.cmd+" "+e.target.value)};
 secs("tofc",[5,10,15,20,30,60]);secs("toph",[5,8,12,20,30,60]);secs("toidle",[10,15,30,60,120,300]);

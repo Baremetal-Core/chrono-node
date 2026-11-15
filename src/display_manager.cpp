@@ -1158,9 +1158,11 @@ void DisplayManager::showInfoScreen(const InfoView& v) {
       const char* labels[] = {"Wi-Fi", "Storage", "Update"};
       for (int b = 0; b < 3; ++b) {
         const int16_t x = 10 + b * 102;
-        s.fillSmoothRoundRect(x, 0, 96, kInfoBtnH, 8, C->faint, C->bg);
+        const bool lit = b == 2 && v.updateAvailable;
+        const uint16_t fill = lit ? pal_.top : C->faint;
+        s.fillSmoothRoundRect(x, 0, 96, kInfoBtnH, 8, fill, C->bg);
         s.setTextDatum(MC_DATUM);
-        s.setTextColor(C->text, C->faint);
+        s.setTextColor(lit ? theme::rgb(0, 0, 0) : C->text, fill);
         s.drawString(labels[b], x + 48, kInfoBtnH / 2 + 1);
       }
     });

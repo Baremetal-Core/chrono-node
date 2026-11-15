@@ -44,7 +44,7 @@ const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BR
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
                                 "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT",
-                                "TRANSITION",   "TOUCH CAL"};
+                                "TRANSITION",   "TOUCH CAL",    "OTA AUTO "};
 
 bool allowed(const String& cmd) {
   if (cmd.length() == 0 || cmd.length() >= kCommandLen || cmd.indexOf('\n') >= 0 ||
@@ -181,6 +181,7 @@ void handleSettings() {
   doc["hour12"] = settings::hour12();
   doc["forecast_cycle"] = settings::weatherCycle();
   doc["lunar"] = settings::lunarDate();
+  doc["update_check"] = settings::autoUpdateCheck();
   JsonObject colors = doc["colors"].to<JsonObject>();
   const uint8_t styleIndex = settings::colorStyle() % static_cast<uint8_t>(theme::Style::Count);
   colors["style"] = theme::styleKey(static_cast<theme::Style>(styleIndex));

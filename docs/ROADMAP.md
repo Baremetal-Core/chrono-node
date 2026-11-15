@@ -124,7 +124,8 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
   and a Tết countdown.
 - Air quality ✅: US AQI and PM2.5 from Open-Meteo, coloured by category (status bar,
   forecast screen, web status).
-- Update notice: a daily check for a new release, shown on the clock.
+- Update notice ✅: a daily check for a new release; a scrolling note every hour and a
+  highlighted Update button.
 
 ---
 

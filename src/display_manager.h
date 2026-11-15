@@ -49,6 +49,7 @@ struct InfoView {
   char rows[kMaxRows][2][40];  // label, value
   InfoBar bars[kMaxRows];
   int count = 0;
+  bool updateAvailable = false;  // highlights the Update button
 };
 
 struct SettingsView {
