@@ -115,7 +115,7 @@ On the clock, swipe to the Photo screen and tap for the next one. Tap a thumbnai
 </section>
 
 <section><h2>Wi-Fi &amp; device</h2>
-<div class="row"><button id="portal">Open Wi-Fi setup portal</button><button class="danger" id="forget">Forget Wi-Fi</button><button class="danger" id="reboot">Reboot</button></div>
+<div class="row"><button id="portal">Open Wi-Fi setup portal</button><button class="danger" id="forget">Forget Wi-Fi</button><button class="danger" id="reboot">Reboot</button><button id="touchcal">Calibrate touch screen</button></div>
 <div class="muted">The setup portal disconnects the clock from this network; join "Chrono-Node-XXXX" to continue.</div>
 </section>
 <section><h2>Firmware</h2><div class="muted" id="fwcur"></div>
@@ -316,6 +316,7 @@ $("q").onkeydown=e=>{if(e.key==="Enter")$("search").click()};
 document.addEventListener("click",e=>{const f=e.target.closest("button[data-f]");if(f){confirm(`Remove ${f.dataset.f} from recent locations?`)&&cmd("WEATHER FORGET "+f.dataset.f,"Removed");return}const b=e.target.closest("button[data-c]");if(b){cmd("WEATHER LOC "+b.dataset.c,"Location saved");$("results").innerHTML=""}});
 $("locsave").onclick=()=>{const la=parseFloat($("lat").value),lo=parseFloat($("lon").value);if(isNaN(la)||isNaN(lo)){toast("Enter latitude and longitude");return}
 cmd(`WEATHER LOC ${la} ${lo} ${$("lname").value.trim()}`.trim(),"Location saved")};
+$("touchcal").onclick=()=>confirm("Calibrate the touch screen? Four crosses appear on the clock, one after another: press each with a stylus (or a fingernail) and hold for a second. The clock face pauses meanwhile.")&&cmd("TOUCH CAL","Press the crosses on the clock");
 $("portal").onclick=()=>confirm("Open the setup portal? The clock leaves this network until set up again.")&&cmd("WIFI PORTAL","Portal opening");
 $("forget").onclick=()=>confirm("Erase the saved Wi-Fi network?")&&cmd("WIFI FORGET","Wi-Fi forgotten");
 $("reboot").onclick=()=>confirm("Reboot the clock?")&&cmd("REBOOT","Rebooting...");

@@ -101,10 +101,12 @@ forecast, info and settings screens, plus a settings page in the browser at
 - **Touch hardware:** the XPT2046 controller sits on its own SPI bus (CLK 25, MOSI 32,
   MISO 39, CS 33), separate from the display. Only firm presses give positions, because
   resistive panels read unreliable coordinates while the finger lands or lifts.
-- **Calibration:** run `TOUCH CAL` and press each of the 4 crosshairs firmly, ideally with a
-  stylus. An affine fit (least squares) also corrects a touch panel that is slightly rotated
-  against the display, which is the case on this unit. The result is saved in NVS. Until
-  calibrated, a generic mapping is used, which can be ~15 px off near the edges.
+- **Calibration:** on the web page (*Wi-Fi & device* → **Calibrate touch screen**) or with
+  `TOUCH CAL`, press each of the 4 crosshairs firmly, ideally with a stylus, and hold for a
+  second. An affine fit (least squares) also corrects a touch panel that is slightly rotated
+  against the display, which is the case on this unit. The result is saved in NVS and kept
+  across firmware updates. Until then, the stylus calibration of the project's own board is
+  used (within 1 px on it; other boards may be a few pixels off).
   `TOUCH` prints raw and mapped readings for 10 s.
 
 ## Web settings
@@ -121,7 +123,8 @@ stays online:
 - **Weather location:** search a city or district (Open-Meteo geocoding, top 5 matches with
   province, country and population, *Vietnam only* on by default), or enter coordinates, or
   pick a recent location (✕ removes one from the list).
-- **Wi-Fi & device:** open the setup portal, forget the Wi-Fi network, reboot.
+- **Wi-Fi & device:** open the setup portal, forget the Wi-Fi network, reboot, calibrate the
+  touch screen.
 
 ![Web settings](docs/images/web-ui.png)
 
@@ -148,8 +151,8 @@ stays in one task.
 
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
-`PHOTO`.
-Blocking or diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
+`PHOTO`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`.
+Diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
 ```bash
 curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-node.local/api/command

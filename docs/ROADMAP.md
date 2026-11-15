@@ -55,8 +55,9 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
   custom colours, plus shine, pulse and glow effects; chosen on the web page or the clock.
 - Turn the always-on RGB LED off (or use it as a subtle status light).
 
-## M6 – Touch & screens ✅ (calibration on this unit pending a stylus)
-- XPT2046 driver with a calibration routine stored in NVS.
+## M6 – Touch & screens ✅
+- XPT2046 driver with a calibration routine stored in NVS. Calibrated with a stylus (within
+  1 px), now the firmware default; recalibrate from the web page or `TOUCH CAL`.
 - Screens: Clock → Weather → Info/Settings. Swipe/tap navigation, on-device settings (12/24h, theme, brightness).
 - Weather location on the device: pick from recently used locations (no typing on the
   resistive screen; new locations are added via the web UI, M9).
