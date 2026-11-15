@@ -108,6 +108,8 @@ constexpr int kPhotoShowAtSecond = 28;          // between the banner (15) and f
 // uninterruptible CPU-bound step (software ECDSA P-384 certificate checks), which
 // starves core 0's idle task beyond the 5 s default and resets the clock.
 constexpr uint32_t kTaskWatchdogS = 15;
+// Air quality older than this is hidden.
+constexpr uint32_t kAirStaleS = 3 * 3600;
 // The clock face counts down to Tết in the last days before it.
 constexpr int kTetCountdownDays = 30;
 // After this many crashes in a row the clock starts in safe mode (plain

@@ -830,6 +830,8 @@ void updateStatus() {
   const bool hasWeather = weather::get(wx);
   st.hasTemp = hasTemp && !hasWeather;
   st.tempC = static_cast<int8_t>(lroundf(tempC));
+  const uint32_t nowUtc = static_cast<uint32_t>(time(nullptr));
+  if (hasWeather && wx.aqi >= 0 && nowUtc - wx.aqiUtc < config::kAirStaleS) st.aqi = wx.aqi;
   display.setStatus(st);
   const uint32_t age = weather::ageSeconds();
   display.setWeather(hasWeather ? &wx : nullptr, age != UINT32_MAX && age > config::kWeatherStaleS);

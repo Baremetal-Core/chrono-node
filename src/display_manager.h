@@ -85,6 +85,7 @@ struct StatusInfo {
   bool ntpWarn = false;      // stale sync
   bool hasTemp = false;
   int8_t tempC = 0;
+  int16_t aqi = -1;  // US AQI, -1 to hide
 };
 
 class DisplayManager {

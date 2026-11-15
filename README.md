@@ -27,7 +27,7 @@ forecast, info and settings screens, plus a settings page in the browser at
 ## Display
 
 - **Status bar:** Wi-Fi signal and network name, NTP sync age (`NTP 5m`, amber when stale),
-  and the DS3231 temperature (±3 °C; it's the RTC chip's own sensor). The DS3231
+  the air quality (`● AQI 94`, see Weather), and the DS3231 temperature (±3 °C; it's the RTC chip's own sensor). The DS3231
   temperature is shown only when there's no weather data.
 - **Time:** HH:MM in 104 px Inter Bold with a vertical colour gradient. Changed digits roll
   upwards over 300 ms. Every digit uses a fixed-width cell, so the time never shifts sideways.
@@ -139,8 +139,8 @@ Open `http://chrono-node.local` (or the clock's IP, shown on the Info screen) fr
 on the same network. The page shows live status and changes every setting while the clock
 stays online:
 
-- **Status:** time, lunar date and days to Tết, Wi-Fi, IP, NTP sync, RTC, weather, current
-  screen, uptime, memory.
+- **Status:** time, lunar date and days to Tết, Wi-Fi, IP, NTP sync, RTC, weather, air
+  quality, current screen, uptime, memory.
 - **Display:** day/night brightness, night mode and its hours, 12/24-hour time, the lunar
   date, forecast cycle.
 - **Time:** time zone by name (common zones are mapped to POSIX strings, **Detect** uses the
@@ -285,6 +285,12 @@ A USB upload (`pio run -t upload`) always resets the boot slot to `app0`.
   2 minutes at second 45 for 10 s (settable), behind a quick backlight dip. It's never shown
   at night or while a notice is shown. Turn it off with `WEATHER CYCLE OFF`. `WEATHER SHOW`
   shows it now.
+- **Air quality:** after each weather update the clock fetches the US AQI and PM2.5 for the
+  same place from Open-Meteo's air-quality API (CAMS data). The status bar shows `● AQI 94`:
+  the dot in the EPA category colour (green good, yellow moderate, orange unhealthy for
+  sensitive groups, red unhealthy, purple very unhealthy, dark red hazardous), and the number
+  in that colour too once it's above 100. The forecast screen adds an AQI row, and the web
+  status shows the category and PM2.5. Readings older than 3 h are hidden.
 - **Offline:** the last data stays on screen. After 2 h it's dimmed and marked "old". The
   data is kept in RAM only, so a reboot without network shows no weather.
 - Icons are drawn from anti-aliased circles, lines and rounded rectangles (sun, moon, clouds,

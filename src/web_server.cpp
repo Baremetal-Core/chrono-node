@@ -150,6 +150,11 @@ void handleStatus() {
       w["low_c"] = wx.days[0].tmin;
       w["rain_pct"] = wx.days[0].pop;
     }
+    if (wx.aqi >= 0) {
+      w["aqi"] = wx.aqi;
+      w["aqi_category"] = weather::aqiCategory(wx.aqi);
+      w["pm25"] = serialized(String(wx.pm25, 1));
+    }
   }
   sendJson(doc);
 }

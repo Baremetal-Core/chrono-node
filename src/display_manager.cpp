@@ -306,6 +306,16 @@ void drawWifiIcon(TFT_eSprite& s, int16_t cx, int16_t baseY, uint8_t bars, uint1
   s.fillSmoothCircle(cx, baseY - 1, 1, bars > 0 ? on : off, C->bg);
 }
 
+// US AQI category colours (EPA), the dark ones lifted to read on the background.
+uint16_t aqiColor(int aqi) {
+  if (aqi <= 50) return theme::rgb(0, 228, 0);
+  if (aqi <= 100) return theme::rgb(255, 230, 0);
+  if (aqi <= 150) return theme::rgb(255, 126, 0);
+  if (aqi <= 200) return theme::rgb(255, 40, 40);
+  if (aqi <= 300) return theme::rgb(190, 110, 255);
+  return theme::rgb(220, 40, 90);
+}
+
 void drawGlyphString(TFT_eSprite& s, const char* text, int16_t cellX, int16_t cellW, int16_t y) {
   s.drawString(text, cellX + (cellW - s.textWidth(text)) / 2, y);
 }
@@ -902,6 +912,18 @@ void DisplayManager::drawStatusBar() {
       s.setTextColor(C->dim, C->bg);
       s.drawString(temp, x, kStatusBaseline);
       x -= s.textWidth(temp) + 14;
+    }
+    if (st.aqi >= 0) {
+      // A dot in the category colour; the number too once it's unhealthy for some.
+      char aqi[12];
+      snprintf(aqi, sizeof(aqi), "AQI %d", st.aqi);
+      uint16_t c = aqiColor(st.aqi);
+      if (night_) c = theme::mix(C->bg, c, 140);
+      s.setTextColor(st.aqi > 100 ? c : C->dim, C->bg);
+      s.drawString(aqi, x, kStatusBaseline);
+      x -= s.textWidth(aqi) + 9;
+      s.fillSmoothCircle(x, kStatusBaseline - 5, 4, c, C->bg);
+      x -= 4 + 14;
     }
     s.setTextColor(st.ntpWarn ? C->warn : C->dim, C->bg);
     s.drawString(st.ntpText, x, kStatusBaseline);
@@ -1525,6 +1547,11 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
     if (w.dayCount) {
       snprintf(line, sizeof(line), "Rain %u%%", w.days[0].pop);
       s.drawString(line, 216, 60 - y0);
+    }
+    if (w.aqi >= 0) {
+      snprintf(line, sizeof(line), "AQI %d", w.aqi);
+      s.setTextColor(aqiColor(w.aqi), C->bg);
+      s.drawString(line, 216, 79 - y0);
     }
   });
 

@@ -187,7 +187,7 @@ const w=s.weather?`${s.weather.temp_c}\u00b0C ${s.weather.condition}, ${s.weathe
 const L=s.lunar,lun=L?`${L.day}/${L.month}${L.leap?" nhu\u1eadn":""} ${L.year_name}`+(L.tet_days?` \u00b7 T\u1ebft in ${L.tet_days} days`:" \u00b7 T\u1ebft today"):"-";
 const rows=[["Date",s.local_time.slice(0,10)],["Lunar date",lun],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
 ["RTC",s.rtc.present?("DS3231"+(s.rtc.temp_c!==undefined?`, ${s.rtc.temp_c}\u00b0C`:"")+(s.rtc.lost_power?", LOST POWER":"")):"not detected"],
-["Weather",w],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)]];
+["Weather",w],["Air quality",s.weather&&s.weather.aqi!==undefined?`AQI ${s.weather.aqi} (${s.weather.aqi_category}), PM2.5 ${s.weather.pm25} \u00b5g/m\u00b3`:"-"],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)]];
 $("storage").innerHTML=flashList(s)+ramList(s);
 $("status").innerHTML=rows.map(r=>`<div>${r[0]}</div><div>${r[1].html||esc(String(r[1]))}</div>`).join("")}catch(e){$("sub").textContent="Clock not reachable"}}
 const kb=b=>(b<10240?(b/1024).toFixed(1):Math.round(b/1024))+" KB";

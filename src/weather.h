@@ -44,12 +44,20 @@ struct Data {
   Day days[kDays] = {};
   int dayCount = 0;
   char place[32] = "";
+  // Air quality (Open-Meteo air-quality API), fetched after the weather.
+  int16_t aqi = -1;     // US AQI, -1 if unknown
+  float pm25 = 0;       // µg/m³
+  uint32_t aqiUtc = 0;  // when it was fetched
 };
+
+// US AQI category for a value: "Good", "Moderate", ... "Hazardous".
+const char* aqiCategory(int aqi);
 
 // Call once from setup() before the network task starts.
 void begin();
 
-// Network task: call regularly while connected; fetches when due.
+// Network task: call regularly while connected; fetches the weather and then
+// the air quality when due.
 void service();
 
 // Copies the latest data. Returns false if no data was ever fetched.
