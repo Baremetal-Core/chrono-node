@@ -119,6 +119,12 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - Optional I2C light sensor (e.g. BH1750) on the same bus for auto-brightness (the CYD LDR is unusable).
 - Indoor climate display and history graph. MQTT with Home Assistant auto-discovery.
 
+## M15 – Extras
+- Lunar calendar (Âm lịch) ✅: the lunar date takes turns with the date; Mùng 1, Rằm, Tết
+  and a Tết countdown.
+- Air quality: US AQI and PM2.5 from Open-Meteo, coloured by category.
+- Update notice: a daily check for a new release, shown on the clock.
+
 ---
 
 ### Suggested order

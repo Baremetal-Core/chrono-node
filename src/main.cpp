@@ -14,6 +14,7 @@
 #include "clock_sync.h"
 #include "config.h"
 #include "display_manager.h"
+#include "lunar.h"
 #include "net_manager.h"
 #include "ota.h"
 #include "photos.h"
@@ -346,6 +347,59 @@ void applyColors() {
   shownColors = c;
   colorsShown = true;
   display.setColors(c);
+}
+
+// The lunar date for the clock's date line, rebuilt once a day (or when the
+// setting changes): on the 1st and 15th, at Tết and in the month before it,
+// it gets as much time as the solar date.
+void updateLunar(const struct tm& local) {
+  static int builtFor = -1;
+  static bool builtOn = false;
+  const int key = local.tm_year * 400 + local.tm_yday;
+  if (key == builtFor && builtOn == settings::lunarDate()) return;
+  builtFor = key;
+  builtOn = settings::lunarDate();
+  if (!builtOn) {
+    display.setDateAlts(nullptr, 0, false);
+    return;
+  }
+  const int d = local.tm_mday, m = local.tm_mon + 1, y = local.tm_year + 1900;
+  const lunar::Date l = lunar::fromSolar(d, m, y);
+  const int tet = lunar::daysToTet(d, m, y);
+  char year[24];
+  lunar::yearName(l.year, year, sizeof(year));
+  const char* leap = l.leap ? " nhuận" : "";
+  DateAlt alts[DisplayManager::kMaxDateAlts] = {};
+  int n = 1;
+  bool special = true;
+  DateAlt& a = alts[0];
+  if (l.month == 1 && !l.leap && l.day <= 3) {
+    snprintf(a.head, sizeof(a.head), "MÙNG %d TẾT", l.day);
+    snprintf(a.rest, sizeof(a.rest), " · %s", year);
+    strlcpy(a.shortRest, a.rest, sizeof(a.shortRest));
+  } else if (l.day == 1 || l.day == 15) {
+    strlcpy(a.head, l.day == 1 ? "MÙNG 1" : "RẰM", sizeof(a.head));
+    snprintf(a.rest, sizeof(a.rest), " · tháng %d%s %s", l.month, leap, year);
+    snprintf(a.shortRest, sizeof(a.shortRest), " · tháng %d%s", l.month, leap);
+  } else {
+    strlcpy(a.head, "ÂM LỊCH", sizeof(a.head));
+    snprintf(a.rest, sizeof(a.rest), " · %d/%d%s %s", l.day, l.month, leap, year);
+    snprintf(a.shortRest, sizeof(a.shortRest), " · %d/%d%s", l.day, l.month, leap);
+    special = false;
+  }
+  if (tet >= 1 && tet <= config::kTetCountdownDays) {
+    DateAlt& t = alts[n++];
+    strlcpy(t.head, "TẾT", sizeof(t.head));
+    if (tet == 1) {
+      strlcpy(t.rest, " · ngày mai", sizeof(t.rest));
+    } else {
+      snprintf(t.rest, sizeof(t.rest), " · còn %d ngày", tet);
+    }
+    strlcpy(t.shortRest, t.rest, sizeof(t.shortRest));
+    special = true;
+  }
+  display.setDateAlts(alts, n, special);
+  Serial.printf("[LUNAR] %d/%d%s %s, Tết in %d days\n", l.day, l.month, leap, year, tet);
 }
 
 void buildSettingsView(SettingsView& v) {
@@ -858,6 +912,7 @@ void pollRtc(bool forceLog) {
   time_utils::utcToLocal(utc, local);
   lastLocalTm = local;
   applyColors();  // Mix changes style on the minute
+  updateLunar(local);
   updateNight(local);
   updateAutoScreens(local, weather::version() != 0);
   if (screenOn == Screen::Clock && !transitioning) {

@@ -33,7 +33,8 @@ forecast, info and settings screens, plus a settings page in the browser at
   upwards over 300 ms. Every digit uses a fixed-width cell, so the time never shifts sideways.
 - **Minute bar:** fills over the minute with a horizontal gradient. The seconds sit at its
   right end.
-- **Date:** the weekday in the accent colour, then the date.
+- **Date:** the weekday in the accent colour, then the date. It takes turns with the
+  **lunar date** (see below).
 - **Bottom line:** current weather (icon, temperature, condition, today's high/low). A notice
   replaces it when needed: RTC lost-power warning (red) or Wi-Fi setup instructions (cyan).
 - **Colours by time of day** (on a deep navy background), blended minute by minute in HSV
@@ -45,6 +46,29 @@ forecast, info and settings screens, plus a settings page in the browser at
 - Glyphs are rendered white-on-black into sprites, then tinted per pixel, so the gradients
   keep their anti-aliasing. Nothing flickers. An animation frame takes a few ms.
 - The CYD's RGB LED is switched off at boot.
+
+### Lunar calendar (Âm lịch)
+
+The date line takes turns with the Vietnamese lunar date: the solar date for 10 s, then
+`ÂM LỊCH · 7/10 Bính Ngọ` (day/month, then the year's name) for 5 s. On special days it gets
+as much time as the solar date:
+
+| Day | Shown |
+|-----|-------|
+| 1st of a lunar month | `MÙNG 1 · tháng 11 Bính Ngọ` |
+| 15th | `RẰM · tháng 10 Bính Ngọ` |
+| The 30 days before Tết | an extra `TẾT · còn 17 ngày` (`TẾT · ngày mai` the day before) |
+| Tết, days 1–3 | `MÙNG 1 TẾT · Đinh Mùi` |
+
+A leap month shows as `nhuận`; the year's name is left out when a line doesn't fit. Turn it
+off on the web page (*Display*) or with `LUNAR OFF`. The web page's status shows the lunar
+date and the days to Tết.
+
+How it works (`src/lunar.*`): the standard astronomical method of the Vietnamese calendar,
+in UTC+7. Months start on the day of the new moon (Meeus' series), month 11 contains the
+winter solstice, and in a 13-month year the first month without a major solar term is the
+leap month. It runs once a day (~1 ms), and was checked against the Tết dates of 2023–2027
+and the leap months of 2023 (month 2) and 2025 (month 6).
 
 ## Touch and screens
 
@@ -115,8 +139,10 @@ Open `http://chrono-node.local` (or the clock's IP, shown on the Info screen) fr
 on the same network. The page shows live status and changes every setting while the clock
 stays online:
 
-- **Status:** time, Wi-Fi, IP, NTP sync, RTC, weather, current screen, uptime, memory.
-- **Display:** day/night brightness, night mode and its hours, 12/24-hour time, forecast cycle.
+- **Status:** time, lunar date and days to Tết, Wi-Fi, IP, NTP sync, RTC, weather, current
+  screen, uptime, memory.
+- **Display:** day/night brightness, night mode and its hours, 12/24-hour time, the lunar
+  date, forecast cycle.
 - **Time:** time zone by name (common zones are mapped to POSIX strings, **Detect** uses the
   browser's zone, or enter a custom POSIX string), NTP server, **Sync now**, and **Set clock
   from this device** for networks without NTP (accurate to about a second).
@@ -151,7 +177,7 @@ stays in one task.
 
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
-`PHOTO`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`.
+`PHOTO`, `LUNAR`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`.
 Diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
 ```bash
@@ -591,6 +617,7 @@ TIMEOUT PHOTO 12            # each photo stays up 12 s (3-120)
 TIMEOUT IDLE 30             # other screens go back to the clock after 30 s without touch (5-600)
 PREVIEW                     # show the forecast and each photo once now, even at night
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
+LUNAR                       # today's lunar date and days to Tết (LUNAR ON|OFF on the clock)
 SCREEN SETTINGS             # CLOCK, FORECAST, PHOTO, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
@@ -693,6 +720,7 @@ tools/stress_test.py            long-run stress test over USB serial + the web A
 src/mem_lease.*                 lends the animation buffers to HTTPS connections
 tools/fonts/                    Inter variable font + OFL licence
 src/photos.*                    photo storage in LittleFS: slots, uploads, JPEG header check
+src/lunar.*                     Vietnamese lunar calendar (new moons, solar terms, leap months, UTC+7)
 src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)
 ```
 

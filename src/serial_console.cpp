@@ -11,6 +11,7 @@
 #include "clock_sync.h"
 #include "config.h"
 #include "display_manager.h"
+#include "lunar.h"
 #include "net_manager.h"
 #include "ota.h"
 #include "photos.h"
@@ -580,6 +581,27 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   if (strncasecmp(text, "BANNER", 6) == 0 && (text[6] == '\0' || text[6] == ' ')) {
     return handleBanner(text + 6);
   }
+  if (strncasecmp(text, "LUNAR", 5) == 0 && (text[5] == '\0' || text[5] == ' ')) {
+    const char* arg = text + 5;
+    while (*arg == ' ') ++arg;
+    if (strcasecmp(arg, "ON") == 0 || strcasecmp(arg, "OFF") == 0) {
+      settings::setLunarDate(strcasecmp(arg, "ON") == 0);
+    } else if (*arg) {
+      Serial.println("[CONSOLE] Usage: LUNAR [ON|OFF]");
+      return false;
+    }
+    const time_t now = time(nullptr);
+    struct tm local;
+    localtime_r(&now, &local);
+    const int d = local.tm_mday, m = local.tm_mon + 1, y = local.tm_year + 1900;
+    const lunar::Date l = lunar::fromSolar(d, m, y);
+    char year[24];
+    lunar::yearName(l.year, year, sizeof(year));
+    Serial.printf("[LUNAR] Today %d/%d%s %s (Âm lịch), Tết in %d days; on the clock face: %s\n",
+                  l.day, l.month, l.leap ? " nhuận" : "", year, lunar::daysToTet(d, m, y),
+                  settings::lunarDate() ? "on" : "off");
+    return false;
+  }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
@@ -659,7 +681,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | LUNAR [ON|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
       "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }

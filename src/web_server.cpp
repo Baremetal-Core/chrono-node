@@ -15,6 +15,7 @@
 #include "certs/ca_bundle.h"
 #include "clock_sync.h"
 #include "config.h"
+#include "lunar.h"
 #include "mem_lease.h"
 #include "net_manager.h"
 #include "ota.h"
@@ -39,7 +40,7 @@ ClockState clockState = {};
 // Console commands the web UI may run. Blocking/diagnostic ones (SHOT, TEST,
 // TOUCH) are excluded.
 const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BRIGHT ",
-                                "NIGHT ",       "FORMAT ",     "WEATHER LOC ", "WEATHER CYCLE ", "WEATHER FORGET ",
+                                "NIGHT ",       "FORMAT ",     "LUNAR ",     "WEATHER LOC ", "WEATHER CYCLE ", "WEATHER FORGET ",
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
                                 "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT",
@@ -100,6 +101,18 @@ void handleStatus() {
   char buf[40];
   strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &local);
   doc["local_time"] = buf;
+  if (local.tm_year > 100) {
+    const int d = local.tm_mday, m = local.tm_mon + 1, y = local.tm_year + 1900;
+    const lunar::Date l = lunar::fromSolar(d, m, y);
+    JsonObject lu = doc["lunar"].to<JsonObject>();
+    lu["day"] = l.day;
+    lu["month"] = l.month;
+    lu["leap"] = l.leap;
+    char name[24];
+    lunar::yearName(l.year, name, sizeof(name));
+    lu["year_name"] = name;
+    lu["tet_days"] = lunar::daysToTet(d, m, y);
+  }
 
   JsonObject wifi = doc["wifi"].to<JsonObject>();
   char ssid[33], ip[16];
@@ -162,6 +175,7 @@ void handleSettings() {
   night["end"] = hm;
   doc["hour12"] = settings::hour12();
   doc["forecast_cycle"] = settings::weatherCycle();
+  doc["lunar"] = settings::lunarDate();
   JsonObject colors = doc["colors"].to<JsonObject>();
   const uint8_t styleIndex = settings::colorStyle() % static_cast<uint8_t>(theme::Style::Count);
   colors["style"] = theme::styleKey(static_cast<theme::Style>(styleIndex));
