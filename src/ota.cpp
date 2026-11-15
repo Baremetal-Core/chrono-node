@@ -81,8 +81,11 @@ void runCheck() {
   }
   const String tag = location.substring(at + 14);
   Serial.printf("[OTA] Newest release: %s (running v%s)\n", tag.c_str(), config::kFirmwareVersion);
+  char running[24];
+  snprintf(running, sizeof(running), "v%s", config::kFirmwareVersion);
   setCheck(newerVersion(tag.c_str(), config::kFirmwareVersion) ? CheckState::Available
-                                                               : CheckState::UpToDate,
+           : newerVersion(running, tag.c_str() + (tag[0] == 'v'))  ? CheckState::Older
+                                                                   : CheckState::UpToDate,
            tag.c_str());
 }
 portMUX_TYPE errorLock = portMUX_INITIALIZER_UNLOCKED;

@@ -160,8 +160,10 @@ $("rel").innerHTML=`<div class="row"><label>GitHub didn't answer the update chec
 $("relinst").onclick=startRelease;return}
 if(!r.ok)throw new Error(r.status);
 const j=await r.json(),asset=(j.assets||[]).find(a=>a.name===st.release_asset);REL={tag:j.tag_name,from:st.firmware};
-if(!newer(j.tag_name,st.firmware)){$("rel").textContent=`\u2713 This is the latest version (v${st.firmware}).`;return}
 if(!asset){$("rel").textContent=`${j.tag_name} is out, but it has no ${st.release_asset} yet.`;return}
+if(!newer(j.tag_name,st.firmware)){const ahead=newer("v"+st.firmware,j.tag_name);
+$("rel").innerHTML=`<div class="row"><label>${ahead?`This clock runs v${esc(st.firmware)}, newer than the latest release (${esc(j.tag_name)}).`:`\u2713 This is the latest version (${esc(j.tag_name)}).`}</label><button id="relinst">${ahead?"Install "+esc(j.tag_name)+" (older)":"Reinstall "+esc(j.tag_name)}</button></div>`;
+$("relinst").onclick=startRelease;return}
 $("rel").innerHTML=`<div class="row"><label><b style="color:var(--text)">${esc(j.tag_name)} is available</b> \u00b7 ${esc((j.published_at||"").slice(0,10))}, ${mb(asset.size)} \u00b7 <a href="${esc(j.html_url)}" target="_blank" rel="noopener">What's new</a></label><button class="primary" id="relinst">Install ${esc(j.tag_name)}</button></div>`;
 $("relinst").onclick=startRelease}catch(e){$("rel").textContent="Couldn't reach GitHub to check for updates (is this phone or computer online?)."}}
 async function startRelease(){const r=await fetch("/api/ota/pin",{method:"POST"});if(!r.ok){toast("Couldn't show the code on the clock");return}
@@ -174,7 +176,7 @@ function waitForUpdate(tag,from){const want=tag.replace(/^v/,""),t0=Date.now();
 $("relstate").innerHTML=`<b style="color:var(--text)">Installing ${esc(tag)}...</b> The clock is downloading it (about a minute) and shows the progress on its screen, then restarts. Keep this page open.`;
 const poll=async()=>{let s=null;try{s=await(await fetch("/api/status",{cache:"no-store",signal:AbortSignal.timeout(4000)})).json()}catch(e){}
 const restarted=s&&s.uptime_s*1000<Date.now()-t0;
-if(s&&(s.firmware===want||(tag==="latest"&&(s.firmware!==from||restarted)))){tag="v"+s.firmware;$("relstate").textContent=`\u2713 Updated to ${tag}.`;toast("Updated to "+tag);setTimeout(()=>location.reload(),4000);return}
+if(s&&((s.firmware===want&&(want!==from||restarted))||(tag==="latest"&&(s.firmware!==from||restarted)))){tag="v"+s.firmware;$("relstate").textContent=`\u2713 Updated to ${tag}.`;toast("Updated to "+tag);setTimeout(()=>location.reload(),4000);return}
 if(s&&s.ota&&s.ota.error&&s.ota.progress<0){$("relstate").textContent=`Update failed: ${s.ota.error}. The clock keeps the current version.`;return}
 if(Date.now()-t0>240000){$("relstate").textContent="The clock hasn't come back after 4 minutes. Check its screen; it keeps the current version if anything went wrong.";return}
 setTimeout(poll,3000)};setTimeout(poll,5000)}

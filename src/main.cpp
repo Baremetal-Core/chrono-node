@@ -408,8 +408,13 @@ void showUpdate() {
       break;
     case ota::CheckState::UpToDate:
       strlcpy(v.status, "This is the latest version", sizeof(v.status));
-      snprintf(v.detail, sizeof(v.detail), "Newest release on GitHub: %s", text);
-      strlcpy(v.action, "Check again", sizeof(v.action));
+      snprintf(v.detail, sizeof(v.detail), "Newest release on GitHub: %s | Reinstall it if something seems wrong.", text);
+      strlcpy(v.action, "Reinstall", sizeof(v.action));
+      break;
+    case ota::CheckState::Older:
+      strlcpy(v.status, "Newer than the latest release", sizeof(v.status));
+      snprintf(v.detail, sizeof(v.detail), "Newest release on GitHub: %s | Install it to go back to it.", text);
+      strlcpy(v.action, "Install it", sizeof(v.action));
       break;
     case ota::CheckState::Failed:
       strlcpy(v.status, "Couldn't check for updates", sizeof(v.status));
@@ -618,7 +623,8 @@ void handleTouch() {
             requestScreen(Screen::Info);
             break;
           case DisplayManager::ConfirmHit::Confirm:
-            if (st == ota::CheckState::Available) {
+            if (st == ota::CheckState::Available || st == ota::CheckState::UpToDate ||
+                st == ota::CheckState::Older) {
               // Touching the clock proves presence: no code needed here.
               if (ota::requestRelease(tag)) {
                 Serial.printf("[OTA] Install of %s requested on the screen\n", tag);

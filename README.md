@@ -161,6 +161,9 @@ curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-
 where `github.com/<repo>/releases/latest` redirects to, which isn't rate limited). If it's
 newer than the installed version, tap **Install**: the clock downloads and installs it, shows
 the progress, and restarts. Touching the clock proves someone is there, so no code is needed.
+If it's the installed version, **Reinstall** downloads it again (e.g. if something seems
+wrong). If the clock runs a newer, unreleased build, **Install it** goes back to the latest
+release.
 
 **From the web page, the easy way** (*Firmware* section): the page asks GitHub for the
 latest release of `kReleaseRepo` (`Baremetal-Core/chrono-node`). If it's newer than the
@@ -173,6 +176,10 @@ clock's version:
 3. The clock downloads `chrono-node-fw.bin` from the release itself, over HTTPS with
    certificate checks (about a minute, progress on its screen), and restarts. The page
    waits and confirms the new version.
+
+If the clock already runs the latest release, the page offers **Reinstall vX.Y.Z**; if it
+runs a newer, unreleased build, **Install vX.Y.Z (older)** goes back to the release. Both
+use the same code step.
 
 GitHub answers at most 60 update checks an hour per network address. On a shared address
 (office, mobile carrier, VPN) the check can be refused; the page then offers **Install
