@@ -13,8 +13,10 @@ namespace {
 SPIClass bus(VSPI);
 const SPISettings kSpi(2000000, MSBFIRST, SPI_MODE0);
 
-// Generic fallback for a CYD in landscape until TOUCH CAL has been run.
-Calibration cal = {320.0f / 2900, 0, -55, 0, 240.0f / 2470, -96};
+// Default until TOUCH CAL has been run: the stylus calibration of the
+// project's own CYD (within 1 px at all four corners), which includes the
+// panel's slight rotation. Other boards should run TOUCH CAL once.
+Calibration cal = {0.08675f, -0.00146f, -7.1f, -0.00003f, 0.06513f, -13.1f};
 constexpr const char* kCalKey = "touch_aff";
 
 constexpr uint32_t kPollMs = 15;
