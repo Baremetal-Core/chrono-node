@@ -12,6 +12,7 @@
 
 #include "certs/ca_bundle.h"
 #include "config.h"
+#include "mem_lease.h"
 #include "settings.h"
 #include "yield_stream.h"
 
@@ -70,6 +71,7 @@ bool fetch() {
            "&timezone=auto&timeformat=unixtime&forecast_days=%d&forecast_hours=%d",
            settings::latitude(), settings::longitude(), kDays, kHours);
 
+  mem_lease::Scope lease;  // room for TLS
   WiFiClientSecure client;
   HTTPClient http;
   if (!httpsGet(client, http, url)) return false;
@@ -139,6 +141,7 @@ void geocode() {
       q += enc;
     }
   }
+  mem_lease::Scope lease;  // room for TLS
   WiFiClientSecure client;
   HTTPClient http;
   String url = "https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name=" + q;

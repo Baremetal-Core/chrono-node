@@ -11,6 +11,7 @@
 
 #include "certs/ca_bundle.h"
 #include "config.h"
+#include "mem_lease.h"
 
 // Tell the Arduino core not to confirm a new image at startup; ota::loop()
 // does it once the firmware has proven to run.
@@ -58,6 +59,7 @@ void runCheck() {
   setCheck(CheckState::Checking, "");
   char url[128];
   snprintf(url, sizeof(url), "https://github.com/%s/releases/latest", config::kReleaseRepo);
+  mem_lease::Scope lease;  // room for TLS
   WiFiClientSecure client;
   client.setCACertBundle(ca_bundle);
   client.setTimeout(15);
@@ -79,8 +81,11 @@ void runCheck() {
   }
   const String tag = location.substring(at + 14);
   Serial.printf("[OTA] Newest release: %s (running v%s)\n", tag.c_str(), config::kFirmwareVersion);
+  char running[24];
+  snprintf(running, sizeof(running), "v%s", config::kFirmwareVersion);
   setCheck(newerVersion(tag.c_str(), config::kFirmwareVersion) ? CheckState::Available
-                                                               : CheckState::UpToDate,
+           : newerVersion(running, tag.c_str() + (tag[0] == 'v'))  ? CheckState::Older
+                                                                   : CheckState::UpToDate,
            tag.c_str());
 }
 portMUX_TYPE errorLock = portMUX_INITIALIZER_UNLOCKED;
@@ -125,6 +130,7 @@ void installRelease() {
   Serial.printf("[OTA] Downloading %s\n", url);
   uploadProgress = 0;  // the clock shows "Updating firmware... 0%"
 
+  mem_lease::Scope lease;  // room for TLS
   WiFiClientSecure client;
   client.setCACertBundle(ca_bundle);
   client.setTimeout(20);

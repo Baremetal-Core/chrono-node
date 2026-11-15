@@ -21,6 +21,7 @@ namespace net {
 namespace {
 
 constexpr uint32_t kTaskStackBytes = 16 * 1024;  // TLS handshakes for weather
+TaskHandle_t task = nullptr;
 constexpr BaseType_t kTaskCore = 0;  // Arduino loop() runs on core 1
 constexpr uint32_t kTaskPeriodMs = 10;
 
@@ -377,8 +378,10 @@ void taskMain(void*) {
 }  // namespace
 
 void begin() {
-  xTaskCreatePinnedToCore(taskMain, "net", kTaskStackBytes, nullptr, 1, nullptr, kTaskCore);
+  xTaskCreatePinnedToCore(taskMain, "net", kTaskStackBytes, nullptr, 1, &task, kTaskCore);
 }
+
+uint32_t stackFree() { return task ? uxTaskGetStackHighWaterMark(task) : 0; }
 
 State state() { return current; }
 

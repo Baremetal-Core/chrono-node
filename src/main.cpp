@@ -7,6 +7,7 @@
 // written at boot; without network use the serial console "SET" command.
 
 #include <Arduino.h>
+#include <esp_system.h>
 #include <esp_task_wdt.h>
 
 #include "backlight.h"
@@ -29,6 +30,38 @@ namespace {
 
 RtcManager rtc;
 DisplayManager display;
+
+// Safe mode: crashes are counted across restarts (RTC memory survives a reset),
+// so a combination of settings that keeps crashing can't trap the clock in a
+// restart loop.
+constexpr uint32_t kCrashMagic = 0xC4A50D3E;
+RTC_NOINIT_ATTR uint32_t crashMagic;
+RTC_NOINIT_ATTR uint32_t crashBoots;
+bool safeMode = false;
+uint8_t safeStyle = 0, safeEffects = 0;  // the saved colours at the time
+
+void checkCrashLoop() {
+  const esp_reset_reason_t why = esp_reset_reason();
+  const bool crashed = why == ESP_RST_PANIC || why == ESP_RST_INT_WDT ||
+                       why == ESP_RST_TASK_WDT || why == ESP_RST_WDT;
+  if (crashMagic != kCrashMagic) {
+    crashMagic = kCrashMagic;
+    crashBoots = 0;
+  }
+  crashBoots = crashed ? crashBoots + 1 : 0;
+  if (crashBoots >= config::kSafeModeAfterCrashes) {
+    safeMode = true;
+    safeStyle = settings::colorStyle();
+    safeEffects = settings::effects();
+    Serial.printf("[SAFE] %lu crashes in a row: plain colours, no effects until they're changed\n",
+                  (unsigned long)crashBoots);
+  }
+}
+
+// A boot that runs long enough is no longer part of a crash loop.
+void forgetCrashesWhenStable() {
+  if (crashBoots && millis() > config::kSafeModeStableMs) crashBoots = 0;
+}
 
 enum class RtcState { Ok, Missing, InvalidTime };
 RtcState rtcState = RtcState::Missing;
@@ -281,6 +314,15 @@ ColorSettings colorSettings() {
               static_cast<uint16_t>(settings::customColors() & 0xFFFF)};
   c.effects = settings::effects();
   c.speedQuarters = theme::speedQuarters(static_cast<theme::Speed>(settings::colorSpeed()));
+  if (safeMode) {
+    if (settings::colorStyle() == safeStyle && settings::effects() == safeEffects) {
+      c.style = theme::Style::TimeOfDay;
+      c.effects = 0;
+    } else {
+      safeMode = false;  // new colours chosen: try them
+      Serial.println("[SAFE] Colours changed: safe mode off");
+    }
+  }
   return c;
 }
 
@@ -366,8 +408,13 @@ void showUpdate() {
       break;
     case ota::CheckState::UpToDate:
       strlcpy(v.status, "This is the latest version", sizeof(v.status));
-      snprintf(v.detail, sizeof(v.detail), "Newest release on GitHub: %s", text);
-      strlcpy(v.action, "Check again", sizeof(v.action));
+      snprintf(v.detail, sizeof(v.detail), "Newest release on GitHub: %s | Reinstall it if something seems wrong.", text);
+      strlcpy(v.action, "Reinstall", sizeof(v.action));
+      break;
+    case ota::CheckState::Older:
+      strlcpy(v.status, "Newer than the latest release", sizeof(v.status));
+      snprintf(v.detail, sizeof(v.detail), "Newest release on GitHub: %s | Install it to go back to it.", text);
+      strlcpy(v.action, "Install it", sizeof(v.action));
       break;
     case ota::CheckState::Failed:
       strlcpy(v.status, "Couldn't check for updates", sizeof(v.status));
@@ -576,7 +623,8 @@ void handleTouch() {
             requestScreen(Screen::Info);
             break;
           case DisplayManager::ConfirmHit::Confirm:
-            if (st == ota::CheckState::Available) {
+            if (st == ota::CheckState::Available || st == ota::CheckState::UpToDate ||
+                st == ota::CheckState::Older) {
               // Touching the clock proves presence: no code needed here.
               if (ota::requestRelease(tag)) {
                 Serial.printf("[OTA] Install of %s requested on the screen\n", tag);
@@ -747,6 +795,8 @@ void updateStatus() {
     display.setNotice(text, DisplayManager::NoticeKind::Setup);
   } else if (rtcLostPower) {
     display.setNotice("RTC lost power - waiting for NTP or SET", DisplayManager::NoticeKind::Error);
+  } else if (safeMode && millis() < config::kSafeModeNoticeMs) {
+    display.setNotice("Safe mode: colour effects off after crashes", DisplayManager::NoticeKind::Error);
   } else if (net::state() == net::State::Portal) {
     char text[64];
     snprintf(text, sizeof(text), "Join Wi-Fi \"%s\" to set up", net::portalSsid());
@@ -891,6 +941,7 @@ void setup() {
                 config::kFirmwareVersion, config::kGitRevision);
 
   settings::begin();
+  checkCrashLoop();
 
   if (display.begin()) {
     Serial.println("[DISPLAY] Initialized");
@@ -926,6 +977,7 @@ void setup() {
 void loop() {
   backlight::loop();
   ota::loop();
+  forgetCrashesWhenStable();
 #ifdef CHRONO_CRASH_AFTER_MS
   // Rollback test image only (see README): crash before the image is confirmed.
   if (millis() > CHRONO_CRASH_AFTER_MS) abort();

@@ -215,6 +215,7 @@ class DisplayManager {
 
   StatusInfo status_;
   bool statusValid_ = false;
+  bool fxLeased_ = false;  // animation buffers lent to the network (mem_lease)
   char notice_[64] = "";
   NoticeKind noticeKind_ = NoticeKind::Setup;
   bool night_ = false;

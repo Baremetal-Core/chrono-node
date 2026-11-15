@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <esp_ota_ops.h>
+#include <esp_system.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -405,6 +406,22 @@ void printBrightness() {
                 settings::nightStart() % 60, settings::nightEnd() / 60, settings::nightEnd() % 60);
 }
 
+const char* resetReason() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "power on";
+    case ESP_RST_EXT: return "reset pin";
+    case ESP_RST_SW: return "restart";
+    case ESP_RST_PANIC: return "crash";
+    case ESP_RST_INT_WDT: return "interrupt watchdog";
+    case ESP_RST_TASK_WDT: return "task watchdog";
+    case ESP_RST_WDT: return "watchdog";
+    case ESP_RST_DEEPSLEEP: return "deep sleep";
+    case ESP_RST_BROWNOUT: return "brownout";
+    case ESP_RST_SDIO: return "SDIO";
+    default: return "unknown";
+  }
+}
+
 void printInfo(RtcManager& rtc) {
   const esp_partition_t* part = esp_ota_get_running_partition();
   Serial.printf("[INFO] %s %s v%s (%s)\n", config::kProjectName, config::kFirmwareName,
@@ -413,6 +430,8 @@ void printInfo(RtcManager& rtc) {
                 (unsigned long)(millis() / 1000), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
                 ESP.getMaxAllocHeap(),
                 part ? part->label : "?");
+  Serial.printf("[INFO] Last reset: %s, stack free: loop %u B, net %u B\n", resetReason(),
+                (unsigned)uxTaskGetStackHighWaterMark(nullptr), (unsigned)net::stackFree());
   Serial.printf("[INFO] TZ=%s, NTP=%s\n", settings::timezone(), settings::ntpServer());
   float tempC;
   if (rtc.isPresent() && rtc.temperatureC(tempC)) {
