@@ -26,6 +26,7 @@ constexpr const char* kKeyWxCycle = "wx_cycle";
 constexpr const char* kKeyRecent = "wx_recent";
 constexpr const char* kKeyHour12 = "hour12";
 constexpr const char* kKeyLunar = "lunar";
+constexpr const char* kKeyHolidays = "holidays";
 constexpr const char* kKeyOtaAuto = "ota_auto";
 constexpr const char* kKeyBannerOn = "bn_on";
 constexpr const char* kKeyBannerEvery = "bn_every";  // default for new messages
@@ -87,6 +88,7 @@ RecentLocation recents[settings::kMaxRecentLocations] = {};
 int recentCount = 0;
 bool use12h = false;
 bool lunarOn = true;
+bool holidaysOn = true;
 bool otaAuto = true;
 
 float lat = config::kDefaultLatitude;
@@ -154,6 +156,7 @@ void begin() {
     if (prefs.isKey(kKeyPlace)) prefs.getString(kKeyPlace, placeName, sizeof(placeName));
     wxCycle = prefs.getBool(kKeyWxCycle, wxCycle);
     lunarOn = prefs.getBool(kKeyLunar, lunarOn);
+    holidaysOn = prefs.getBool(kKeyHolidays, holidaysOn);
     otaAuto = prefs.getBool(kKeyOtaAuto, otaAuto);
     use12h = prefs.getBool(kKeyHour12, use12h);
     bannerOn = prefs.getBool(kKeyBannerOn, bannerOn);
@@ -520,6 +523,14 @@ bool setBannerSpeed(uint8_t pxPerSecond) {
 }
 
 bool lunarDate() { return lunarOn; }
+
+bool holidays() { return holidaysOn; }
+
+bool setHolidays(bool enabled) {
+  bool ok = save([&](Preferences& p) { return p.putBool(kKeyHolidays, enabled) > 0; });
+  if (ok) holidaysOn = enabled;
+  return ok;
+}
 
 bool setLunarDate(bool enabled) {
   bool ok = save([&](Preferences& p) { return p.putBool(kKeyLunar, enabled) > 0; });

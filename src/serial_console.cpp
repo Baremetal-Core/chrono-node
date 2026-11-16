@@ -11,6 +11,7 @@
 #include "clock_sync.h"
 #include "config.h"
 #include "display_manager.h"
+#include "holidays.h"
 #include "lunar.h"
 #include "net_manager.h"
 #include "ota.h"
@@ -602,6 +603,24 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
                   settings::lunarDate() ? "on" : "off");
     return false;
   }
+  if (strncasecmp(text, "HOLIDAYS", 8) == 0 && (text[8] == '\0' || text[8] == ' ')) {
+    const char* arg = text + 8;
+    while (*arg == ' ') ++arg;
+    if (strcasecmp(arg, "ON") == 0 || strcasecmp(arg, "OFF") == 0) {
+      settings::setHolidays(strcasecmp(arg, "ON") == 0);
+    } else if (*arg) {
+      Serial.println("[CONSOLE] Usage: HOLIDAYS [ON|OFF]");
+      return false;
+    }
+    int count;
+    const holidays::Holiday* list = holidays::all(count);
+    Serial.printf("[HOLIDAY] On the clock face: %s\n", settings::holidays() ? "on" : "off");
+    for (int i = 0; i < count; ++i) {
+      Serial.printf("[HOLIDAY]   %2u/%-2u %s %s\n", list[i].day, list[i].month,
+                    list[i].lunar ? "ÂL" : "  ", list[i].name);
+    }
+    return false;
+  }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
@@ -685,7 +704,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | LUNAR [ON|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | LUNAR [ON|OFF] | HOLIDAYS [ON|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
       "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }

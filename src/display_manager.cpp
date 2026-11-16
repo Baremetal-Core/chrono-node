@@ -60,8 +60,11 @@ constexpr int16_t kMeridiemW = 30;  // "AM"/"PM" before the bar in 12-hour mode
 constexpr int16_t kBarY = kRowY - kBarH / 2;
 
 // Date and notice lines
-constexpr int16_t kDateTop = kRowY + 18;
-constexpr int16_t kDateH = 30;
+// The date line starts just under the seconds and leaves room above the capitals
+// for stacked Vietnamese accents (Ỗ, Ổ, Ằ reach 27 px above the baseline).
+constexpr int16_t kDateTop = kRowY + 14;
+constexpr int16_t kDateH = 34;
+constexpr int16_t kDateBaseline = 28;
 constexpr int16_t kNoticeTop = 212;
 constexpr int16_t kNoticeH = 24;
 
@@ -763,7 +766,7 @@ void DisplayManager::drawDate(const struct tm& local) {
   auto layout = [&](TFT_eSprite& s, uint16_t weekdayColor, uint16_t restColor, uint16_t bg) {
     // Long weekday/month combinations (e.g. WEDNESDAY, September) don't fit:
     // shorten the month first, then the weekday.
-    char weekday[24];
+    char weekday[sizeof(DateAlt::head)];
     char rest[48];
     int16_t w1 = 0;
     if (dateView_ > 0) {
@@ -781,18 +784,18 @@ void DisplayManager::drawDate(const struct tm& local) {
       if (w1 + s.textWidth(rest) <= kScreenW - 16) break;
     }
     const int16_t x = (kScreenW - w1 - s.textWidth(rest)) / 2;
-    s.setTextDatum(ML_DATUM);
+    s.setTextDatum(L_BASELINE);
     s.setTextColor(weekdayColor, bg);
-    s.drawString(weekday, x, kDateH / 2);
+    s.drawString(weekday, x, kDateBaseline);
     s.setTextColor(restColor, bg);
-    s.drawString(rest, x + w1, kDateH / 2);
+    s.drawString(rest, x + w1, kDateBaseline);
   };
   if (night_) {
     drawLine(kDateTop, kDateH, font_face,
              [&](TFT_eSprite& s) { layout(s, pal_.top, C->date, C->bg); });
     return;
   }
-  const int16_t y0 = kDateH / 2 - 10, y1 = kDateH / 2 + 9;  // gradient rows
+  const int16_t y0 = kDateBaseline - 19, y1 = kDateBaseline;  // gradient rows: the capitals
   const int32_t key = (local.tm_year * 400 + local.tm_yday) * 4 + max(dateView_, 0);
   if (!fxCache || !dateOk || key != dateCovKey) {
     // Lay the text out in a temporary full-height sprite.

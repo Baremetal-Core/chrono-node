@@ -30,7 +30,7 @@ struct StorageView {
 // turn with the solar date: `head` like the weekday, then `rest` (or
 // `shortRest` when that doesn't fit). UTF-8.
 struct DateAlt {
-  char head[24];
+  char head[32];
   char rest[48];
   char shortRest[48];
 };
@@ -114,7 +114,7 @@ class DisplayManager {
 
   // Up to kMaxDateAlts texts the date line takes turns with: the solar date
   // for 10 s, then each one for 5 s (10 s each with `even`). 0 to stop.
-  static constexpr int kMaxDateAlts = 2;
+  static constexpr int kMaxDateAlts = 3;
   void setDateAlts(const DateAlt* alts, int count, bool even);
 
   // Weather shown on the clock face's bottom line when there is no notice.

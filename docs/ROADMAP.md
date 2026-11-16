@@ -122,6 +122,7 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 ## M15 – Extras
 - Lunar calendar (Âm lịch) ✅: the lunar date takes turns with the date; Mùng 1, Rằm, Tết
   and a Tết countdown.
+- Holidays and festivals ✅: 9 solar and 7 lunar days on the date line.
 - Air quality ✅: US AQI and PM2.5 from Open-Meteo, coloured by category (status bar,
   forecast screen, web status).
 - Update notice ✅: a daily check for a new release; a scrolling note every hour and a

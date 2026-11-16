@@ -64,6 +64,17 @@ A leap month shows as `nhuận`; the year's name is left out when a line doesn't
 off on the web page (*Display*) or with `LUNAR OFF`. The web page's status shows the lunar
 date and the days to Tết.
 
+**Holidays and festivals** take a turn on their day too, with as much time as the date
+(`src/holidays.cpp`):
+
+| Solar | Lunar (ÂL) |
+|-------|------------|
+| 1/1 Tết Dương lịch, 14/2 Valentine, 8/3 Quốc tế Phụ nữ, 1/5 Quốc tế Lao động, 1/6 Quốc tế Thiếu nhi, 20/10 Phụ nữ Việt Nam, 20/11 Nhà giáo Việt Nam, 24/12 Đêm Giáng sinh, 25/12 Giáng sinh | 15/1 Rằm tháng Giêng, 10/3 Giỗ Tổ Hùng Vương, 15/4 Phật Đản, 5/5 Tết Đoan Ngọ, 15/7 Vu Lan, 15/8 Trung Thu, 23/12 Ông Công Ông Táo |
+
+e.g. `TRUNG THU · 15/8 ÂL` (just the name when it doesn't fit). A lunar holiday replaces the
+plain lunar date that day. Turn them off on the web page or with `HOLIDAYS OFF`; `HOLIDAYS`
+lists them. The date line is 34 px tall so stacked accents like Ỗ and Ổ aren't clipped.
+
 How it works (`src/lunar.*`): the Vietnamese calendar's rules, in UTC+7. Months start on
 the day of the new moon, month 11 contains the winter solstice, and in a 13-month year the
 first month without a major solar term is the leap month. For lunar years 1900–2100 the
@@ -153,7 +164,7 @@ stays online:
 - **Status:** time, lunar date and days to Tết, Wi-Fi, IP, NTP sync, RTC, weather, air
   quality, current screen, uptime, memory.
 - **Display:** day/night brightness, night mode and its hours, 12/24-hour time, the lunar
-  date, forecast cycle.
+  date, holidays, forecast cycle.
 - **Time:** time zone by name (common zones are mapped to POSIX strings, **Detect** uses the
   browser's zone, or enter a custom POSIX string), NTP server, **Sync now**, and **Set clock
   from this device** for networks without NTP (accurate to about a second).
@@ -188,7 +199,7 @@ stays in one task.
 
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
-`PHOTO`, `LUNAR`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
+`PHOTO`, `LUNAR`, `HOLIDAYS`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
 `OTA AUTO`.
 Diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
@@ -643,6 +654,7 @@ TIMEOUT IDLE 30             # other screens go back to the clock after 30 s with
 PREVIEW                     # show the forecast and each photo once now, even at night
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
 LUNAR                       # today's lunar date and days to Tết (LUNAR ON|OFF on the clock)
+HOLIDAYS                    # the holidays shown on the date line (HOLIDAYS ON|OFF)
 SCREEN SETTINGS             # CLOCK, FORECAST, PHOTO, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
@@ -748,6 +760,7 @@ tools/fonts/                    Inter variable font + OFL licence
 src/photos.*                    photo storage in LittleFS: slots, uploads, JPEG header check
 src/lunar.*                     Vietnamese lunar calendar: table for 1900-2100, astronomical formula outside
 src/lunar_table.h               generated lunar month table (do not edit)
+src/holidays.*                  Vietnamese holidays and festivals (solar and lunar dates)
 tools/gen_lunar_table.py        lunar table generator (Skyfield + JPL DE440s)
 src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)
 ```

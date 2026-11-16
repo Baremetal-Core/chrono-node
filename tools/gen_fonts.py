@@ -30,11 +30,13 @@ VIETNAMESE = ("ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõùúý�
 # Punctuation that phones and editors insert automatically: – — ‘ ’ “ ” • …
 PUNCT = "\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u2026"
 DIGITS = "0123456789"
-# The lunar date on the clock face (src/main.cpp: lunar texts): only the
-# Vietnamese letters these words use, to keep font_face small.
-LUNAR_WORDS = ("ÂM LỊCH MÙNG RẰM TẾT tháng nhuận còn ngày mai "
+# The lunar date and holidays on the clock face (src/main.cpp, src/holidays.cpp):
+# only the Vietnamese letters these words use, to keep font_face small.
+LUNAR_WORDS = ("ÂM LỊCH MÙNG RẰM TẾT tháng nhuận còn ngày mai ÂL "
                "Giáp Ất Bính Đinh Mậu Kỷ Canh Tân Nhâm Quý "
-               "Tý Sửu Dần Mão Thìn Tỵ Ngọ Mùi Thân Dậu Tuất Hợi")
+               "Tý Sửu Dần Mão Thìn Tỵ Ngọ Mùi Thân Dậu Tuất Hợi "
+               "DƯƠNG QUỐC PHỤ NỮ LAO ĐỘNG THIẾU NHI VIỆT NAM NHÀ GIÁO ĐÊM GIÁNG SINH "
+               "THÁNG GIÊNG GIỖ TỔ HÙNG VƯƠNG PHẬT ĐẢN ĐOAN NGỌ VU LAN TRUNG THU ÔNG CÔNG TÁO")
 LUNAR = "".join(sorted(set(c for c in LUNAR_WORDS if ord(c) > 0x7F)))
 
 # name, pixel size, weight (100-900), optical size (14-32), characters

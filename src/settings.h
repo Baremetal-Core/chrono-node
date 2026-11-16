@@ -110,6 +110,10 @@ bool setPhotoEveryMinutes(uint8_t minutes);
 bool lunarDate();
 bool setLunarDate(bool enabled);
 
+// Holidays and festivals on the clock face's date line on the day.
+bool holidays();
+bool setHolidays(bool enabled);
+
 // Daily automatic check for a new GitHub release (the clock shows a note).
 bool autoUpdateCheck();
 bool setAutoUpdateCheck(bool enabled);

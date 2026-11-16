@@ -15,6 +15,7 @@
 #include "certs/ca_bundle.h"
 #include "clock_sync.h"
 #include "config.h"
+#include "holidays.h"
 #include "lunar.h"
 #include "mem_lease.h"
 #include "net_manager.h"
@@ -40,7 +41,7 @@ ClockState clockState = {};
 // Console commands the web UI may run. Blocking/diagnostic ones (SHOT, TEST,
 // TOUCH) are excluded.
 const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BRIGHT ",
-                                "NIGHT ",       "FORMAT ",     "LUNAR ",     "WEATHER LOC ", "WEATHER CYCLE ", "WEATHER FORGET ",
+                                "NIGHT ",       "FORMAT ",     "LUNAR ",      "HOLIDAYS ",     "WEATHER LOC ", "WEATHER CYCLE ", "WEATHER FORGET ",
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
                                 "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT",
@@ -112,6 +113,7 @@ void handleStatus() {
     lunar::yearName(l.year, name, sizeof(name));
     lu["year_name"] = name;
     lu["tet_days"] = lunar::daysToTet(d, m, y);
+    if (const holidays::Holiday* h = holidays::today(d, m, l)) doc["holiday"] = h->name;
   }
 
   JsonObject wifi = doc["wifi"].to<JsonObject>();
@@ -181,6 +183,7 @@ void handleSettings() {
   doc["hour12"] = settings::hour12();
   doc["forecast_cycle"] = settings::weatherCycle();
   doc["lunar"] = settings::lunarDate();
+  doc["holidays"] = settings::holidays();
   doc["update_check"] = settings::autoUpdateCheck();
   JsonObject colors = doc["colors"].to<JsonObject>();
   const uint8_t styleIndex = settings::colorStyle() % static_cast<uint8_t>(theme::Style::Count);

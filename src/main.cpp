@@ -14,6 +14,7 @@
 #include "clock_sync.h"
 #include "config.h"
 #include "display_manager.h"
+#include "holidays.h"
 #include "lunar.h"
 #include "net_manager.h"
 #include "ota.h"
@@ -369,35 +370,54 @@ void applyColors() {
   display.setColors(c);
 }
 
-// The lunar date for the clock's date line, rebuilt once a day (or when the
-// setting changes): on the 1st and 15th, at Tết and in the month before it,
-// it gets as much time as the solar date.
-void updateLunar(const struct tm& local) {
+// The other texts of the clock's date line, rebuilt once a day (or when a
+// setting changes): the lunar date and today's holiday. On the 1st and 15th,
+// on holidays, at Tết and in the month before it, they get as much time as
+// the solar date.
+void updateDateLine(const struct tm& local) {
   static int builtFor = -1;
-  static bool builtOn = false;
+  static uint8_t builtWith = 0xFF;
   const int key = local.tm_year * 400 + local.tm_yday;
-  if (key == builtFor && builtOn == settings::lunarDate()) return;
+  const uint8_t with = (settings::lunarDate() ? 1 : 0) | (settings::holidays() ? 2 : 0);
+  if (key == builtFor && with == builtWith) return;
   builtFor = key;
-  builtOn = settings::lunarDate();
-  if (!builtOn) {
-    display.setDateAlts(nullptr, 0, false);
-    return;
-  }
+  builtWith = with;
   const int d = local.tm_mday, m = local.tm_mon + 1, y = local.tm_year + 1900;
   const lunar::Date l = lunar::fromSolar(d, m, y);
   const int tet = lunar::daysToTet(d, m, y);
+  const holidays::Holiday* h = settings::holidays() ? holidays::today(d, m, l) : nullptr;
+  DateAlt alts[DisplayManager::kMaxDateAlts] = {};
+  int n = 0;
+  bool special = h != nullptr;
+  if (h) {
+    DateAlt& a = alts[n++];
+    strlcpy(a.head, h->name, sizeof(a.head));
+    if (h->lunar) {
+      snprintf(a.rest, sizeof(a.rest), " · %d/%d ÂL", h->day, h->month);
+    } else if (h->day == 1 && h->month == 1) {
+      snprintf(a.rest, sizeof(a.rest), " · %d", y);
+    } else {
+      snprintf(a.rest, sizeof(a.rest), " · %d/%d", h->day, h->month);
+    }
+    Serial.printf("[HOLIDAY] Today: %s\n", h->name);
+  }
+  if (!settings::lunarDate()) {
+    display.setDateAlts(alts, n, special);
+    return;
+  }
   char year[24];
   lunar::yearName(l.year, year, sizeof(year));
   const char* leap = l.leap ? " nhuận" : "";
-  DateAlt alts[DisplayManager::kMaxDateAlts] = {};
-  int n = 1;
-  bool special = true;
-  DateAlt& a = alts[0];
+  DateAlt& a = alts[n];
+  // A lunar holiday already shows the lunar date.
+  if (!(h && h->lunar)) ++n;
   if (l.month == 1 && !l.leap && l.day <= 3) {
+    special = true;
     snprintf(a.head, sizeof(a.head), "MÙNG %d TẾT", l.day);
     snprintf(a.rest, sizeof(a.rest), " · %s", year);
     strlcpy(a.shortRest, a.rest, sizeof(a.shortRest));
   } else if (l.day == 1 || l.day == 15) {
+    special = true;
     strlcpy(a.head, l.day == 1 ? "MÙNG 1" : "RẰM", sizeof(a.head));
     snprintf(a.rest, sizeof(a.rest), " · tháng %d%s %s", l.month, leap, year);
     snprintf(a.shortRest, sizeof(a.shortRest), " · tháng %d%s", l.month, leap);
@@ -405,7 +425,6 @@ void updateLunar(const struct tm& local) {
     strlcpy(a.head, "ÂM LỊCH", sizeof(a.head));
     snprintf(a.rest, sizeof(a.rest), " · %d/%d%s %s", l.day, l.month, leap, year);
     snprintf(a.shortRest, sizeof(a.shortRest), " · %d/%d%s", l.day, l.month, leap);
-    special = false;
   }
   if (tet >= 1 && tet <= config::kTetCountdownDays) {
     DateAlt& t = alts[n++];
@@ -938,7 +957,7 @@ void pollRtc(bool forceLog) {
   time_utils::utcToLocal(utc, local);
   lastLocalTm = local;
   applyColors();  // Mix changes style on the minute
-  updateLunar(local);
+  updateDateLine(local);
   updateNight(local);
   updateAutoScreens(local, weather::version() != 0);
   if (screenOn == Screen::Clock && !transitioning) {
