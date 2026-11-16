@@ -125,6 +125,8 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 ## M15 – Extras
 - Lunar calendar (Âm lịch) ✅: the lunar date takes turns with the date; Mùng 1, Rằm, Tết
   and a Tết countdown.
+- Month calendar ✅: solar and lunar dates, holidays, today, ISO week numbers; swipe up/down
+  for months, a Today button, tap a day for its card.
 - Holidays and festivals ✅: 9 solar and 7 lunar days on the date line.
 - Time on every screen ✅: title bars, forecast header, a pill on photos.
 - Analog face ✅: dial with a sweeping second hand, date column; Mix takes turns with the

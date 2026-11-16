@@ -121,10 +121,31 @@ Vietnamese (*First quarter · Trăng bán nguyệt đầu tháng*). It's compute
 low-precision formulas (`src/moon.*`): against the JPL ephemeris the lit fraction is within
 0.3% and the phase angle within 0.4°.
 
+### Calendar
+
+The **Calendar** screen (after Home in the swipe order) shows a month from
+Monday to Sunday, with the lunar date small under each day and the ISO week number of each
+week on the left (this week's in the accent colour):
+
+- **Today** is filled in the accent colour; Sundays and holidays are red, and holidays
+  (including the first three days of Tết) have an amber dot.
+- The first day of each lunar month reads *day/month* in the accent colour (`1/10`), so the
+  lunar months are easy to follow; days of the months around it are dimmed.
+- **Swipe up** for the next month and **down** for the previous one; **Today** (next to the
+  month, lit while another month shows) comes back to this month. It always opens on this month and moves to the next day at midnight.
+- **Tap a day** for a card with its date in full, the lunar date with the year's name
+  (*Âm lịch: 1 tháng 1, năm Đinh Mùi*) and its holiday. Tap it again (or anywhere else) to
+  close it.
+- It works offline: the lunar dates come from the built-in table (see Lunar calendar).
+- Console / web: `CALENDAR 2027-02` shows a month, `CALENDAR 2027-02-06` with that day's card.
+
+![Calendar](docs/images/calendar.png)
+
 ## Touch and screens
 
-- **Screens**, in swipe order: Clock → Home → Forecast → Photo → Info → Settings, then back to
-  Clock. Swipe left for the next screen and right for the previous one. The forecast is
+- **Screens**, in swipe order: Clock → Home → Calendar → Forecast → Photo → Info → Settings,
+  then back to Clock. Swipe left for the next screen and right for the previous one (up and
+  down change the month on the calendar). The forecast is
   skipped until weather data exists, the photo screen while there are no photos, and Home
   until Home Assistant is set up (see Home Assistant). Screen changes happen behind a quick backlight dip.
 - **The time on every screen:** the other screens show it too, updated each minute: at the
@@ -242,7 +263,7 @@ stays in one task.
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
 `PHOTO`, `FACE`, `LUNAR`, `HOLIDAYS`, `PHRASE`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
-`OTA AUTO`, `HA`.
+`OTA AUTO`, `HA`, `CALENDAR`.
 Diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
 ```bash
@@ -752,7 +773,8 @@ PHRASE                      # today's phrases
 PHRASE BOTH                 # above the time: VI, EN, BOTH (in turn) or OFF
 HA                          # Home Assistant address, devices and states, last error
 HA REFRESH                  # read the devices' states now
-SCREEN SETTINGS             # CLOCK, FORECAST, PHOTO, HOME, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
+SCREEN SETTINGS             # CLOCK, HOME, CALENDAR, FORECAST, PHOTO, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
+CALENDAR 2027-02-06         # the calendar at that month, with the day's card (CALENDAR: this month)
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
 SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web page)

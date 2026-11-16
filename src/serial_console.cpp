@@ -647,9 +647,16 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
+  } else if (strcasecmp(text, "CALENDAR") == 0 || strncasecmp(text, "CALENDAR ", 9) == 0) {
+    const time_t nowUtc = time(nullptr);
+    struct tm local;
+    localtime_r(&nowUtc, &local);
+    int y = local.tm_year + 1900, m = local.tm_mon + 1, d = 0;
+    if (text[8] && sscanf(text + 9, "%d-%d-%d", &y, &m, &d) < 2) y = 0;
+    if (!requestCalendar(y, m, d)) Serial.println("[CONSOLE] Usage: CALENDAR [YYYY-MM[-DD]]");
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
     if (!requestScreenByName(text + 7)) {
-      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|HOME|INFO|SETTINGS|STORAGE|UPDATE|WIFI-RESET");
+      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|HOME|CALENDAR|FORECAST|PHOTO|INFO|SETTINGS|STORAGE|UPDATE|WIFI-RESET");
     }
   } else if (strcasecmp(text, "TOUCH CAL") == 0) {
     calibrateTouch(display);
@@ -749,7 +756,7 @@ void serialConsolePrintHelp() {
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
       "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | FACE [DIGITAL|ANALOG|MIX|EVERY n] | LUNAR [ON|OFF] | HOLIDAYS [ON|OFF] | PHRASE [VI|EN|BOTH|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
-      "SCREEN name | SETEPOCH n | REBOOT | HA [REFRESH] | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
+      "SCREEN name | CALENDAR [YYYY-MM[-DD]] | SETEPOCH n | REBOOT | HA [REFRESH] | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }
 
