@@ -29,7 +29,6 @@ constexpr const char* kKeyLunar = "lunar";
 constexpr const char* kKeyHolidays = "holidays";
 constexpr const char* kKeyFace = "face";
 constexpr const char* kKeyPhraseLang = "phr_lang";
-constexpr const char* kKeyPhraseEvery = "phr_every";
 constexpr const char* kKeyOtaAuto = "ota_auto";
 constexpr const char* kKeyBannerOn = "bn_on";
 constexpr const char* kKeyBannerEvery = "bn_every";  // default for new messages
@@ -94,7 +93,6 @@ bool lunarOn = true;
 bool holidaysOn = true;
 bool analogOn = false;
 uint8_t phraseLangSet = 2;   // phrases::Lang::Both
-uint8_t phraseEverySet = 60;
 bool otaAuto = true;
 
 float lat = config::kDefaultLatitude;
@@ -165,7 +163,6 @@ void begin() {
     holidaysOn = prefs.getBool(kKeyHolidays, holidaysOn);
     analogOn = prefs.getUChar(kKeyFace, 0) == 1;
     phraseLangSet = prefs.getUChar(kKeyPhraseLang, phraseLangSet);
-    phraseEverySet = prefs.getUChar(kKeyPhraseEvery, phraseEverySet);
     otaAuto = prefs.getBool(kKeyOtaAuto, otaAuto);
     use12h = prefs.getBool(kKeyHour12, use12h);
     bannerOn = prefs.getBool(kKeyBannerOn, bannerOn);
@@ -546,20 +543,12 @@ bool setAnalogFace(bool analog) {
 uint8_t phraseLang() { return phraseLangSet; }
 
 bool setPhraseLang(uint8_t lang) {
-  if (lang > 2) return false;
+  if (lang > 3) return false;
   bool ok = save([&](Preferences& p) { return p.putUChar(kKeyPhraseLang, lang) > 0; });
   if (ok) phraseLangSet = lang;
   return ok;
 }
 
-uint8_t phraseEveryMinutes() { return phraseEverySet; }
-
-bool setPhraseEveryMinutes(uint8_t minutes) {
-  if (minutes > 120) return false;
-  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyPhraseEvery, minutes) > 0; });
-  if (ok) phraseEverySet = minutes;
-  return ok;
-}
 
 bool setHolidays(bool enabled) {
   bool ok = save([&](Preferences& p) { return p.putBool(kKeyHolidays, enabled) > 0; });

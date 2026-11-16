@@ -118,12 +118,10 @@ bool setHolidays(bool enabled);
 bool analogFace();
 bool setAnalogFace(bool analog);
 
-// Phrase of the day: 0 Vietnamese, 1 English, 2 both (by day); scrolls by on
-// the clock every N minutes (0: only on the web page; max 120).
+// Phrases of the day above the digits: 0 Vietnamese, 1 English, 2 both
+// (taking turns), 3 off.
 uint8_t phraseLang();
 bool setPhraseLang(uint8_t lang);
-uint8_t phraseEveryMinutes();
-bool setPhraseEveryMinutes(uint8_t minutes);
 
 // Daily automatic check for a new GitHub release (the clock shows a note).
 bool autoUpdateCheck();

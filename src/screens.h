@@ -17,7 +17,6 @@ int startPreview();
 // Scrolls the next banner message as soon as the clock face is showing.
 void requestBannerNow();
 
-// The phrase of the day for a local date, and scrolling it now.
+// The phrases of the day for a local date (as the setting asks; 0-2).
 struct tm;
-const char* todaysPhrase(const struct tm& local);
-void requestPhraseNow();
+int todaysPhrases(const struct tm& local, const char* out[2]);

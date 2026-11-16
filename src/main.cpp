@@ -125,7 +125,6 @@ uint32_t bannerDue = 0;       // bit i: message i is due
 uint32_t bannerSeenVer = 0;   // settings::bannerVersion() the due bits refer to
 bool bannerRequested = false;
 bool updateNoticeDue = false;
-bool phraseDue = false;
 bool bannerWasActive = false;
 uint32_t bannerNextMs = 0;
 
@@ -269,12 +268,12 @@ void updateAutoScreens(const struct tm& local, bool hasData) {
 // Called every second while the clock face is showing.
 }  // namespace
 
-const char* todaysPhrase(const struct tm& local) {
+int todaysPhrases(const struct tm& local, const char* out[2]) {
   struct tm day = local;
   day.tm_hour = 12;
   day.tm_min = day.tm_sec = 0;
   const int32_t days = static_cast<int32_t>(mktime(&day) / 86400);
-  return phrases::forDay(days, static_cast<phrases::Lang>(settings::phraseLang()));
+  return phrases::forDay(days, static_cast<phrases::Lang>(settings::phraseLang()), out);
 }
 
 namespace {
@@ -303,23 +302,6 @@ void updateBanner(const struct tm& local) {
     if (display.startBanner(text, settings::bannerSpeed())) {
       Serial.printf("[BANNER] Update notice (%s)\n", tag);
       updateNoticeDue = false;
-      bannerWasActive = true;
-    }
-    return;
-  }
-  // The phrase of the day scrolls by every N minutes, a quarter period after
-  // the hour (:45 with the default 60) so it doesn't meet the update notice.
-  const uint8_t every = settings::phraseEveryMinutes();
-  if (every && local.tm_sec == config::kBannerStartSecond &&
-      (local.tm_hour * 60 + local.tm_min + every / 4) % every == 0) {
-    phraseDue = true;
-  }
-  if (phraseDue && !active && (int32_t)(millis() - bannerNextMs) >= 0) {
-    char text[136];
-    snprintf(text, sizeof(text), "\xE2\x80\x9C%s\xE2\x80\x9D", todaysPhrase(local));
-    if (display.startBanner(text, settings::bannerSpeed())) {
-      Serial.printf("[PHRASE] %s\n", text);
-      phraseDue = false;
       bannerWasActive = true;
     }
     return;
@@ -406,6 +388,21 @@ void applyColors() {
 // setting changes): the lunar date and today's holiday. On the 1st and 15th,
 // on holidays, at Tết and in the month before it, they get as much time as
 // the solar date.
+// The phrases of the day for the line above the digits, once a day (or when
+// the setting changes).
+void updatePhrases(const struct tm& local) {
+  static int builtFor = -1;
+  static uint8_t builtLang = 0xFF;
+  const int key = local.tm_year * 400 + local.tm_yday;
+  if (key == builtFor && builtLang == settings::phraseLang()) return;
+  builtFor = key;
+  builtLang = settings::phraseLang();
+  const char* list[2];
+  const int n = todaysPhrases(local, list);
+  display.setPhrases(list, n);
+  for (int i = 0; i < n; ++i) Serial.printf("[PHRASE] Today: %s\n", list[i]);
+}
+
 void updateDateLine(const struct tm& local) {
   static int builtFor = -1;
   static uint8_t builtWith = 0xFF;
@@ -1026,6 +1023,7 @@ void pollRtc(bool forceLog) {
   lastLocalTm = local;
   applyColors();  // Mix changes style on the minute
   updateDateLine(local);
+  updatePhrases(local);
   updateNight(local);
   updateAutoScreens(local, weather::version() != 0);
   if (screenOn == Screen::Clock && !transitioning) {
@@ -1094,10 +1092,6 @@ void requestBannerNow() {
   if (screenOn != Screen::Clock) requestScreenByName("clock");
 }
 
-void requestPhraseNow() {
-  phraseDue = true;
-  if (screenOn != Screen::Clock) requestScreenByName("clock");
-}
 
 void setup() {
   esp_task_wdt_init(config::kTaskWatchdogS, true);  // reconfigures the running watchdog

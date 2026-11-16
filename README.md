@@ -186,11 +186,11 @@ Open `http://chrono-node.local` (or the clock's IP, shown on the Info screen) fr
 on the same network. The page shows live status and changes every setting while the clock
 stays online:
 
-- **Status:** time, lunar date and days to Tết, moon phase, phrase of the day, Wi-Fi, IP, NTP sync, RTC, weather, air
+- **Status:** time, lunar date and days to Tết, moon phase, phrases of the day, Wi-Fi, IP, NTP sync, RTC, weather, air
   quality, current screen, uptime, memory.
 - **Display:** day/night brightness, night mode and its hours, 12/24-hour time, digital or
   analog face, the lunar
-  date, holidays, phrase of the day, forecast cycle.
+  date, holidays, phrases of the day, forecast cycle.
 - **Time:** time zone by name (common zones are mapped to POSIX strings, **Detect** uses the
   browser's zone, or enter a custom POSIX string), NTP server, **Sync now**, and **Set clock
   from this device** for networks without NTP (accurate to about a second).
@@ -435,11 +435,13 @@ Your own short messages scroll across the bottom line of the clock face.
 
 ### Phrase of the day
 
-Every day has a phrase: a Vietnamese proverb or folk verse (tục ngữ, ca dao) and an English
-proverb, taking turns day by day (60 of each in `src/phrases.cpp`, all traditional sayings).
-It scrolls across the bottom line like a banner every hour at :45 (settable 15 min–2 h, or
-only on the web page), and the web status shows it. Web page: *Display* → *Phrase of the day*
-(language, how often, **Show now**); console: `PHRASE [SHOW|VI|EN|BOTH|EVERY n]`.
+Every day has two phrases: a Vietnamese proverb or folk verse (tục ngữ, ca dao) and an
+English proverb (60 of each in `src/phrases.cpp`, all traditional sayings). They take turns on
+the line between the status bar and the time. A phrase too long for the line is shown in
+parts of about equal width (`“Don't count your chickens…` then `…before they hatch.”`); each
+part stays 4 s plus 70 ms per character. The web status shows both. Choose Vietnamese,
+English, both or off on the web page (*Display*) or with `PHRASE VI|EN|BOTH|OFF`. The analog
+face doesn't show them.
 
 ## Photos
 
@@ -690,8 +692,8 @@ FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
 FACE ANALOG                 # analog clock face (FACE DIGITAL for the digits)
 LUNAR                       # today's lunar date and days to Tết (LUNAR ON|OFF on the clock)
 HOLIDAYS                    # the holidays shown on the date line (HOLIDAYS ON|OFF)
-PHRASE                      # today's phrase; PHRASE SHOW scrolls it now
-PHRASE BOTH                 # VI, EN or BOTH (by day); PHRASE EVERY 60 (minutes, 0 = web only)
+PHRASE                      # today's phrases
+PHRASE BOTH                 # above the time: VI, EN, BOTH (in turn) or OFF
 SCREEN SETTINGS             # CLOCK, FORECAST, PHOTO, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)

@@ -121,7 +121,10 @@ void handleStatus() {
     mo["lit_pct"] = static_cast<int>(lroundf(mp.lit * 100));
     mo["phase"] = moon::name(mp);
     mo["phase_vi"] = moon::nameVi(mp);
-    doc["phrase"] = todaysPhrase(local);
+    const char* list[2];
+    const int n = todaysPhrases(local, list);
+    JsonArray phrases = doc["phrases"].to<JsonArray>();
+    for (int i = 0; i < n; ++i) phrases.add(list[i]);
   }
 
   JsonObject wifi = doc["wifi"].to<JsonObject>();
@@ -193,9 +196,8 @@ void handleSettings() {
   doc["lunar"] = settings::lunarDate();
   doc["holidays"] = settings::holidays();
   doc["face"] = settings::analogFace() ? "analog" : "digital";
-  JsonObject phr = doc["phrase"].to<JsonObject>();
-  phr["lang"] = settings::phraseLang() == 0 ? "vi" : settings::phraseLang() == 1 ? "en" : "both";
-  phr["every_min"] = settings::phraseEveryMinutes();
+  static const char* const kPhraseLangs[] = {"vi", "en", "both", "off"};
+  doc["phrase_lang"] = kPhraseLangs[settings::phraseLang() % 4];
   doc["update_check"] = settings::autoUpdateCheck();
   JsonObject colors = doc["colors"].to<JsonObject>();
   const uint8_t styleIndex = settings::colorStyle() % static_cast<uint8_t>(theme::Style::Count);

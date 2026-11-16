@@ -132,6 +132,10 @@ class DisplayManager {
   static constexpr int kMaxDateAlts = 3;
   void setDateAlts(const DateAlt* alts, int count, bool even);
 
+  // Phrases shown in turn on the line above the digits (static strings, up to
+  // 2); a long one is shown in parts. 0 clears the line.
+  void setPhrases(const char* const* texts, int count);
+
   // Analog face instead of the digits; its right column's content.
   void setAnalog(bool analog);
   bool analog() const { return analog_; }
@@ -245,6 +249,14 @@ class DisplayManager {
 
   theme::Palette pal_{0, 0};
   bool palValid_ = false;
+  // The phrase line: which phrase and part shows, and until when.
+  const char* phrases_[2] = {};
+  int phraseCount_ = 0;
+  int phraseIdx_ = 0;
+  int phrasePart_ = 0;
+  int phraseParts_ = 1;
+  uint32_t phraseNextMs_ = 0;
+  void drawPhraseLine();
   // Analog face: a dial on the left, the date column on the right.
   bool analog_ = false;
   bool analogFull_ = true;  // redraw the whole dial on the next frame

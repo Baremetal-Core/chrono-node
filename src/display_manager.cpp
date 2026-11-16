@@ -67,6 +67,10 @@ constexpr int16_t kBarY = kRowY - kBarH / 2;
 constexpr int16_t kDateTop = kRowY + 14;
 constexpr int16_t kDateH = 34;
 constexpr int16_t kDateBaseline = 28;
+constexpr int16_t kPhraseTop = kStatusH;  // the phrase line, between the status bar and the time
+constexpr int16_t kPhraseH = kTimeTop - kStatusH - 2;
+constexpr uint32_t kPhraseMinMs = 4000;   // each part shows at least this long,
+constexpr uint32_t kPhraseCharMs = 70;    // plus this per character
 constexpr int16_t kNoticeTop = 212;
 constexpr int16_t kNoticeH = 24;
 
@@ -630,6 +634,7 @@ void DisplayManager::showTime(const struct tm& local) {
   if (firstFrame) {
     drawColon();
     drawStatusBar();
+    drawPhraseLine();
     drawNotice();
   }
 }
@@ -699,6 +704,19 @@ void DisplayManager::tick() {
   drawBar(false, false);  // the bar fills smoothly: redrawn whenever it grows a pixel
 
   if (bannerActive_) drawBanner(now);
+
+  // The next phrase, or the next part of a long one.
+  if (phraseCount_ && !fxLeased_ && (int32_t)(now - phraseNextMs_) >= 0) {
+    if (phraseCount_ == 1 && phraseParts_ == 1) {
+      phraseNextMs_ = now + kPhraseMinMs;  // nothing else to show
+    } else {
+      if (++phrasePart_ >= phraseParts_) {
+        phrasePart_ = 0;
+        phraseIdx_ = (phraseIdx_ + 1) % phraseCount_;
+      }
+      drawPhraseLine();
+    }
+  }
 
   for (int i = 0; i < 4; ++i) {
     Roll& r = bigRoll_[i];
@@ -1089,6 +1107,78 @@ void buildDialMask() {
 }
 
 }  // namespace
+
+void DisplayManager::setPhrases(const char* const* texts, int count) {
+  count = constrain(count, 0, 2);
+  bool same = count == phraseCount_;
+  for (int i = 0; i < count && same; ++i) same = texts[i] == phrases_[i];
+  if (same) return;
+  for (int i = 0; i < count; ++i) phrases_[i] = texts[i];
+  phraseCount_ = count;
+  phraseIdx_ = phrasePart_ = 0;
+  drawPhraseLine();
+}
+
+// The phrase line above the digits: the current phrase, or the current part
+// of one too long for the line (split at spaces, with "…" where it continues).
+void DisplayManager::drawPhraseLine() {
+  if (mode_ != Mode::Clock || analog_) return;
+  drawLine(kPhraseTop, kPhraseH, font_small, [&](TFT_eSprite& s) {
+    if (!phraseCount_) return;
+    const char* text = phrases_[phraseIdx_ % phraseCount_];
+    constexpr int kMaxParts = 6;
+    const char* starts[kMaxParts];
+    int lens[kMaxParts];
+    int parts = 0;
+    const int16_t maxW = kScreenW - 40;  // room for the quote marks and "…"
+    char buf[160];
+    // Greedy split at spaces into parts no wider than `limit`.
+    auto split = [&](int16_t limit) {
+      parts = 0;
+      const char* p = text;
+      while (*p && parts < kMaxParts) {
+        const char* start = p;
+        const char* fit = nullptr;
+        for (const char* q = p;;) {
+          const char* space = strchr(q, ' ');
+          const char* end = space ? space : q + strlen(q);
+          const int len = min<int>(end - start, sizeof(buf) - 1);
+          memcpy(buf, start, len);
+          buf[len] = '\0';
+          if (fit && s.textWidth(buf) > limit) break;
+          fit = end;
+          if (!space) break;
+          q = space + 1;
+        }
+        starts[parts] = start;
+        lens[parts++] = fit - start;
+        p = fit;
+        while (*p == ' ') ++p;
+      }
+    };
+    split(maxW);
+    if (parts > 1) {
+      // Balance the parts: the narrowest limit that still needs no more of them.
+      const int n = parts;
+      for (int16_t limit = s.textWidth(text) / n; limit < maxW; limit += 6) {
+        split(limit);
+        if (parts <= n) break;
+      }
+      if (parts > n) split(maxW);
+    }
+    phraseParts_ = max(parts, 1);
+    const int part = min(phrasePart_, phraseParts_ - 1);
+    const bool last = part == phraseParts_ - 1;
+    snprintf(buf, sizeof(buf), "%s%.*s%s", part == 0 ? "\xE2\x80\x9C" : "\xE2\x80\xA6", lens[part],
+             starts[part], last ? "\xE2\x80\x9D" : "\xE2\x80\xA6");
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->dim, C->bg);
+    s.drawString(buf, kScreenW / 2, kPhraseH / 2 + 1);
+    int chars = 0;
+    for (const char* c = buf; *c; ++c) chars += (*c & 0xC0) != 0x80;  // UTF-8 code points
+    phraseNextMs_ = millis() + kPhraseMinMs + chars * kPhraseCharMs;
+  });
+}
 
 void DisplayManager::setAnalog(bool analog) {
   if (analog == analog_) return;

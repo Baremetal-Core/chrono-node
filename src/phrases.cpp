@@ -136,17 +136,11 @@ const char* pick(T (&list)[N], int32_t n) {
 
 }  // namespace
 
-const char* forDay(int32_t day, Lang lang) {
-  switch (lang) {
-    case Lang::Vietnamese:
-      return pick(kVietnamese, day);
-    case Lang::English:
-      return pick(kEnglish, day);
-    case Lang::Both:
-    default:
-      // Even days Vietnamese, odd days English; each list goes in order.
-      return day % 2 == 0 ? pick(kVietnamese, day / 2) : pick(kEnglish, day / 2);
-  }
+int forDay(int32_t day, Lang lang, const char* out[2]) {
+  int n = 0;
+  if (lang == Lang::Vietnamese || lang == Lang::Both) out[n++] = pick(kVietnamese, day);
+  if (lang == Lang::English || lang == Lang::Both) out[n++] = pick(kEnglish, day);
+  return n;
 }
 
 }  // namespace phrases
