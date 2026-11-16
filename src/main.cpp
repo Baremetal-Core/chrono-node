@@ -587,8 +587,11 @@ void showHome() {
                                                  : Icon::Power;
     using Look = HomeTile::Look;
     const bool unavailable = !strcmp(d[i].state, "unavailable") || !strcmp(d[i].state, "unknown");
-    if (d[i].pending) {
+    const bool flipping = d[i].pending && d[i].kind != home::Kind::Run;  // shown as switched already
+    if (d[i].pending && !flipping) {
       t.look = Look::Pending;
+    } else if (flipping) {
+      t.look = d[i].target ? Look::On : Look::Off;
     } else if (d[i].kind == home::Kind::Run) {
       t.look = unavailable ? Look::Unavailable : Look::Run;
     } else if (unavailable || !d[i].state[0]) {
@@ -608,6 +611,7 @@ void showHome() {
         if (*c == '_') *c = ' ';
       }
     }
+    if (flipping) strlcpy(t.state, d[i].target ? "On" : "Off", sizeof(t.state));  // until it reports
     if (t.look == Look::Off) strlcpy(t.state, "Off", sizeof(t.state));  // a TV's "Standby" too
   }
   display.showHomeScreen(v);

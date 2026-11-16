@@ -689,6 +689,7 @@ void DisplayManager::tick() {
       drawDate(lastLocal_);
     }
   }
+  if (mode_ == Mode::Home && homeAnim_) tickHome(millis());
   if (mode_ != Mode::Clock || !spritesOk_) return;
   const uint32_t now = millis();
   if (now - lastFrameMs_ < kFrameMs) return;
@@ -1636,6 +1637,9 @@ void DisplayManager::drawWeatherHeader() {
 // Home screen tiles: 2 columns x 3 rows under the title bar.
 constexpr int16_t kTileW = 148, kTileH = 62, kTileTop = 34, kTileGapY = 6;
 constexpr int16_t kTileX[2] = {8, kScreenW - 8 - kTileW};
+constexpr int16_t kTileRowY = 47;  // the centre of the icon, state and switch row
+constexpr int16_t kTrackW = 40, kTrackH = 22, kTrackX = kTileW - 12 - kTrackW;
+constexpr int16_t kTrackY = kTileRowY - kTrackH / 2;
 
 void DisplayManager::showHomeScreen(const HomeView& v) {
   const bool first = mode_ != Mode::Home;
@@ -1659,16 +1663,53 @@ void DisplayManager::showHomeScreen(const HomeView& v) {
     drawBlock(kTileTop, kScreenH - kTileTop, font_small, [](TFT_eSprite&, int16_t) {});  // the message
     homeValid_ = false;
   }
+  using Look = HomeTile::Look;
+  auto isSwitch = [](const HomeTile& t) {
+    return t.icon != HomeTile::Icon::Scene && (t.look == Look::On || t.look == Look::Off);
+  };
   for (int i = 0; i < HomeView::kMax; ++i) {
     const bool has = i < v.count;
     const bool had = homeValid_ && i < homeView_.count;
     if (homeValid_ && has == had && (!has || memcmp(&v.tiles[i], &homeView_.tiles[i], sizeof(HomeTile)) == 0)) {
       continue;
     }
-    drawHomeTile(i, has ? &v.tiles[i] : nullptr);
+    const float to = has && v.tiles[i].look == Look::On ? 1 : 0;
+    if (has && had && isSwitch(v.tiles[i]) && isSwitch(homeView_.tiles[i]) &&
+        !strcmp(v.tiles[i].name, homeView_.tiles[i].name)) {
+      // The same switch flipped: slide the knob there (tickHome draws it).
+      if (to != homeTo_[i]) {
+        homeFrom_[i] = homeKnob_[i];
+        homeTo_[i] = to;
+        homeAnimMs_[i] = millis() + 30;  // after the tile below is drawn
+        homeAnim_ |= 1 << i;
+      }
+    } else {
+      homeAnim_ &= ~(1 << i);
+      homeKnob_[i] = homeTo_[i] = to;
+    }
+    drawHomeTile(i, has ? &v.tiles[i] : nullptr, homeKnob_[i]);
   }
   homeView_ = v;
   homeValid_ = true;
+}
+
+// Slides the knobs that are moving (about 60 fps, eased in and out).
+void DisplayManager::tickHome(uint32_t now) {
+  constexpr uint32_t kSlideMs = 220;
+  if (now - lastHomeFrameMs_ < 16) return;
+  lastHomeFrameMs_ = now;
+  for (int i = 0; i < HomeView::kMax; ++i) {
+    if (!(homeAnim_ & (1 << i))) continue;
+    if (static_cast<int32_t>(now - homeAnimMs_[i]) < 0) continue;
+    float t = (now - homeAnimMs_[i]) / static_cast<float>(kSlideMs);
+    if (t >= 1) {
+      t = 1;
+      homeAnim_ &= ~(1 << i);
+    }
+    const float e = t < 0.5f ? 4 * t * t * t : 1 - powf(-2 * t + 2, 3) / 2;
+    homeKnob_[i] = homeFrom_[i] + (homeTo_[i] - homeFrom_[i]) * e;
+    drawHomeKnob(i, homeKnob_[i]);
+  }
 }
 
 namespace {
@@ -1729,18 +1770,19 @@ void drawHomeIcon(TFT_eSprite& s, HomeTile::Icon icon, float cx, float cy, uint1
 }  // namespace
 
 // One tile: the name at the top; the icon, state and a switch (or a run
-// button) along the bottom. On: tinted card, accent track, knob right. Off:
-// knob left on a dark track. Switching: the knob waits in the middle.
-void DisplayManager::drawHomeTile(int i, const HomeTile* t) {
+// button) along the bottom. `knob` 0..1 blends off (knob left on a dark
+// track) into on (tinted card, accent track, knob right) as it slides.
+void DisplayManager::drawHomeTile(int i, const HomeTile* t, float knob) {
   const int16_t x = kTileX[i % 2];
   const int16_t y = kTileTop + (i / 2) * (kTileH + kTileGapY);
   drawBlockAt(x, y, kTileW, kTileH, font_small, [&](TFT_eSprite& s, int16_t y0) {
     if (!t) return;
     using Look = HomeTile::Look;
     const bool run = t->icon == HomeTile::Icon::Scene;
-    const bool on = t->look == Look::On;
     const bool unavailable = t->look == Look::Unavailable;
-    const uint16_t card = on ? theme::mix(C->faint, pal_.top, 56) : unavailable ? C->bg : C->faint;
+    // The card and text take the new state at once; the knob slides (tickHome).
+    const uint8_t p = !run && t->look == Look::On ? 255 : 0;
+    const uint16_t card = homeCard(*t);
     s.fillSmoothRoundRect(0, -y0, kTileW, kTileH, 12, card, C->bg);
     if (unavailable) s.drawSmoothRoundRect(0, -y0, 12, 11, kTileW - 1, kTileH - 1, C->faint, card);
 
@@ -1763,11 +1805,10 @@ void DisplayManager::drawHomeTile(int i, const HomeTile* t) {
     }
 
     // The bottom row.
-    constexpr float kRowY = 47;
-    const uint16_t ink = on ? pal_.top : C->dim;
+    constexpr float kRowY = kTileRowY;
+    const uint16_t ink = theme::mix(C->dim, pal_.top, p);
     drawHomeIcon(s, t->icon, 21, kRowY - y0, ink, card);
-    constexpr int16_t kTrackW = 40, kTrackH = 22, kTrackX = kTileW - 12 - kTrackW;
-    s.setTextColor(on ? pal_.top : C->dim, card);
+    s.setTextColor(ink, card);
     const int16_t textEnd = unavailable ? kTileW - 12 : run ? kTileW - 12 - kTrackH - 4 : kTrackX - 6;
     s.drawString(fitText(s, t->state, textEnd - 36), 36, kRowY - y0);
     if (unavailable) return;
@@ -1781,17 +1822,41 @@ void DisplayManager::drawHomeTile(int i, const HomeTile* t) {
       s.fillTriangle(bx - 3, by - 6, bx - 3, by + 6, bx + 6, by, tri);
       return;
     }
-    const uint16_t trackOff = theme::mix(C->bg, C->faint, 110);
-    const uint16_t track = on ? pal_.top : t->look == Look::Pending ? theme::mix(trackOff, pal_.top, 120) : trackOff;
-    s.fillSmoothRoundRect(kTrackX, ty, kTrackW, kTrackH, kTrackH / 2, track, card);
-    const float r = kTrackH / 2 - 3;
-    const float kx = on ? kTrackX + kTrackW - kTrackH / 2.0f
-                   : t->look == Look::Pending ? kTrackX + kTrackW / 2.0f
-                                              : kTrackX + kTrackH / 2.0f;
-    const uint16_t knob = on ? (night_ ? C->text : theme::rgb(255, 255, 255)) : theme::mix(C->dim, C->text, 140);
-    s.fillSmoothCircle(kx, kRowY + 1 - y0, r, theme::mix(track, 0, 90), track);  // a soft shadow
-    s.fillSmoothCircle(kx, kRowY - y0, r, knob, track);
+    drawHomeSwitch(s, kTrackX, ty, knob, card);
   });
+}
+
+uint16_t DisplayManager::homeCard(const HomeTile& t) const {
+  if (t.look == HomeTile::Look::Unavailable) return C->bg;
+  const bool on = t.icon != HomeTile::Icon::Scene && t.look == HomeTile::Look::On;
+  return on ? theme::mix(C->faint, pal_.top, 56) : C->faint;
+}
+
+// The switch at (x, y): track and knob, `knob` 0 (off, left) .. 1 (on, right).
+void DisplayManager::drawHomeSwitch(TFT_eSprite& s, int16_t x, int16_t y, float knob, uint16_t card) {
+  const uint8_t p = static_cast<uint8_t>(constrain(knob, 0.0f, 1.0f) * 255 + 0.5f);
+  const uint16_t trackOff = theme::mix(C->bg, C->faint, 110);
+  const uint16_t track = theme::mix(trackOff, pal_.top, p);
+  s.fillSmoothRoundRect(x, y, kTrackW, kTrackH, kTrackH / 2, track, card);
+  const float r = kTrackH / 2 - 3, cy = y + kTrackH / 2.0f;
+  const float left = x + kTrackH / 2.0f, right = x + kTrackW - kTrackH / 2.0f;
+  const float kx = left + (right - left) * p / 255.0f;
+  const uint16_t knobInk = theme::mix(theme::mix(C->dim, C->text, 140), night_ ? C->text : theme::rgb(255, 255, 255), p);
+  s.fillSmoothCircle(kx, cy + 1, r, theme::mix(track, 0, 90), track);  // a soft shadow
+  s.fillSmoothCircle(kx, cy, r, knobInk, track);
+}
+
+// One frame of a sliding knob: only the switch's rectangle (no font, ~2 ms).
+void DisplayManager::drawHomeKnob(int i, float knob) {
+  if (i >= homeView_.count) return;
+  TFT_eSprite s(&tft);
+  s.setColorDepth(16);
+  if (!s.createSprite(kTrackW, kTrackH + 1)) return;
+  const uint16_t card = homeCard(homeView_.tiles[i]);
+  s.fillSprite(card);
+  drawHomeSwitch(s, 0, 0, knob, card);
+  s.pushSprite(kTileX[i % 2] + kTrackX, kTileTop + (i / 2) * (kTileH + kTileGapY) + kTrackY);
+  s.deleteSprite();
 }
 
 int DisplayManager::homeHitTest(int16_t x, int16_t y) const {

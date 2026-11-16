@@ -354,7 +354,7 @@ async function loadHa(){try{const d=await(await fetch("/api/ha",{cache:"no-store
 if(!HA.urlEdited)$("haurl").value=d.url;$("hatok").placeholder=d.token_set?"saved \u2014 leave empty to keep it":"paste the token";
 if($("hapick").style.display==="none")HA.picked=d.devices.map(x=>x.id);
 $("haerr").textContent=d.error?"Home Assistant: "+d.error:"";
-$("hadev").innerHTML=d.devices.map((x,i)=>{const run=/^(scene|script)\./.test(x.id);const lbl=x.pending?"\u2026":run?"Run":x.on?"On":"Off";
+$("hadev").innerHTML=d.devices.map((x,i)=>{const run=/^(scene|script)\./.test(x.id);const lbl=run?(x.pending?"\u2026":"Run"):x.on?"On":"Off";
 return `<div class="row"><label>${esc(x.name)} <small>${esc(x.id)} \u00b7 ${esc(x.state||"?")}</small></label><button data-hs="${i}" class="${x.on&&!run?"primary":""}">${lbl}</button></div>`}).join("")}catch(e){}}
 function haList(){const f=$("hafind").value.toLowerCase();const items=HA.all.filter(x=>(x.name+" "+x.id).toLowerCase().includes(f));
 $("halist").innerHTML=items.map(x=>{const n=HA.picked.indexOf(x.id);const off=n<0&&HA.picked.length>=6;
@@ -373,6 +373,7 @@ document.addEventListener("change",e=>{const c=e.target.closest("input[data-ha]"
 HA.picked=c.checked?[...HA.picked,id]:HA.picked.filter(x=>x!==id);haList()});
 document.addEventListener("click",async e=>{const b=e.target.closest("button[data-hs]");if(!b)return;
 const u="/api/ha/switch?i="+b.dataset.hs;
+if(b.textContent==="On"||b.textContent==="Off"){const on=b.textContent==="Off";b.textContent=on?"On":"Off";b.classList.toggle("primary",on)}else b.textContent="\u2026";
 try{await fetch(u,{method:"POST"})}catch(_){try{await fetch(u,{method:"POST"})}catch(_){toast("The clock didn't answer")}}setTimeout(loadHa,300);setTimeout(loadHa,1500)});
 loadSettings();loadStatus();loadHa();setInterval(loadStatus,5000);setInterval(loadHa,4000);
 </script></body></html>)HTML";
