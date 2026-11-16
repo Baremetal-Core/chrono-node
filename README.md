@@ -170,10 +170,10 @@ Open `http://chrono-node.local` (or the clock's IP, shown on the Info screen) fr
 on the same network. The page shows live status and changes every setting while the clock
 stays online:
 
-- **Status:** time, lunar date and days to Tết, moon phase, Wi-Fi, IP, NTP sync, RTC, weather, air
+- **Status:** time, lunar date and days to Tết, moon phase, phrase of the day, Wi-Fi, IP, NTP sync, RTC, weather, air
   quality, current screen, uptime, memory.
 - **Display:** day/night brightness, night mode and its hours, 12/24-hour time, the lunar
-  date, holidays, forecast cycle.
+  date, holidays, phrase of the day, forecast cycle.
 - **Time:** time zone by name (common zones are mapped to POSIX strings, **Detect** uses the
   browser's zone, or enter a custom POSIX string), NTP server, **Sync now**, and **Set clock
   from this device** for networks without NTP (accurate to about a second).
@@ -208,7 +208,7 @@ stays in one task.
 
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
-`PHOTO`, `LUNAR`, `HOLIDAYS`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
+`PHOTO`, `LUNAR`, `HOLIDAYS`, `PHRASE`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
 `OTA AUTO`.
 Diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
@@ -415,6 +415,14 @@ Your own short messages scroll across the bottom line of the clock face.
 - **Serial console:** `BANNER` commands (listed below).
 
 ![Banner section of the web page](docs/images/web-banner.png)
+
+### Phrase of the day
+
+Every day has a phrase: a Vietnamese proverb or folk verse (tục ngữ, ca dao) and an English
+proverb, taking turns day by day (60 of each in `src/phrases.cpp`, all traditional sayings).
+It scrolls across the bottom line like a banner every hour at :45 (settable 15 min–2 h, or
+only on the web page), and the web status shows it. Web page: *Display* → *Phrase of the day*
+(language, how often, **Show now**); console: `PHRASE [SHOW|VI|EN|BOTH|EVERY n]`.
 
 ## Photos
 
@@ -664,6 +672,8 @@ PREVIEW                     # show the forecast and each photo once now, even at
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
 LUNAR                       # today's lunar date and days to Tết (LUNAR ON|OFF on the clock)
 HOLIDAYS                    # the holidays shown on the date line (HOLIDAYS ON|OFF)
+PHRASE                      # today's phrase; PHRASE SHOW scrolls it now
+PHRASE BOTH                 # VI, EN or BOTH (by day); PHRASE EVERY 60 (minutes, 0 = web only)
 SCREEN SETTINGS             # CLOCK, FORECAST, PHOTO, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
@@ -771,6 +781,7 @@ src/lunar.*                     Vietnamese lunar calendar: table for 1900-2100, 
 src/lunar_table.h               generated lunar month table (do not edit)
 src/holidays.*                  Vietnamese holidays and festivals (solar and lunar dates)
 src/moon.*                      moon phase (illuminated fraction, waxing/waning, names)
+src/phrases.*                   phrase of the day (Vietnamese proverbs and English proverbs)
 tools/gen_lunar_table.py        lunar table generator (Skyfield + JPL DE440s)
 src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)
 ```

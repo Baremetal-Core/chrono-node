@@ -114,6 +114,13 @@ bool setLunarDate(bool enabled);
 bool holidays();
 bool setHolidays(bool enabled);
 
+// Phrase of the day: 0 Vietnamese, 1 English, 2 both (by day); scrolls by on
+// the clock every N minutes (0: only on the web page; max 120).
+uint8_t phraseLang();
+bool setPhraseLang(uint8_t lang);
+uint8_t phraseEveryMinutes();
+bool setPhraseEveryMinutes(uint8_t minutes);
+
 // Daily automatic check for a new GitHub release (the clock shows a note).
 bool autoUpdateCheck();
 bool setAutoUpdateCheck(bool enabled);

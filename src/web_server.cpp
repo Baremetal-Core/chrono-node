@@ -22,6 +22,7 @@
 #include "net_manager.h"
 #include "ota.h"
 #include "photos.h"
+#include "screens.h"
 #include "settings.h"
 #include "ui_theme.h"
 #include "weather.h"
@@ -42,7 +43,7 @@ ClockState clockState = {};
 // Console commands the web UI may run. Blocking/diagnostic ones (SHOT, TEST,
 // TOUCH) are excluded.
 const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BRIGHT ",
-                                "NIGHT ",       "FORMAT ",     "LUNAR ",      "HOLIDAYS ",     "WEATHER LOC ", "WEATHER CYCLE ", "WEATHER FORGET ",
+                                "NIGHT ",       "FORMAT ",     "LUNAR ",      "HOLIDAYS ",   "PHRASE",     "WEATHER LOC ", "WEATHER CYCLE ", "WEATHER FORGET ",
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
                                 "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT",
@@ -120,6 +121,7 @@ void handleStatus() {
     mo["lit_pct"] = static_cast<int>(lroundf(mp.lit * 100));
     mo["phase"] = moon::name(mp);
     mo["phase_vi"] = moon::nameVi(mp);
+    doc["phrase"] = todaysPhrase(local);
   }
 
   JsonObject wifi = doc["wifi"].to<JsonObject>();
@@ -190,6 +192,9 @@ void handleSettings() {
   doc["forecast_cycle"] = settings::weatherCycle();
   doc["lunar"] = settings::lunarDate();
   doc["holidays"] = settings::holidays();
+  JsonObject phr = doc["phrase"].to<JsonObject>();
+  phr["lang"] = settings::phraseLang() == 0 ? "vi" : settings::phraseLang() == 1 ? "en" : "both";
+  phr["every_min"] = settings::phraseEveryMinutes();
   doc["update_check"] = settings::autoUpdateCheck();
   JsonObject colors = doc["colors"].to<JsonObject>();
   const uint8_t styleIndex = settings::colorStyle() % static_cast<uint8_t>(theme::Style::Count);

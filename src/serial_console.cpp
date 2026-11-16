@@ -621,6 +621,32 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     }
     return false;
   }
+  if (strncasecmp(text, "PHRASE", 6) == 0 && (text[6] == '\0' || text[6] == ' ')) {
+    const char* arg = text + 6;
+    while (*arg == ' ') ++arg;
+    int n = 0;
+    if (strcasecmp(arg, "SHOW") == 0) {
+      requestPhraseNow();
+      return false;
+    } else if (strcasecmp(arg, "VI") == 0 || strcasecmp(arg, "EN") == 0 || strcasecmp(arg, "BOTH") == 0) {
+      settings::setPhraseLang(strcasecmp(arg, "VI") == 0 ? 0 : strcasecmp(arg, "EN") == 0 ? 1 : 2);
+    } else if (strncasecmp(arg, "EVERY ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1) {
+      if (n < 0 || n > 120 || !settings::setPhraseEveryMinutes(n)) {
+        Serial.println("[CONSOLE] ERROR: PHRASE EVERY 0-120 (minutes, 0 = web page only)");
+        return false;
+      }
+    } else if (*arg) {
+      Serial.println("[CONSOLE] Usage: PHRASE [SHOW|VI|EN|BOTH|EVERY n]");
+      return false;
+    }
+    const time_t now = time(nullptr);
+    struct tm local;
+    localtime_r(&now, &local);
+    static const char* const kLangs[] = {"Vietnamese", "English", "both"};
+    Serial.printf("[PHRASE] Today: %s (%s, every %u min)\n", todaysPhrase(local),
+                  kLangs[settings::phraseLang() % 3], settings::phraseEveryMinutes());
+    return false;
+  }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
@@ -704,7 +730,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | LUNAR [ON|OFF] | HOLIDAYS [ON|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | LUNAR [ON|OFF] | HOLIDAYS [ON|OFF] | PHRASE [SHOW|VI|EN|BOTH|EVERY n] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
       "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }

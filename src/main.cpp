@@ -17,6 +17,7 @@
 #include "holidays.h"
 #include "lunar.h"
 #include "moon.h"
+#include "phrases.h"
 #include "net_manager.h"
 #include "ota.h"
 #include "photos.h"
@@ -124,6 +125,7 @@ uint32_t bannerDue = 0;       // bit i: message i is due
 uint32_t bannerSeenVer = 0;   // settings::bannerVersion() the due bits refer to
 bool bannerRequested = false;
 bool updateNoticeDue = false;
+bool phraseDue = false;
 bool bannerWasActive = false;
 uint32_t bannerNextMs = 0;
 
@@ -265,6 +267,18 @@ void updateAutoScreens(const struct tm& local, bool hasData) {
 }
 
 // Called every second while the clock face is showing.
+}  // namespace
+
+const char* todaysPhrase(const struct tm& local) {
+  struct tm day = local;
+  day.tm_hour = 12;
+  day.tm_min = day.tm_sec = 0;
+  const int32_t days = static_cast<int32_t>(mktime(&day) / 86400);
+  return phrases::forDay(days, static_cast<phrases::Lang>(settings::phraseLang()));
+}
+
+namespace {
+
 void updateBanner(const struct tm& local) {
   const bool active = display.bannerActive();
   if (bannerWasActive && !active) bannerNextMs = millis() + config::kBannerGapMs;
@@ -289,6 +303,23 @@ void updateBanner(const struct tm& local) {
     if (display.startBanner(text, settings::bannerSpeed())) {
       Serial.printf("[BANNER] Update notice (%s)\n", tag);
       updateNoticeDue = false;
+      bannerWasActive = true;
+    }
+    return;
+  }
+  // The phrase of the day scrolls by every N minutes, a quarter period after
+  // the hour (:45 with the default 60) so it doesn't meet the update notice.
+  const uint8_t every = settings::phraseEveryMinutes();
+  if (every && local.tm_sec == config::kBannerStartSecond &&
+      (local.tm_hour * 60 + local.tm_min + every / 4) % every == 0) {
+    phraseDue = true;
+  }
+  if (phraseDue && !active && (int32_t)(millis() - bannerNextMs) >= 0) {
+    char text[136];
+    snprintf(text, sizeof(text), "\xE2\x80\x9C%s\xE2\x80\x9D", todaysPhrase(local));
+    if (display.startBanner(text, settings::bannerSpeed())) {
+      Serial.printf("[PHRASE] %s\n", text);
+      phraseDue = false;
       bannerWasActive = true;
     }
     return;
@@ -1025,6 +1056,11 @@ int startPreview() {
 
 void requestBannerNow() {
   bannerRequested = true;
+  if (screenOn != Screen::Clock) requestScreenByName("clock");
+}
+
+void requestPhraseNow() {
+  phraseDue = true;
   if (screenOn != Screen::Clock) requestScreenByName("clock");
 }
 

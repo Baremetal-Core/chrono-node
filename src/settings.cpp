@@ -27,6 +27,8 @@ constexpr const char* kKeyRecent = "wx_recent";
 constexpr const char* kKeyHour12 = "hour12";
 constexpr const char* kKeyLunar = "lunar";
 constexpr const char* kKeyHolidays = "holidays";
+constexpr const char* kKeyPhraseLang = "phr_lang";
+constexpr const char* kKeyPhraseEvery = "phr_every";
 constexpr const char* kKeyOtaAuto = "ota_auto";
 constexpr const char* kKeyBannerOn = "bn_on";
 constexpr const char* kKeyBannerEvery = "bn_every";  // default for new messages
@@ -89,6 +91,8 @@ int recentCount = 0;
 bool use12h = false;
 bool lunarOn = true;
 bool holidaysOn = true;
+uint8_t phraseLangSet = 2;   // phrases::Lang::Both
+uint8_t phraseEverySet = 60;
 bool otaAuto = true;
 
 float lat = config::kDefaultLatitude;
@@ -157,6 +161,8 @@ void begin() {
     wxCycle = prefs.getBool(kKeyWxCycle, wxCycle);
     lunarOn = prefs.getBool(kKeyLunar, lunarOn);
     holidaysOn = prefs.getBool(kKeyHolidays, holidaysOn);
+    phraseLangSet = prefs.getUChar(kKeyPhraseLang, phraseLangSet);
+    phraseEverySet = prefs.getUChar(kKeyPhraseEvery, phraseEverySet);
     otaAuto = prefs.getBool(kKeyOtaAuto, otaAuto);
     use12h = prefs.getBool(kKeyHour12, use12h);
     bannerOn = prefs.getBool(kKeyBannerOn, bannerOn);
@@ -525,6 +531,24 @@ bool setBannerSpeed(uint8_t pxPerSecond) {
 bool lunarDate() { return lunarOn; }
 
 bool holidays() { return holidaysOn; }
+
+uint8_t phraseLang() { return phraseLangSet; }
+
+bool setPhraseLang(uint8_t lang) {
+  if (lang > 2) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyPhraseLang, lang) > 0; });
+  if (ok) phraseLangSet = lang;
+  return ok;
+}
+
+uint8_t phraseEveryMinutes() { return phraseEverySet; }
+
+bool setPhraseEveryMinutes(uint8_t minutes) {
+  if (minutes > 120) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyPhraseEvery, minutes) > 0; });
+  if (ok) phraseEverySet = minutes;
+  return ok;
+}
 
 bool setHolidays(bool enabled) {
   bool ok = save([&](Preferences& p) { return p.putBool(kKeyHolidays, enabled) > 0; });
