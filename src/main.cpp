@@ -1046,6 +1046,7 @@ void pollRtc(bool forceLog) {
     requestScreen(Screen::Clock, true);
   }
   updateAutoScreens(local, weather::version() != 0);
+  if (!transitioning) display.setNow(local);  // the time on the other screens
   if (screenOn == Screen::Clock && !transitioning) {
     display.showTime(local);
     updateStatus();

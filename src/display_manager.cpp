@@ -423,6 +423,11 @@ bool DisplayManager::begin() {
 void DisplayManager::enterMode(Mode mode) {
   if (mode_ == mode) return;
   mode_ = mode;
+  title_ = nullptr;
+  if (photoCorner_ && mode != Mode::Photo) {
+    free(photoCorner_);
+    photoCorner_ = nullptr;
+  }
   syncFxBuffers();
   tft.fillScreen(C->bg);
   for (int i = 0; i < 4; ++i) {
@@ -1514,14 +1519,111 @@ void DisplayManager::drawMeridiem() {
 }
 
 void DisplayManager::drawScreenTitle(const char* title) {
+  title_ = title;
   drawLine(0, 28, font_small, [&](TFT_eSprite& s) {
     s.setTextDatum(ML_DATUM);
     s.setTextColor(pal_.top, C->bg);
     s.drawString(title, 10, 15);
     s.setTextDatum(MR_DATUM);
-    s.setTextColor(C->faint, C->bg);
-    s.drawString("swipe \xC2\xB7 30 s to clock", kScreenW - 10, 15);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(nowText_, kScreenW - 10, 15);
   });
+}
+
+// The time pill in a photo's bottom-right corner: the photo darkened in a
+// rounded rectangle, the time on it. The photo under it is kept (photoCorner_).
+constexpr int16_t kPillW = 96, kPillH = 28;
+constexpr int16_t kPillX = kScreenW - kPillW - 6, kPillY = kScreenH - kPillH - 6;
+
+void DisplayManager::drawPhotoTime() {
+  if (mode_ != Mode::Photo || !photoCorner_ || !nowText_[0]) return;
+  TFT_eSprite s(&tft);
+  s.setColorDepth(16);
+  if (!s.createSprite(kPillW, kPillH)) return;
+  s.loadFont(font_date);
+  const int16_t w = s.textWidth(nowText_) + 18;
+  const int16_t x0 = kPillW - w;
+  constexpr int16_t r = kPillH / 2;
+  for (int16_t y = 0; y < kPillH; ++y) {
+    for (int16_t x = 0; x < kPillW; ++x) {
+      uint16_t c = swap16(photoCorner_[y * kPillW + x]);  // readRect gives byte-swapped pixels
+      // Inside the pill (a rounded rectangle at the right): darkened.
+      const int16_t cx = constrain(x, x0 + r, kPillW - 1 - r);
+      const float d = sqrtf((x - cx) * (x - cx) + (y - r + 0.5f) * (y - r + 0.5f));
+      const float in = constrain(r - d, 0.0f, 1.0f);
+      if (x >= x0 && in > 0) c = theme::mix(c, TFT_BLACK, static_cast<uint8_t>(in * 150));
+      s.drawPixel(x, y, c);
+    }
+  }
+  s.setTextDatum(MC_DATUM);
+  s.setTextColor(TFT_WHITE);  // no background: blends with the pixels under it
+  s.drawString(nowText_, x0 + w / 2, kPillH / 2 + 1);
+  s.unloadFont();
+  s.pushSprite(kPillX, kPillY);
+  s.deleteSprite();
+}
+
+void DisplayManager::drawWeatherHeader() {
+  if (mode_ != Mode::Weather) return;
+  drawLine(0, 28, font_small, [&](TFT_eSprite& s) {
+    s.setTextDatum(ML_DATUM);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(wxPlace_, 10, 15);
+    const uint32_t ageS = (millis() - wxAnchorMs_) / 1000;
+    const bool stale = wxHasAge_ && ageS > config::kWeatherStaleS;
+    s.setTextDatum(MR_DATUM);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(nowText_, kScreenW - 10, 15);
+    int16_t right = s.textWidth(nowText_) + 10;
+    if (stale) {
+      char age[24];
+      snprintf(age, sizeof(age), "%lu h old \xC2\xB7 ", (unsigned long)(ageS / 3600));
+      s.setTextColor(C->warn, C->bg);
+      s.drawString(age, kScreenW - right, 15);
+      right += s.textWidth(age);
+    }
+    // Tonight's moon and how much of it is lit, after the place (if there's room).
+    const time_t now = time(nullptr);
+    const int16_t mx = 10 + s.textWidth(wxPlace_) + 16;
+    if (now > 1700000000 && mx + 48 < kScreenW - 6 - right) {
+      const moon::Phase mp = moon::at(now);
+      drawMoon(s, mx, 14, 7.5f, mp.angle, moonColor(night_), C->bg);
+      char lit[8];
+      snprintf(lit, sizeof(lit), "%d%%", static_cast<int>(lroundf(mp.lit * 100)));
+      s.setTextDatum(ML_DATUM);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(lit, mx + 12, 15);
+    }
+  });
+}
+
+void DisplayManager::setNow(const struct tm& local) {
+  const int key = local.tm_hour * 60 + local.tm_min + (hour12_ ? 10000 : 0);
+  if (key == nowKey_) return;
+  nowKey_ = key;
+  if (hour12_) {
+    const int h = local.tm_hour % 12 ? local.tm_hour % 12 : 12;
+    snprintf(nowText_, sizeof(nowText_), "%d:%02d %s", h, local.tm_min, local.tm_hour < 12 ? "AM" : "PM");
+  } else {
+    snprintf(nowText_, sizeof(nowText_), "%02d:%02d", local.tm_hour, local.tm_min);
+  }
+  switch (mode_) {
+    case Mode::Info:
+    case Mode::Settings:
+    case Mode::Storage:
+    case Mode::Update:
+    case Mode::Confirm:
+      if (title_) drawScreenTitle(title_);
+      break;
+    case Mode::Weather:
+      drawWeatherHeader();
+      break;
+    case Mode::Photo:
+      drawPhotoTime();
+      break;
+    default:
+      break;
+  }
 }
 
 namespace {
@@ -1910,6 +2012,11 @@ bool DisplayManager::showPhoto(const char* path) {
   tft.endWrite();
   Serial.printf("[PHOTO] %s %ux%u 1/%u in %lu ms%s\n", path, w, h, scale,
                 (unsigned long)(millis() - t0), r == JDR_OK ? "" : " (decode error)");
+  if (!photoCorner_) photoCorner_ = static_cast<uint16_t*>(malloc(kPillW * kPillH * sizeof(uint16_t)));
+  if (photoCorner_) {
+    tft.readRect(kPillX, kPillY, kPillW, kPillH, photoCorner_);
+    drawPhotoTime();
+  }
   return r == JDR_OK;
 }
 
@@ -1931,32 +2038,11 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
   const uint16_t accent = pal_.top;
   auto deg = [](char* buf, size_t n, int t) { snprintf(buf, n, "%d\xC2\xB0", t); };
 
-  // Header: place and data age.
-  drawLine(0, 28, font_small, [&](TFT_eSprite& s) {
-    s.setTextDatum(ML_DATUM);
-    s.setTextColor(C->text, C->bg);
-    s.drawString(w.place, 10, 15);
-    char age[32];
-    if (ageS == UINT32_MAX) age[0] = '\0';
-    else if (ageS < 120) snprintf(age, sizeof(age), "Updated just now");
-    else if (ageS < 7200) snprintf(age, sizeof(age), "Updated %lu min ago", (unsigned long)(ageS / 60));
-    else snprintf(age, sizeof(age), "Updated %lu h ago", (unsigned long)(ageS / 3600));
-    s.setTextDatum(MR_DATUM);
-    s.setTextColor(ageS > config::kWeatherStaleS ? C->warn : C->dim, C->bg);
-    s.drawString(age, kScreenW - 10, 15);
-    // Tonight's moon and how much of it is lit, after the place (if there's room).
-    const time_t now = time(nullptr);
-    const int16_t mx = 10 + s.textWidth(w.place) + 16;
-    if (now > 1700000000 && mx + 48 < kScreenW - 16 - s.textWidth(age)) {
-      const moon::Phase mp = moon::at(now);
-      drawMoon(s, mx, 14, 7.5f, mp.angle, moonColor(night_), C->bg);
-      char lit[8];
-      snprintf(lit, sizeof(lit), "%d%%", static_cast<int>(lroundf(mp.lit * 100)));
-      s.setTextDatum(ML_DATUM);
-      s.setTextColor(C->dim, C->bg);
-      s.drawString(lit, mx + 12, 15);
-    }
-  });
+  // Header: place, moon, the time (and the data's age when it's old).
+  strlcpy(wxPlace_, w.place, sizeof(wxPlace_));
+  wxHasAge_ = ageS != UINT32_MAX;
+  wxAnchorMs_ = millis() - (wxHasAge_ ? ageS * 1000 : 0);
+  drawWeatherHeader();
 
   // Now: big icon, temperature, condition, details.
   drawBlock(28, 88, font_temp, [&](TFT_eSprite& s, int16_t y0) {

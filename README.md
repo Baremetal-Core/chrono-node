@@ -123,6 +123,11 @@ low-precision formulas (`src/moon.*`): against the JPL ephemeris the lit fractio
 - **Screens**, in swipe order: Clock → Forecast → Photo → Info → Settings, then back to
   Clock. Swipe left for the next screen and right for the previous one. The forecast is
   skipped until weather data exists, and the photo screen while there are no photos. Screen changes happen behind a quick backlight dip.
+- **The time on every screen:** the other screens show it too, updated each minute: at the
+  right of the title bar (Info, Settings, Storage, Update, Wi-Fi), in the forecast header
+  (after "N h old" when the weather is stale), and in a translucent pill in the bottom-right
+  corner of photos (the photo darkened in a rounded rectangle). It follows the 12/24-hour
+  setting.
 - **Touch and hold** (0.8 s) anywhere on any other screen goes straight back to the clock.
   Nothing else happens when you let go, so a hold on Settings never presses a button.
 - After 30 s without touch the clock comes back. The automatic forecast cycle (see Weather)

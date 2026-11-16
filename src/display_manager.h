@@ -132,6 +132,10 @@ class DisplayManager {
   static constexpr int kMaxDateAlts = 3;
   void setDateAlts(const DateAlt* alts, int count, bool even);
 
+  // The time on the other screens (title bar, forecast header, a pill in a
+  // photo's corner), updated when the minute changes. Call every second.
+  void setNow(const struct tm& local);
+
   // Phrases shown in turn on the line above the digits (static strings, up to
   // 2); a long one is shown in parts. 0 clears the line.
   void setPhrases(const char* const* texts, int count);
@@ -249,6 +253,16 @@ class DisplayManager {
 
   theme::Palette pal_{0, 0};
   bool palValid_ = false;
+  // The time overlay on the other screens.
+  char nowText_[12] = "";
+  int nowKey_ = -1;
+  const char* title_ = nullptr;  // the title bar's text (a static string)
+  char wxPlace_[32] = "";        // the forecast header: place and data age
+  uint32_t wxAnchorMs_ = 0;      // millis() when the data was fetched
+  bool wxHasAge_ = false;
+  uint16_t* photoCorner_ = nullptr;  // the photo under the time pill
+  void drawWeatherHeader();
+  void drawPhotoTime();
   // The phrase line: which phrase and part shows, and until when.
   const char* phrases_[2] = {};
   int phraseCount_ = 0;
