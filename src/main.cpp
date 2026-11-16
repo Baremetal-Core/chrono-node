@@ -168,6 +168,19 @@ void requestScreen(Screen s, bool again = false, int dir = 0) {
   if (s == Screen::Clock && screenOn != Screen::Clock && !dir) transitionDir = -1;
 }
 
+// Whether the clock face is analog now: always, never, or (Mix) every other
+// period of N minutes.
+bool wantAnalog(const struct tm& local) {
+  switch (settings::faceMode()) {
+    case 1:
+      return true;
+    case 2:
+      return (local.tm_hour * 60 + local.tm_min) / settings::faceEveryMinutes() % 2 == 1;
+    default:
+      return false;
+  }
+}
+
 // Called every second with the local time, before the frame is drawn.
 void updateNight(const struct tm& local) {
   const bool want = settings::isNightAt(local.tm_hour * 60 + local.tm_min);
@@ -478,7 +491,7 @@ void buildSettingsView(SettingsView& v) {
            settings::nightStart() / 60, settings::nightStart() % 60, settings::nightEnd() / 60,
            settings::nightEnd() % 60);
   v.hour12 = settings::hour12();
-  v.analog = settings::analogFace();
+  v.face = settings::faceMode();
   strlcpy(v.colorName, theme::styleName(colorSettings().style), sizeof(v.colorName));
   strlcpy(v.place, settings::place(), sizeof(v.place));
   v.recentCount = settings::recentLocationCount();
@@ -628,17 +641,19 @@ void applySettingsAction(SettingsAction a) {
       settings::setNightEnabled(!settings::nightEnabled());
       break;
     case SettingsAction::FormatToggle:
-      // Cycles 24-hour -> 12-hour -> analog -> 24-hour.
-      if (settings::analogFace()) {
-        settings::setAnalogFace(false);
+      // Cycles 24-hour -> 12-hour -> analog -> mix -> 24-hour.
+      if (settings::faceMode() == 2) {
+        settings::setFaceMode(0);
         settings::setHour12(false);
+      } else if (settings::faceMode() == 1) {
+        settings::setFaceMode(2);
       } else if (settings::hour12()) {
-        settings::setAnalogFace(true);
+        settings::setFaceMode(1);
       } else {
         settings::setHour12(true);
       }
       display.setHour12(settings::hour12());
-      display.setAnalog(settings::analogFace());
+      display.setAnalog(wantAnalog(lastLocalTm));
       break;
     case SettingsAction::ColorPrev:
     case SettingsAction::ColorNext: {
@@ -803,7 +818,7 @@ void finishTransition() {
   }
   display.setNightMode(nightActive);
   display.setHour12(settings::hour12());
-  display.setAnalog(settings::analogFace());
+  display.setAnalog(wantAnalog(lastLocalTm));
   weather::Data wx;
   Screen next = screenWanted;
   if (next == Screen::Forecast && !weather::get(wx)) next = Screen::Clock;
@@ -1025,6 +1040,11 @@ void pollRtc(bool forceLog) {
   updateDateLine(local);
   updatePhrases(local);
   updateNight(local);
+  // Mix: change face with the screen transition when its turn comes.
+  if (screenOn == Screen::Clock && !transitioning && wantAnalog(local) != display.analog()) {
+    Serial.printf("[FACE] %s\n", wantAnalog(local) ? "Analog" : "Digital");
+    requestScreen(Screen::Clock, true);
+  }
   updateAutoScreens(local, weather::version() != 0);
   if (screenOn == Screen::Clock && !transitioning) {
     display.showTime(local);
@@ -1133,7 +1153,7 @@ void setup() {
   }
 
   display.setHour12(settings::hour12());
-  display.setAnalog(settings::analogFace());
+  display.setAnalog(wantAnalog(lastLocalTm));
   applyColors();
   if (!nightKnown) backlight::fadeTo(settings::brightnessDay(), config::kNightFadeInMs);
 
@@ -1190,7 +1210,7 @@ void loop() {
     rtcLostPower = rtc.lostPower();
     lastSecond = -1;
     display.setHour12(settings::hour12());
-    display.setAnalog(settings::analogFace());
+    display.setAnalog(wantAnalog(lastLocalTm));
     applyColors();
     if (screenOn == Screen::Settings && !transitioning) showSettings();
     if (!transitioning && nightKnown) {

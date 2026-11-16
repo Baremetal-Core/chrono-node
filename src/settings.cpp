@@ -28,6 +28,7 @@ constexpr const char* kKeyHour12 = "hour12";
 constexpr const char* kKeyLunar = "lunar";
 constexpr const char* kKeyHolidays = "holidays";
 constexpr const char* kKeyFace = "face";
+constexpr const char* kKeyFaceEvery = "face_every";
 constexpr const char* kKeyPhraseLang = "phr_lang";
 constexpr const char* kKeyOtaAuto = "ota_auto";
 constexpr const char* kKeyBannerOn = "bn_on";
@@ -91,7 +92,8 @@ int recentCount = 0;
 bool use12h = false;
 bool lunarOn = true;
 bool holidaysOn = true;
-bool analogOn = false;
+uint8_t faceSet = 0;  // 0 digital, 1 analog, 2 mix
+uint8_t faceEverySet = 5;
 uint8_t phraseLangSet = 2;   // phrases::Lang::Both
 bool otaAuto = true;
 
@@ -161,7 +163,9 @@ void begin() {
     wxCycle = prefs.getBool(kKeyWxCycle, wxCycle);
     lunarOn = prefs.getBool(kKeyLunar, lunarOn);
     holidaysOn = prefs.getBool(kKeyHolidays, holidaysOn);
-    analogOn = prefs.getUChar(kKeyFace, 0) == 1;
+    faceSet = prefs.getUChar(kKeyFace, faceSet);
+    if (faceSet > 2) faceSet = 0;
+    faceEverySet = prefs.getUChar(kKeyFaceEvery, faceEverySet);
     phraseLangSet = prefs.getUChar(kKeyPhraseLang, phraseLangSet);
     otaAuto = prefs.getBool(kKeyOtaAuto, otaAuto);
     use12h = prefs.getBool(kKeyHour12, use12h);
@@ -532,11 +536,21 @@ bool lunarDate() { return lunarOn; }
 
 bool holidays() { return holidaysOn; }
 
-bool analogFace() { return analogOn; }
+uint8_t faceMode() { return faceSet; }
 
-bool setAnalogFace(bool analog) {
-  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyFace, analog ? 1 : 0) > 0; });
-  if (ok) analogOn = analog;
+bool setFaceMode(uint8_t mode) {
+  if (mode > 2) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyFace, mode) > 0; });
+  if (ok) faceSet = mode;
+  return ok;
+}
+
+uint8_t faceEveryMinutes() { return faceEverySet; }
+
+bool setFaceEveryMinutes(uint8_t minutes) {
+  if (minutes < 1 || minutes > 60) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyFaceEvery, minutes) > 0; });
+  if (ok) faceEverySet = minutes;
   return ok;
 }
 

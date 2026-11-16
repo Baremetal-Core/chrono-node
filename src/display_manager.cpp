@@ -1183,7 +1183,7 @@ void DisplayManager::drawPhraseLine() {
 void DisplayManager::setAnalog(bool analog) {
   if (analog == analog_) return;
   analog_ = analog;
-  mode_ = Mode::None;  // the next showTime() draws the whole face
+  if (mode_ == Mode::Clock) mode_ = Mode::None;  // the next showTime() draws the whole face
 }
 
 void DisplayManager::setAnalogInfo(const AnalogInfo& info) {
@@ -1823,7 +1823,8 @@ void DisplayManager::showSettingsScreen(const SettingsView& v) {
   });
   row(3, [&](TFT_eSprite& s) {
     label(s, "Clock face", nullptr);
-    drawButton(s, kToggleX, kToggleW, v.analog ? "Analog" : v.hour12 ? "12-hour" : "24-hour", true,
+    drawButton(s, kToggleX, kToggleW,
+               v.face == 2 ? "Mix" : v.face == 1 ? "Analog" : v.hour12 ? "12-hour" : "24-hour", true,
                accent);
   });
   row(4, [&](TFT_eSprite& s) {

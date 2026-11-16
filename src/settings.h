@@ -114,9 +114,12 @@ bool setLunarDate(bool enabled);
 bool holidays();
 bool setHolidays(bool enabled);
 
-// The analog clock face instead of the digits.
-bool analogFace();
-bool setAnalogFace(bool analog);
+// The clock face: 0 digital, 1 analog, 2 mix (taking turns every N minutes,
+// 1-60, default 5).
+uint8_t faceMode();
+bool setFaceMode(uint8_t mode);
+uint8_t faceEveryMinutes();
+bool setFaceEveryMinutes(uint8_t minutes);
 
 // Phrases of the day above the digits: 0 Vietnamese, 1 English, 2 both
 // (taking turns), 3 off.

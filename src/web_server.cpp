@@ -195,7 +195,9 @@ void handleSettings() {
   doc["forecast_cycle"] = settings::weatherCycle();
   doc["lunar"] = settings::lunarDate();
   doc["holidays"] = settings::holidays();
-  doc["face"] = settings::analogFace() ? "analog" : "digital";
+  static const char* const kFaces[] = {"digital", "analog", "mix"};
+  doc["face"] = kFaces[settings::faceMode() % 3];
+  doc["face_every_min"] = settings::faceEveryMinutes();
   static const char* const kPhraseLangs[] = {"vi", "en", "both", "off"};
   doc["phrase_lang"] = kPhraseLangs[settings::phraseLang() % 4];
   doc["update_check"] = settings::autoUpdateCheck();

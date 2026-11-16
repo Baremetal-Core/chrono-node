@@ -102,7 +102,8 @@ column shows the weekday, the day in large digits, month and year, the lunar dat
 and the moon and air quality. The bottom line keeps the weather, banners and notices.
 
 Choose it on the clock (Settings → *Clock face*), the web page (*Display* → *Clock face*) or
-with `FACE ANALOG` / `FACE DIGITAL`. How it works: the dial's ticks, numerals and ring are
+with `FACE ANALOG` / `FACE DIGITAL`. **Mix** takes turns: digital, then analog, each for N
+minutes (`FACE MIX`, `FACE EVERY 5`; 1–60, default 5), changing with the screen transition. How it works: the dial's ticks, numerals and ring are
 rendered once into a 43 KB mask (coverage and ink per pixel). Each frame (20 fps) rebuilds
 only the rectangle the hands moved through from the mask and draws anti-aliased hands over
 it: ~10 ms a frame. Like the colour effects' buffers, the mask is freed off the clock screen
@@ -149,7 +150,7 @@ low-precision formulas (`src/moon.*`): against the JPL ephemeris the lit fractio
 - **Settings** (tap):
   - day brightness (±10 %) and night brightness (±5 %)
   - night mode on/off (the schedule itself is set with `NIGHT HH:MM HH:MM`)
-  - clock face: tap to cycle 24-hour → 12-hour → Analog
+  - clock face: tap to cycle 24-hour → 12-hour → Analog → Mix
   - colour style (`<` / `>`, see Colours); the forecast cycle is switched on the web page or
     with `WEATHER CYCLE`
   - weather location, chosen from the last 5 used locations (`<` / `>`). New locations are
@@ -188,8 +189,8 @@ stays online:
 
 - **Status:** time, lunar date and days to Tết, moon phase, phrases of the day, Wi-Fi, IP, NTP sync, RTC, weather, air
   quality, current screen, uptime, memory.
-- **Display:** day/night brightness, night mode and its hours, 12/24-hour time, digital or
-  analog face, the lunar
+- **Display:** day/night brightness, night mode and its hours, 12/24-hour time, digital,
+  analog or mixed face, the lunar
   date, holidays, phrases of the day, forecast cycle.
 - **Time:** time zone by name (common zones are mapped to POSIX strings, **Detect** uses the
   browser's zone, or enter a custom POSIX string), NTP server, **Sync now**, and **Set clock
@@ -689,7 +690,8 @@ TIMEOUT PHOTO 12            # each photo stays up 12 s (3-120)
 TIMEOUT IDLE 30             # other screens go back to the clock after 30 s without touch (5-600)
 PREVIEW                     # show the forecast and each photo once now, even at night
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
-FACE ANALOG                 # analog clock face (FACE DIGITAL for the digits)
+FACE ANALOG                 # analog clock face (FACE DIGITAL for the digits, FACE MIX in turn)
+FACE EVERY 5                # Mix: change face every N minutes (1-60)
 LUNAR                       # today's lunar date and days to Tết (LUNAR ON|OFF on the clock)
 HOLIDAYS                    # the holidays shown on the date line (HOLIDAYS ON|OFF)
 PHRASE                      # today's phrases

@@ -653,9 +653,21 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   } else if (strcasecmp(text, "TOUCH CAL") == 0) {
     calibrateTouch(display);
     return true;
-  } else if (strcasecmp(text, "FACE ANALOG") == 0 || strcasecmp(text, "FACE DIGITAL") == 0) {
-    settings::setAnalogFace(strcasecmp(text, "FACE ANALOG") == 0);
-    Serial.printf("[SETTINGS] %s clock face (saved)\n", settings::analogFace() ? "Analog" : "Digital");
+  } else if (strncasecmp(text, "FACE", 4) == 0 && (text[4] == '\0' || text[4] == ' ')) {
+    const char* arg = text + 4;
+    while (*arg == ' ') ++arg;
+    int n = 0;
+    if (strcasecmp(arg, "DIGITAL") == 0 || strcasecmp(arg, "ANALOG") == 0 || strcasecmp(arg, "MIX") == 0) {
+      settings::setFaceMode(strcasecmp(arg, "DIGITAL") == 0 ? 0 : strcasecmp(arg, "ANALOG") == 0 ? 1 : 2);
+    } else if (strncasecmp(arg, "EVERY ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1 && n >= 1 && n <= 60) {
+      settings::setFaceEveryMinutes(n);
+    } else if (*arg) {
+      Serial.println("[CONSOLE] Usage: FACE [DIGITAL|ANALOG|MIX|EVERY 1-60]");
+      return false;
+    }
+    static const char* const kFaces[] = {"Digital", "Analog", "Mix"};
+    Serial.printf("[SETTINGS] Clock face: %s (mix every %u min)\n", kFaces[settings::faceMode() % 3],
+                  settings::faceEveryMinutes());
     return true;
   } else if (strcasecmp(text, "FORMAT 12") == 0 || strcasecmp(text, "FORMAT 24") == 0) {
     settings::setHour12(strcasecmp(text, "FORMAT 12") == 0);
@@ -731,7 +743,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | FACE ANALOG|DIGITAL | LUNAR [ON|OFF] | HOLIDAYS [ON|OFF] | PHRASE [VI|EN|BOTH|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | FACE [DIGITAL|ANALOG|MIX|EVERY n] | LUNAR [ON|OFF] | HOLIDAYS [ON|OFF] | PHRASE [VI|EN|BOTH|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
       "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }

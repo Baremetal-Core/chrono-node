@@ -71,7 +71,7 @@ struct SettingsView {
   bool nightOn;
   char nightWindow[16];  // e.g. "22:00-06:30"
   bool hour12;
-  bool analog;
+  uint8_t face;  // 0 digital, 1 analog, 2 mix
   char colorName[24];  // current colour style
   char place[32];
   int recentIndex;  // position of the current place in the recent list (-1 if not in it)
