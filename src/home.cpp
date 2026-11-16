@@ -342,6 +342,7 @@ bool requestSwitch(int index) {
   const bool ok = index < devCount && !devs[index].pending;
   if (ok) {
     devs[index].pending = true;
+    devs[index].target = !isOn(devs[index]);
     strlcpy(pendingFrom[index], devs[index].state, sizeof(pendingFrom[index]));
     pendingSinceMs[index] = millis();
   }
@@ -360,6 +361,8 @@ bool isOn(const Device& d) {
   }
   return true;
 }
+
+bool shownOn(const Device& d) { return d.pending && d.kind != Kind::Run ? d.target : isOn(d); }
 
 bool listEntities(String& json, String& error) {
   if (!settings::haUrl()[0] || !settings::haToken()[0]) {

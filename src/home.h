@@ -24,6 +24,7 @@ struct Device {
   char state[20];  // as Home Assistant reports it; "" until read
   Kind kind;
   bool pending;    // switched, waiting for the new state
+  bool target;     // while pending: on or off once it has switched (shown meanwhile)
 };
 
 // Reads the settings; call again after they change.
@@ -40,6 +41,7 @@ void keepFresh();          // the web page shows the states: poll for a while
 void setActive(bool homeScreenShown);
 bool requestSwitch(int index);
 bool isOn(const Device& d);
+bool shownOn(const Device& d);  // the target while switching, so the switch flips at once
 
 // Network task (web handlers): the devices Home Assistant has, of the kinds
 // the clock can switch, as a JSON array [{"id": ..., "name": ...}].

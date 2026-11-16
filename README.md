@@ -512,8 +512,11 @@ devices: lights, switches, fans, helpers (input booleans), air conditioners (cli
 - **On the clock:** swipe left once from the clock to **Home** (it's the second screen).
   Each tile shows the device's name, an icon (bulb, power, fan, snowflake for AC, TV,
   sparkle for scenes), its state and a toggle switch: the card tinted and the knob right on
-  an accent track when on, the knob left on a dark track when off, the knob in the middle
-  while switching. Scenes and scripts get a play button instead. *Unavailable* (outlined)
+  an accent track when on, the knob left on a dark track when off. A tap flips the tile at
+  once and the knob slides over (about 0.2 s at 60 fps) while Home Assistant switches the
+  device; the state is corrected when it reports back (for example *On* becomes *Cool*),
+  and the knob slides back if nothing changed within 6 s. Changes made elsewhere slide the
+  same way. Scenes and scripts get a play button instead. *Unavailable* (outlined)
   when Home Assistant can't be reached. Tap a tile to switch it:
   - lights, switches, fans and helpers toggle;
   - air conditioners and TVs turn off when on, else on (Home Assistant resumes their last

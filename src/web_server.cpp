@@ -315,7 +315,7 @@ void handleHa() {
     o["id"] = d[i].entity;
     o["name"] = d[i].name;
     o["state"] = d[i].state;
-    o["on"] = home::isOn(d[i]);
+    o["on"] = home::shownOn(d[i]);
     o["pending"] = d[i].pending;
   }
   sendJson(doc);

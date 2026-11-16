@@ -14,6 +14,8 @@
 #include "ui_theme.h"
 #include "weather.h"
 
+class TFT_eSprite;
+
 // Usage bar on an info row: used out of `total`; the rest is free.
 struct InfoBar {
   uint32_t total = 0;  // 0: no bar
@@ -274,7 +276,18 @@ class DisplayManager {
   bool palValid_ = false;
   HomeView homeView_ = {};
   bool homeValid_ = false;
-  void drawHomeTile(int i, const HomeTile* t);
+  // Switch knobs: 0 left (off) to 1 right (on), sliding to their new place.
+  float homeKnob_[HomeView::kMax] = {};
+  float homeFrom_[HomeView::kMax] = {};
+  float homeTo_[HomeView::kMax] = {};
+  uint32_t homeAnimMs_[HomeView::kMax] = {};
+  uint8_t homeAnim_ = 0;  // bit per sliding knob
+  uint32_t lastHomeFrameMs_ = 0;
+  void tickHome(uint32_t now);
+  void drawHomeTile(int i, const HomeTile* t, float knob);
+  void drawHomeSwitch(TFT_eSprite& s, int16_t x, int16_t y, float knob, uint16_t card);
+  void drawHomeKnob(int i, float knob);
+  uint16_t homeCard(const HomeTile& t) const;
   // The time overlay on the other screens.
   char nowText_[12] = "";
   int nowKey_ = -1;
