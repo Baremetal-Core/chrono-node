@@ -167,12 +167,22 @@ void startNtp() {
   if (sntpStarted) sntp_stop();
   sntp_setoperatingmode(SNTP_OPMODE_POLL);
   sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
+  // Fallbacks: a pool server can stay silent for minutes; SNTP moves on to the
+  // next server when one doesn't answer.
   sntp_setservername(0, ntpServer);
+  int next = 1;
+  for (const char* fallback : config::kNtpFallbackServers) {
+    if (next < SNTP_MAX_SERVERS && strcasecmp(fallback, ntpServer) != 0) {
+      sntp_setservername(next++, fallback);
+    }
+  }
+  while (next < SNTP_MAX_SERVERS) sntp_setservername(next++, nullptr);
   sntp_set_sync_interval(config::kNtpSyncIntervalMs);
   sntp_set_time_sync_notification_cb(onNtpSync);
   sntp_init();
   sntpStarted = true;
-  Serial.printf("[NTP] Syncing with %s\n", ntpServer);
+  Serial.printf("[NTP] Syncing with %s (fallbacks: %s, %s)\n", ntpServer,
+                config::kNtpFallbackServers[0], config::kNtpFallbackServers[1]);
 }
 
 void onConnected() {
