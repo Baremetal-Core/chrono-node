@@ -16,6 +16,7 @@
 #include "display_manager.h"
 #include "holidays.h"
 #include "lunar.h"
+#include "moon.h"
 #include "net_manager.h"
 #include "ota.h"
 #include "photos.h"
@@ -871,6 +872,7 @@ void updateStatus() {
   st.hasTemp = hasTemp && !hasWeather;
   st.tempC = static_cast<int8_t>(lroundf(tempC));
   const uint32_t nowUtc = static_cast<uint32_t>(time(nullptr));
+  if (nowUtc > 1700000000) st.moonAngle = static_cast<int16_t>(lroundf(moon::at(nowUtc).angle)) % 360;
   // Signed: a clock set back a little mustn't make a fresh reading look stale.
   if (hasWeather && wx.aqi >= 0 && static_cast<int32_t>(nowUtc - wx.aqiUtc) < (int32_t)config::kAirStaleS) {
     st.aqi = wx.aqi;

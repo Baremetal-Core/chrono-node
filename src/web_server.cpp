@@ -17,6 +17,7 @@
 #include "config.h"
 #include "holidays.h"
 #include "lunar.h"
+#include "moon.h"
 #include "mem_lease.h"
 #include "net_manager.h"
 #include "ota.h"
@@ -114,6 +115,11 @@ void handleStatus() {
     lu["year_name"] = name;
     lu["tet_days"] = lunar::daysToTet(d, m, y);
     if (const holidays::Holiday* h = holidays::today(d, m, l)) doc["holiday"] = h->name;
+    const moon::Phase mp = moon::at(tv.tv_sec);
+    JsonObject mo = doc["moon"].to<JsonObject>();
+    mo["lit_pct"] = static_cast<int>(lroundf(mp.lit * 100));
+    mo["phase"] = moon::name(mp);
+    mo["phase_vi"] = moon::nameVi(mp);
   }
 
   JsonObject wifi = doc["wifi"].to<JsonObject>();

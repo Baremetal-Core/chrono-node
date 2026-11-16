@@ -87,6 +87,7 @@ struct StatusInfo {
   bool hasTemp = false;
   int8_t tempC = 0;
   int16_t aqi = -1;  // US AQI, -1 to hide
+  int16_t moonAngle = -1;  // moon phase (elongation, degrees), -1 to hide
 };
 
 class DisplayManager {

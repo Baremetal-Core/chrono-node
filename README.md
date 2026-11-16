@@ -27,7 +27,7 @@ forecast, info and settings screens, plus a settings page in the browser at
 ## Display
 
 - **Status bar:** Wi-Fi signal and network name, NTP sync age (`NTP 5m`, amber when stale),
-  the air quality (`● AQI 94`, see Weather), and the DS3231 temperature (±3 °C; it's the RTC chip's own sensor). The DS3231
+  the moon phase, the air quality (`● AQI 94`, see Weather), and the DS3231 temperature (±3 °C; it's the RTC chip's own sensor). The DS3231
   temperature is shown only when there's no weather data.
 - **Time:** HH:MM in 104 px Inter Bold with a vertical colour gradient. Changed digits roll
   upwards over 300 ms. Every digit uses a fixed-width cell, so the time never shifts sideways.
@@ -91,6 +91,15 @@ uv run --with skyfield tools/gen_lunar_table.py   # downloads de440s.bsp (32 MB)
 Dates far ahead can still change: the Earth's rotation varies unpredictably, so a new moon
 within about a minute of midnight decades from now (the next is in December 2072) can't be
 placed on a day with certainty by anyone; official calendars are published a few years ahead.
+
+### Moon phase
+
+Tonight's moon is drawn in the status bar and, with how much of it is lit (`37%`), after the
+place on the forecast screen: lit from the right while waxing, from the left while waning,
+with a faint disc for the dark part. The web status shows the phase in English and
+Vietnamese (*First quarter · Trăng bán nguyệt đầu tháng*). It's computed with Meeus'
+low-precision formulas (`src/moon.*`): against the JPL ephemeris the lit fraction is within
+0.3% and the phase angle within 0.4°.
 
 ## Touch and screens
 
@@ -161,7 +170,7 @@ Open `http://chrono-node.local` (or the clock's IP, shown on the Info screen) fr
 on the same network. The page shows live status and changes every setting while the clock
 stays online:
 
-- **Status:** time, lunar date and days to Tết, Wi-Fi, IP, NTP sync, RTC, weather, air
+- **Status:** time, lunar date and days to Tết, moon phase, Wi-Fi, IP, NTP sync, RTC, weather, air
   quality, current screen, uptime, memory.
 - **Display:** day/night brightness, night mode and its hours, 12/24-hour time, the lunar
   date, holidays, forecast cycle.
@@ -761,6 +770,7 @@ src/photos.*                    photo storage in LittleFS: slots, uploads, JPEG 
 src/lunar.*                     Vietnamese lunar calendar: table for 1900-2100, astronomical formula outside
 src/lunar_table.h               generated lunar month table (do not edit)
 src/holidays.*                  Vietnamese holidays and festivals (solar and lunar dates)
+src/moon.*                      moon phase (illuminated fraction, waxing/waning, names)
 tools/gen_lunar_table.py        lunar table generator (Skyfield + JPL DE440s)
 src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)
 ```

@@ -187,7 +187,7 @@ async function loadStatus(){try{const s=await(await fetch("/api/status")).json()
 $("time").textContent=s.local_time.slice(11);$("fwcur").textContent="Installed: v"+s.firmware+" ("+s.revision+")";$("sub").textContent="Firmware "+s.firmware+" ("+s.revision+") \u00b7 "+s.wifi.host;
 const w=s.weather?`${s.weather.temp_c}\u00b0C ${s.weather.condition}, ${s.weather.place} (${ago(s.weather.age_s)})`:"no data yet";
 const L=s.lunar,lun=L?`${L.day}/${L.month}${L.leap?" nhu\u1eadn":""} ${L.year_name}`+(L.tet_days?` \u00b7 T\u1ebft in ${L.tet_days} days`:" \u00b7 T\u1ebft today"):"-";
-const rows=[["Date",s.local_time.slice(0,10)+(s.holiday?" \u00b7 "+s.holiday:"")],["Lunar date",lun],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
+const rows=[["Date",s.local_time.slice(0,10)+(s.holiday?" \u00b7 "+s.holiday:"")],["Lunar date",lun],["Moon",s.moon?`${s.moon.phase}, ${s.moon.lit_pct}% lit (${s.moon.phase_vi})`:"-"],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
 ["RTC",s.rtc.present?("DS3231"+(s.rtc.temp_c!==undefined?`, ${s.rtc.temp_c}\u00b0C`:"")+(s.rtc.lost_power?", LOST POWER":"")):"not detected"],
 ["Weather",w],["Air quality",s.weather&&s.weather.aqi!==undefined?`AQI ${s.weather.aqi} (${s.weather.aqi_category}), PM2.5 ${s.weather.pm25} \u00b5g/m\u00b3`:"-"],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)]];
 $("storage").innerHTML=flashList(s)+ramList(s);

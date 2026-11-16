@@ -1,6 +1,7 @@
 #include "display_manager.h"
 
 #include "mem_lease.h"
+#include "moon.h"
 
 #include <Arduino.h>
 #include <LittleFS.h>
@@ -317,6 +318,33 @@ uint16_t aqiColor(int aqi) {
   if (aqi <= 200) return theme::rgb(255, 40, 40);
   if (aqi <= 300) return theme::rgb(190, 110, 255);
   return theme::rgb(220, 40, 90);
+}
+
+// The moon at phase `angle` (0 new, 90 first quarter, 180 full, 270 last
+// quarter), lit from the right while waxing, with smooth edges. The dark part
+// keeps a faint "earthshine" so the disc stays visible.
+void drawMoon(TFT_eSprite& s, int16_t cx, int16_t cy, float r, float angle, uint16_t lit,
+              uint16_t bg) {
+  const uint16_t dark = theme::mix(bg, lit, 50);
+  const float t = cosf(angle * DEG_TO_RAD);
+  const bool waxing = angle < 180;
+  const int16_t n = static_cast<int16_t>(r) + 1;
+  for (int16_t dy = -n; dy <= n; ++dy) {
+    const float w = sqrtf(max(r * r - dy * dy, 0.0f));
+    const float term = w * t;  // the terminator's x on this row
+    for (int16_t dx = -n; dx <= n; ++dx) {
+      const float disc = constrain(r + 0.5f - sqrtf(dx * dx + dy * dy), 0.0f, 1.0f);
+      if (disc <= 0) continue;
+      const float side = waxing ? dx - term : -dx - term;
+      const uint16_t c = theme::mix(dark, lit, static_cast<uint8_t>(constrain(side + 0.5f, 0.0f, 1.0f) * 255));
+      s.drawPixel(cx + dx, cy + dy, theme::mix(bg, c, static_cast<uint8_t>(disc * 255)));
+    }
+  }
+}
+
+uint16_t moonColor(bool night) {
+  const uint16_t c = theme::rgb(255, 236, 170);
+  return night ? theme::mix(theme::kNightColors.bg, c, 150) : c;
 }
 
 void drawGlyphString(TFT_eSprite& s, const char* text, int16_t cellX, int16_t cellW, int16_t y) {
@@ -930,6 +958,10 @@ void DisplayManager::drawStatusBar() {
     }
     s.setTextColor(st.ntpWarn ? C->warn : C->dim, C->bg);
     s.drawString(st.ntpText, x, kStatusBaseline);
+    if (st.moonAngle >= 0) {
+      x -= s.textWidth(st.ntpText) + 16;
+      drawMoon(s, x, kStatusBaseline - 5, 6.5f, st.moonAngle, moonColor(night_), C->bg);
+    }
   });
 }
 
@@ -1527,6 +1559,18 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
     s.setTextDatum(MR_DATUM);
     s.setTextColor(ageS > config::kWeatherStaleS ? C->warn : C->dim, C->bg);
     s.drawString(age, kScreenW - 10, 15);
+    // Tonight's moon and how much of it is lit, after the place (if there's room).
+    const time_t now = time(nullptr);
+    const int16_t mx = 10 + s.textWidth(w.place) + 16;
+    if (now > 1700000000 && mx + 48 < kScreenW - 16 - s.textWidth(age)) {
+      const moon::Phase mp = moon::at(now);
+      drawMoon(s, mx, 14, 7.5f, mp.angle, moonColor(night_), C->bg);
+      char lit[8];
+      snprintf(lit, sizeof(lit), "%d%%", static_cast<int>(lroundf(mp.lit * 100)));
+      s.setTextDatum(ML_DATUM);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(lit, mx + 12, 15);
+    }
   });
 
   // Now: big icon, temperature, condition, details.
