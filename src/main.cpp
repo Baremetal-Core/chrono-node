@@ -92,9 +92,9 @@ bool nightActive = false;
 // Screens, in swipe order. The forecast is skipped while there is no data,
 // the photo screen while there are no photos. WifiReset (the confirmation
 // opened from Info) isn't in the swipe order.
-enum class Screen : uint8_t { Clock, Forecast, Photo, Home, Info, Settings, WifiReset, Storage, Update };
+enum class Screen : uint8_t { Clock, Home, Forecast, Photo, Info, Settings, WifiReset, Storage, Update };
 constexpr int kScreenCount = 6;  // in the swipe order; the rest open from Info
-const char* const kScreenNames[] = {"clock",    "forecast",   "photo",   "home",  "info",
+const char* const kScreenNames[] = {"clock",    "home",       "forecast", "photo", "info",
                                     "settings", "wifi-reset", "storage", "update"};
 Screen screenOn = Screen::Clock;
 Screen screenWanted = Screen::Clock;  // target of the current/next transition
@@ -577,6 +577,14 @@ void showHome() {
   for (int i = 0; i < v.count; ++i) {
     HomeTile& t = v.tiles[i];
     strlcpy(t.name, d[i].name, sizeof(t.name));
+    using Icon = HomeTile::Icon;
+    const char* e = d[i].entity;
+    t.icon = d[i].kind == home::Kind::Run        ? Icon::Scene
+             : !strncmp(e, "light.", 6)          ? Icon::Light
+             : !strncmp(e, "fan.", 4)            ? Icon::Fan
+             : !strncmp(e, "climate.", 8)        ? Icon::Climate
+             : !strncmp(e, "media_player.", 13)  ? Icon::Tv
+                                                 : Icon::Power;
     using Look = HomeTile::Look;
     const bool unavailable = !strcmp(d[i].state, "unavailable") || !strcmp(d[i].state, "unknown");
     if (d[i].pending) {
@@ -589,7 +597,7 @@ void showHome() {
       t.look = home::isOn(d[i]) ? Look::On : Look::Off;
     }
     if (d[i].kind == home::Kind::Run) {
-      strlcpy(t.state, unavailable ? "Unavailable" : "Tap to run", sizeof(t.state));
+      strlcpy(t.state, unavailable ? "Unavailable" : !strncmp(e, "script.", 7) ? "Script" : "Scene", sizeof(t.state));
     } else if (!d[i].state[0]) {
       strlcpy(t.state, "\xE2\x80\xA6", sizeof(t.state));
     } else {
@@ -600,6 +608,7 @@ void showHome() {
         if (*c == '_') *c = ' ';
       }
     }
+    if (t.look == Look::Off) strlcpy(t.state, "Off", sizeof(t.state));  // a TV's "Standby" too
   }
   display.showHomeScreen(v);
 }

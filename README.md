@@ -120,7 +120,7 @@ low-precision formulas (`src/moon.*`): against the JPL ephemeris the lit fractio
 
 ## Touch and screens
 
-- **Screens**, in swipe order: Clock → Forecast → Photo → Home → Info → Settings, then back to
+- **Screens**, in swipe order: Clock → Home → Forecast → Photo → Info → Settings, then back to
   Clock. Swipe left for the next screen and right for the previous one. The forecast is
   skipped until weather data exists, the photo screen while there are no photos, and Home
   until Home Assistant is set up (see Home Assistant). Screen changes happen behind a quick backlight dip.
@@ -509,14 +509,18 @@ devices: lights, switches, fans, helpers (input booleans), air conditioners (cli
   3. **Save**, then **Choose devices…**: the clock asks Home Assistant for the devices it
      can switch. Filter, tick up to 6 (the Home screen shows them in the order you tick
      them) and **Save**.
-- **On the clock:** swipe to **Home** (after Photo). Each tile shows the device's name and
-  state: filled in the accent colour when on, dim when off, outlined with *Tap to run* for
-  scenes and scripts, "…" while switching, *Unavailable* when Home Assistant can't be
-  reached. Tap a tile to switch it:
+- **On the clock:** swipe left once from the clock to **Home** (it's the second screen).
+  Each tile shows the device's name, an icon (bulb, power, fan, snowflake for AC, TV,
+  sparkle for scenes), its state and a toggle switch: the card tinted and the knob right on
+  an accent track when on, the knob left on a dark track when off, the knob in the middle
+  while switching. Scenes and scripts get a play button instead. *Unavailable* (outlined)
+  when Home Assistant can't be reached. Tap a tile to switch it:
   - lights, switches, fans and helpers toggle;
   - air conditioners and TVs turn off when on, else on (Home Assistant resumes their last
     mode);
   - scenes and scripts run.
+
+  ![Home screen](docs/images/home-screen.png)
 - **Up to date:** the states are read every 3 s while the Home screen or the web page shows
   them, so changes made elsewhere (the Home Assistant app, a wall switch) appear within a few
   seconds. Nothing is polled otherwise. If Home Assistant is down, the tiles show

@@ -1671,26 +1671,85 @@ void DisplayManager::showHomeScreen(const HomeView& v) {
   homeValid_ = true;
 }
 
-// One tile: name (two lines when long) and state, filled in the accent colour
-// when on; an empty slot clears it.
+namespace {
+
+// `text` cut to `w` pixels with an ellipsis.
+String fitText(TFT_eSprite& s, const char* text, int w) {
+  String t = text;
+  if (s.textWidth(t) <= w) return t;
+  while (t.length() > 1 && s.textWidth(t + "\xE2\x80\xA6") > w) {
+    t.remove(t.length() - 1);
+    while (t.length() > 1 && (t[t.length() - 1] & 0xC0) == 0x80) t.remove(t.length() - 1);  // whole UTF-8
+    if ((t[t.length() - 1] & 0xC0) == 0xC0) t.remove(t.length() - 1);
+  }
+  t.trim();
+  return t + "\xE2\x80\xA6";
+}
+
+// A device icon of about 18 px around (cx, cy).
+void drawHomeIcon(TFT_eSprite& s, HomeTile::Icon icon, float cx, float cy, uint16_t ink, uint16_t bg) {
+  using Icon = HomeTile::Icon;
+  switch (icon) {
+    case Icon::Light:  // a bulb
+      s.fillSmoothCircle(cx, cy - 2, 6, ink, bg);
+      s.drawWideLine(cx - 3, cy + 5, cx + 3, cy + 5, 2, ink, bg);
+      s.drawWideLine(cx - 2, cy + 8, cx + 2, cy + 8, 1.6f, ink, bg);
+      break;
+    case Icon::Power:  // the power symbol (TFT_eSPI arcs: 0 degrees at the bottom)
+      s.drawSmoothArc(cx, cy + 1, 8, 6, 0, 145, ink, bg, true);
+      s.drawSmoothArc(cx, cy + 1, 8, 6, 215, 360, ink, bg, true);
+      s.drawWideLine(cx, cy - 8, cx, cy, 2, ink, bg);
+      break;
+    case Icon::Fan:  // three blades
+      for (int k = 0; k < 3; ++k) {
+        const float a = k * 2 * PI / 3 + 0.3f;
+        s.drawWedgeLine(cx, cy, cx + 8 * sinf(a), cy - 8 * cosf(a), 1.2f, 3.6f, ink, bg);
+      }
+      s.fillSmoothCircle(cx, cy, 2, bg, ink);
+      break;
+    case Icon::Climate:  // a snowflake
+      for (int k = 0; k < 3; ++k) {
+        const float a = k * PI / 3, dx = 8 * sinf(a), dy = 8 * cosf(a);
+        s.drawWideLine(cx - dx, cy - dy, cx + dx, cy + dy, 1.8f, ink, bg);
+      }
+      break;
+    case Icon::Tv:  // a screen on a stand
+      s.drawSmoothRoundRect(cx - 9, cy - 8, 3, 1, 18, 12, ink, bg);
+      s.drawWideLine(cx - 4, cy + 8, cx + 4, cy + 8, 1.8f, ink, bg);
+      break;
+    case Icon::Scene:  // a sparkle
+      for (int k = 0; k < 4; ++k) {
+        const float a = k * PI / 2;
+        s.drawWedgeLine(cx, cy, cx + 9 * sinf(a), cy - 9 * cosf(a), 2.6f, 0.6f, ink, bg);
+      }
+      break;
+  }
+}
+
+}  // namespace
+
+// One tile: the name at the top; the icon, state and a switch (or a run
+// button) along the bottom. On: tinted card, accent track, knob right. Off:
+// knob left on a dark track. Switching: the knob waits in the middle.
 void DisplayManager::drawHomeTile(int i, const HomeTile* t) {
   const int16_t x = kTileX[i % 2];
   const int16_t y = kTileTop + (i / 2) * (kTileH + kTileGapY);
   drawBlockAt(x, y, kTileW, kTileH, font_small, [&](TFT_eSprite& s, int16_t y0) {
     if (!t) return;
     using Look = HomeTile::Look;
+    const bool run = t->icon == HomeTile::Icon::Scene;
     const bool on = t->look == Look::On;
-    const uint16_t fill = on ? pal_.top : t->look == Look::Unavailable ? C->bg : C->faint;
-    s.fillSmoothRoundRect(0, -y0, kTileW, kTileH, 10, fill, C->bg);
-    if (t->look == Look::Unavailable || t->look == Look::Run) {
-      s.drawSmoothRoundRect(0, -y0, 10, 9, kTileW - 1, kTileH - 1, t->look == Look::Run ? pal_.top : C->faint, fill);
-    }
-    const uint16_t ink = on ? theme::rgb(0, 0, 0) : t->look == Look::Unavailable ? C->dim : C->text;
-    s.setTextDatum(MC_DATUM);
-    s.setTextColor(ink, fill);
+    const bool unavailable = t->look == Look::Unavailable;
+    const uint16_t card = on ? theme::mix(C->faint, pal_.top, 56) : unavailable ? C->bg : C->faint;
+    s.fillSmoothRoundRect(0, -y0, kTileW, kTileH, 12, card, C->bg);
+    if (unavailable) s.drawSmoothRoundRect(0, -y0, 12, 11, kTileW - 1, kTileH - 1, C->faint, card);
+
     // The name: one line, or two split at the space nearest the middle.
-    if (s.textWidth(t->name) <= kTileW - 12) {
-      s.drawString(t->name, kTileW / 2, 22 - y0);
+    s.setTextDatum(ML_DATUM);
+    s.setTextColor(unavailable ? C->dim : C->text, card);
+    constexpr int kTextX = 12, kTextW = kTileW - 2 * kTextX;
+    if (s.textWidth(t->name) <= kTextW) {
+      s.drawString(t->name, kTextX, 18 - y0);
     } else {
       const int len = strlen(t->name);
       int cut = -1;
@@ -1699,11 +1758,39 @@ void DisplayManager::drawHomeTile(int i, const HomeTile* t) {
       }
       char first[32];
       strlcpy(first, t->name, cut > 0 ? min<size_t>(sizeof(first), cut + 1) : sizeof(first));
-      s.drawString(first, kTileW / 2, 14 - y0);
-      if (cut > 0) s.drawString(t->name + cut + 1, kTileW / 2, 31 - y0);
+      s.drawString(fitText(s, first, kTextW), kTextX, 12 - y0);
+      if (cut > 0) s.drawString(fitText(s, t->name + cut + 1, kTextW), kTextX, 28 - y0);
     }
-    s.setTextColor(on ? theme::rgb(0, 0, 0) : C->dim, fill);
-    s.drawString(t->look == Look::Pending ? "\xE2\x80\xA6" : t->state, kTileW / 2, 49 - y0);
+
+    // The bottom row.
+    constexpr float kRowY = 47;
+    const uint16_t ink = on ? pal_.top : C->dim;
+    drawHomeIcon(s, t->icon, 21, kRowY - y0, ink, card);
+    constexpr int16_t kTrackW = 40, kTrackH = 22, kTrackX = kTileW - 12 - kTrackW;
+    s.setTextColor(on ? pal_.top : C->dim, card);
+    const int16_t textEnd = unavailable ? kTileW - 12 : run ? kTileW - 12 - kTrackH - 4 : kTrackX - 6;
+    s.drawString(fitText(s, t->state, textEnd - 36), 36, kRowY - y0);
+    if (unavailable) return;
+    const int16_t ty = kRowY - kTrackH / 2 - y0;
+    if (run) {
+      // A round play button.
+      const float bx = kTrackX + kTrackW - kTrackH / 2, by = kRowY - y0;
+      const bool busy = t->look == Look::Pending;
+      s.fillSmoothCircle(bx, by, kTrackH / 2, busy ? theme::mix(card, pal_.top, 110) : pal_.top, card);
+      const uint16_t tri = busy ? pal_.top : card;
+      s.fillTriangle(bx - 3, by - 6, bx - 3, by + 6, bx + 6, by, tri);
+      return;
+    }
+    const uint16_t trackOff = theme::mix(C->bg, C->faint, 110);
+    const uint16_t track = on ? pal_.top : t->look == Look::Pending ? theme::mix(trackOff, pal_.top, 120) : trackOff;
+    s.fillSmoothRoundRect(kTrackX, ty, kTrackW, kTrackH, kTrackH / 2, track, card);
+    const float r = kTrackH / 2 - 3;
+    const float kx = on ? kTrackX + kTrackW - kTrackH / 2.0f
+                   : t->look == Look::Pending ? kTrackX + kTrackW / 2.0f
+                                              : kTrackX + kTrackH / 2.0f;
+    const uint16_t knob = on ? (night_ ? C->text : theme::rgb(255, 255, 255)) : theme::mix(C->dim, C->text, 140);
+    s.fillSmoothCircle(kx, kRowY + 1 - y0, r, theme::mix(track, 0, 90), track);  // a soft shadow
+    s.fillSmoothCircle(kx, kRowY - y0, r, knob, track);
   });
 }
 

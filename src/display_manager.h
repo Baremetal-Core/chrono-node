@@ -51,9 +51,11 @@ struct AnalogInfo {
 // The Home screen: Home Assistant devices as tiles (2 x 3).
 struct HomeTile {
   enum class Look : uint8_t { Off, On, Unavailable, Run, Pending };
+  enum class Icon : uint8_t { Light, Power, Fan, Climate, Tv, Scene };  // Scene: a run button, no switch
   char name[32];
-  char state[16];  // the line under the name ("On", "Off", "Cool", ...)
+  char state[16];  // next to the icon ("On", "Off", "Cool", ...)
   Look look;
+  Icon icon;
 };
 struct HomeView {
   static constexpr int kMax = 6;
