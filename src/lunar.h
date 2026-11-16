@@ -1,11 +1,12 @@
 // Chrono Node - Vietnamese lunar calendar (Âm lịch).
 //
-// The standard astronomical method used for the Vietnamese calendar: months
-// start on the day of the new moon (Meeus' truncated series), month 11 always
-// contains the winter solstice, and in a 13-month year the first month
-// without a major solar term is the leap month. Days are counted in UTC+7.
-// Doubles are emulated on the ESP32 (a conversion takes ~1 ms): call it once
-// a day.
+// Lunar years 1900-2100 come from a table generated from NASA JPL's DE440s
+// ephemeris (src/lunar_table.h, tools/gen_lunar_table.py). Outside it, the
+// standard astronomical method is calculated: months start on the day of the
+// new moon (Meeus' truncated series), month 11 always contains the winter
+// solstice, and in a 13-month year the first month without a major solar term
+// is the leap month. Days are counted in UTC+7. The calculation emulates
+// doubles on the ESP32 (~1 ms): call it once a day.
 #pragma once
 
 #include <stddef.h>

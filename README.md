@@ -64,11 +64,22 @@ A leap month shows as `nhuận`; the year's name is left out when a line doesn't
 off on the web page (*Display*) or with `LUNAR OFF`. The web page's status shows the lunar
 date and the days to Tết.
 
-How it works (`src/lunar.*`): the standard astronomical method of the Vietnamese calendar,
-in UTC+7. Months start on the day of the new moon (Meeus' series), month 11 contains the
-winter solstice, and in a 13-month year the first month without a major solar term is the
-leap month. It runs once a day (~1 ms), and was checked against the Tết dates of 2023–2027
-and the leap months of 2023 (month 2) and 2025 (month 6).
+How it works (`src/lunar.*`): the Vietnamese calendar's rules, in UTC+7. Months start on
+the day of the new moon, month 11 contains the winter solstice, and in a 13-month year the
+first month without a major solar term is the leap month. For lunar years 1900–2100 the
+month starts and leap months come from a table (`src/lunar_table.h`, 804 bytes) generated
+from NASA JPL's DE440s ephemeris, so every day matches the exact astronomy. A short formula
+(Meeus' new-moon series) would be a day off in 4 months whose new moon falls within a minute
+of midnight (1944, 1967, 2072, 2085) and on 2 single days (2054, 2062); it's only used
+outside the table. Regenerate the table with:
+
+```bash
+uv run --with skyfield tools/gen_lunar_table.py   # downloads de440s.bsp (32 MB) once
+```
+
+Dates far ahead can still change: the Earth's rotation varies unpredictably, so a new moon
+within about a minute of midnight decades from now (the next is in December 2072) can't be
+placed on a day with certainty by anyone; official calendars are published a few years ahead.
 
 ## Touch and screens
 
@@ -735,7 +746,9 @@ tools/stress_test.py            long-run stress test over USB serial + the web A
 src/mem_lease.*                 lends the animation buffers to HTTPS connections
 tools/fonts/                    Inter variable font + OFL licence
 src/photos.*                    photo storage in LittleFS: slots, uploads, JPEG header check
-src/lunar.*                     Vietnamese lunar calendar (new moons, solar terms, leap months, UTC+7)
+src/lunar.*                     Vietnamese lunar calendar: table for 1900-2100, astronomical formula outside
+src/lunar_table.h               generated lunar month table (do not edit)
+tools/gen_lunar_table.py        lunar table generator (Skyfield + JPL DE440s)
 src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)
 ```
 

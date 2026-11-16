@@ -3,6 +3,8 @@
 #include <math.h>
 #include <stdio.h>
 
+#include "lunar_table.h"
+
 namespace lunar {
 namespace {
 
@@ -88,10 +90,42 @@ long toDayNumber(int d, int m, int y) {
   return newMoonDay(k + off) + d - 1;
 }
 
-}  // namespace
+bool inTable(int lunarYear) { return lunarYear >= kTableFirstYear && lunarYear <= kTableLastYear; }
 
-Date fromSolar(int day, int month, int year) {
-  const long dayNumber = julianDay(day, month, year);
+// Day number of Tết (lunar 1/1) of a year in the table.
+long tetDay(int lunarYear) {
+  return julianDay(1, 1, lunarYear) + ((kTable[lunarYear - kTableFirstYear] >> 17) & 0x3F);
+}
+
+// The lunar date from the table; false outside it.
+bool fromTable(long dayNumber, int year, Date& out) {
+  int ly = year;
+  if (!inTable(ly) || dayNumber < tetDay(ly)) --ly;
+  if (!inTable(ly) || dayNumber < tetDay(ly)) return false;
+  const uint32_t e = kTable[ly - kTableFirstYear];
+  const int leapMonth = (e >> 13) & 0xF;
+  long start = tetDay(ly);
+  int month = 1;
+  bool leap = false;
+  for (int i = 0; i < (leapMonth ? 13 : 12); ++i) {
+    const int length = (e >> i) & 1 ? 30 : 29;
+    if (dayNumber < start + length) {
+      out = {static_cast<int>(dayNumber - start + 1), month, ly, leap};
+      return true;
+    }
+    start += length;
+    if (!leap && month == leapMonth) {
+      leap = true;  // the leap month repeats this month's number
+    } else {
+      leap = false;
+      ++month;
+    }
+  }
+  return false;  // after the table's last year
+}
+
+// The astronomical calculation, for dates outside the table.
+Date fromSolarFormula(long dayNumber, int year) {
   const long k = static_cast<long>(floor((dayNumber - kNewMoon1900) / kSynodicMonth));
   long monthStart = newMoonDay(k + 1);
   if (monthStart > dayNumber) monthStart = newMoonDay(k);
@@ -119,10 +153,21 @@ Date fromSolar(int day, int month, int year) {
   return out;
 }
 
+}  // namespace
+
+Date fromSolar(int day, int month, int year) {
+  const long dayNumber = julianDay(day, month, year);
+  Date out;
+  if (fromTable(dayNumber, year, out)) return out;
+  return fromSolarFormula(dayNumber, year);
+}
+
 int daysToTet(int day, int month, int year) {
   const Date l = fromSolar(day, month, year);
   if (l.month == 1 && l.day == 1 && !l.leap) return 0;
-  return static_cast<int>(toDayNumber(1, 1, l.year + 1) - julianDay(day, month, year));
+  const long today = julianDay(day, month, year);
+  const long next = inTable(l.year + 1) ? tetDay(l.year + 1) : toDayNumber(1, 1, l.year + 1);
+  return static_cast<int>(next - today);
 }
 
 void yearName(int lunarYear, char* buf, size_t len) {
