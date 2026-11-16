@@ -157,8 +157,36 @@ constexpr int16_t kDialBandH = 32;
 constexpr int16_t kColX = kDialX + kDialD + 4;  // the date column
 constexpr int16_t kColW = kScreenW - kColX;
 constexpr uint32_t kAnalogFrameMs = 50;  // 20 fps for the sweeping second hand
-uint8_t* dialMask = nullptr;
+// The mask in row chunks: after HTTPS the heap rarely has one 43 KB block
+// free again, but always has eight 5.4 KB ones.
+constexpr int16_t kDialChunkRows = 26, kDialChunks = kDialD / kDialChunkRows;
+static_assert(kDialChunks * kDialChunkRows == kDialD, "whole chunks");
+uint8_t* dialChunks[kDialChunks] = {};
+bool dialMask = false;  // all chunks allocated
 bool dialMaskBuilt = false;
+uint32_t dialRetryMs = 0;  // the last try to allocate the dial's memory
+bool dialMissLogged = false;
+inline uint8_t* dialRow(int16_t y) {
+  return dialChunks[y / kDialChunkRows] + (y % kDialChunkRows) * kDialD;
+}
+void freeDialMask() {
+  for (uint8_t*& c : dialChunks) {
+    free(c);
+    c = nullptr;
+  }
+  dialMask = false;
+}
+bool allocDialMask() {
+  for (uint8_t*& c : dialChunks) {
+    c = static_cast<uint8_t*>(malloc(kDialChunkRows * kDialD));
+    if (!c) {
+      freeDialMask();
+      return false;
+    }
+  }
+  dialMask = true;
+  return true;
+}
 TFT_eSprite dialBand(&tft);
 bool dialBandOk = false;
 
@@ -666,6 +694,7 @@ void DisplayManager::tick() {
   if (now - lastFrameMs_ < kFrameMs) return;
   lastFrameMs_ = now;
   if (analog_) {
+    if (!fxLeased_ && (!dialMask || !dialBandOk) && now - dialRetryMs >= 1000) syncFxBuffers();
     if (!fxLeased_ && now - lastAnalogMs_ >= kAnalogFrameMs) {
       lastAnalogMs_ = now;
       analogFrame();
@@ -980,11 +1009,10 @@ void DisplayManager::syncFxBuffers() {
     glowA = glowB = nullptr;
   }
   if (dial && !dialMask) {
-    dialMask = static_cast<uint8_t*>(malloc(kDialD * kDialD));
+    allocDialMask();
     dialMaskBuilt = false;
   } else if (!dial && dialMask) {
-    free(dialMask);
-    dialMask = nullptr;
+    freeDialMask();
   }
   if (dial && !dialBandOk) {
     dialBand.setColorDepth(16);
@@ -992,6 +1020,14 @@ void DisplayManager::syncFxBuffers() {
   } else if (!dial && dialBandOk) {
     dialBand.deleteSprite();
     dialBandOk = false;
+  }
+  if (dial && dialMask && dialBandOk) dialMissLogged = false;
+  if (dial && (!dialMask || !dialBandOk)) {
+    // tick() tries again every second.
+    dialRetryMs = millis();
+    if (!dialMissLogged) Serial.printf("[DISPLAY] No memory for the analog dial yet (free %u, largest block %u)\n",
+                  heap_caps_get_free_size(MALLOC_CAP_8BIT), heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    dialMissLogged = true;
   }
   if (!dial) {
     analogFull_ = true;  // the dial is drawn whole when it's back
@@ -1103,7 +1139,7 @@ void buildDialMask() {
                   blue = (v & 0x1F) * 255 / 31;
         const int top = max(red, max(green, blue));
         const uint8_t ink = top == red ? 2 : top == green ? 1 : 0;
-        dialMask[(y0 + r) * kDialD + c] = static_cast<uint8_t>(((top * 15 + 127) / 255) << 4 | ink);
+        dialRow(y0 + r)[c] = static_cast<uint8_t>(((top * 15 + 127) / 255) << 4 | ink);
       }
     }
   }
@@ -1262,7 +1298,7 @@ void DisplayManager::drawDialRect(int16_t x0, int16_t y0, int16_t w, int16_t h, 
     for (int16_t r = 0; r < hh; ++r) {
       const int16_t my = yy + r;
       const uint16_t ring = theme::mix(pal_.top, pal_.bottom, my * 255 / kDialD);
-      const uint8_t* m = dialMask + my * kDialD + x0;
+      const uint8_t* m = dialRow(my) + x0;
       uint16_t* out = buf + r * kDialD;
       for (int16_t c = 0; c < w; ++c) {
         const uint8_t v = m[c];
