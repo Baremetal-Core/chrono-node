@@ -319,6 +319,12 @@ class DisplayManager {
   Hand hands_[3] = {};  // as drawn: hour, minute, second
   bool handsValid_ = false;
   void analogFrame();
+  // The minute (h*60+m) the dial on the screen shows, -1: none (cleared). While
+  // the dial's buffers are lent out (HTTPS, a firmware download) or don't fit,
+  // the held frame stays until it's out of date or gone; then the dial is drawn
+  // straight to the screen (hour and minute hands), each minute.
+  int dialShownKey_ = -1;
+  void drawDialPlain();
   void drawDialRect(int16_t x0, int16_t y0, int16_t w, int16_t h, const Hand* hands);
   void drawAnalogColumn();
   struct tm lastLocal_ = {};

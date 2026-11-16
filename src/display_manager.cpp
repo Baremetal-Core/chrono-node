@@ -452,6 +452,7 @@ void DisplayManager::enterMode(Mode mode) {
   if (mode_ == mode) return;
   mode_ = mode;
   title_ = nullptr;
+  dialShownKey_ = -1;  // the screen is cleared below
   if (photoCorner_ && mode != Mode::Photo) {
     free(photoCorner_);
     photoCorner_ = nullptr;
@@ -696,9 +697,13 @@ void DisplayManager::tick() {
   lastFrameMs_ = now;
   if (analog_) {
     if (!fxLeased_ && (!dialMask || !dialBandOk) && now - dialRetryMs >= 1000) syncFxBuffers();
-    if (!fxLeased_ && now - lastAnalogMs_ >= kAnalogFrameMs) {
-      lastAnalogMs_ = now;
-      analogFrame();
+    if (!fxLeased_ && dialMask && dialBandOk) {
+      if (now - lastAnalogMs_ >= kAnalogFrameMs) {
+        lastAnalogMs_ = now;
+        analogFrame();
+      }
+    } else if (lastLocal_.tm_hour * 60 + lastLocal_.tm_min != dialShownKey_) {
+      drawDialPlain();  // the dial isn't (fully) on the screen: never leave it blank
     }
     if (bannerActive_) drawBanner(now);
     return;
@@ -1235,6 +1240,43 @@ void DisplayManager::setAnalogInfo(const AnalogInfo& info) {
   drawAnalogColumn();
 }
 
+void DisplayManager::drawDialPlain() {
+  dialShownKey_ = lastLocal_.tm_hour * 60 + lastLocal_.tm_min;
+  const int16_t cx = kDialX + kDialC, cy = kDialY + kDialC;
+  tft.fillRect(kDialX, kDialY, kDialD, kDialD, C->bg);
+  tft.fillSmoothCircle(cx, cy, kDialR, pal_.top, C->bg);
+  tft.fillSmoothCircle(cx, cy, kDialR - 2, C->bg, pal_.top);
+  for (int i = 0; i < 60; ++i) {
+    const float a = i * PI / 30, sx = sinf(a), cs = cosf(a);
+    const bool hour = i % 5 == 0;
+    const float r0 = kDialR - (hour ? 15 : 9), r1 = kDialR - 5, w = hour ? 1.7f : 0.7f;
+    tft.drawWedgeLine(cx + r0 * sx, cy - r0 * cs, cx + r1 * sx, cy - r1 * cs, w, w, hour ? C->text : C->dim, C->bg);
+  }
+  if (ESP.getMaxAllocHeap() >= kFontHeapBytes) {  // the numerals when the font fits
+    tft.loadFont(font_date);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(C->text, C->bg);
+    for (int h = 1; h <= 12; ++h) {
+      const float a = h * PI / 6;
+      char n[4];
+      snprintf(n, sizeof(n), "%d", h);
+      tft.drawString(n, cx + (kDialR - 30) * sinf(a), cy - (kDialR - 30) * cosf(a) + 1);
+    }
+    tft.unloadFont();
+  }
+  const float minute = lastLocal_.tm_min + lastLocal_.tm_sec / 60.0f;
+  const float hour = lastLocal_.tm_hour % 12 + minute / 60;
+  auto hand = [&](float turns, float len, float tail, float ar, float br) {
+    const float a = turns * 2 * PI, sx = sinf(a), cs = cosf(a);
+    tft.drawWedgeLine(cx - tail * sx, cy + tail * cs, cx + len * sx, cy - len * cs, ar, br, C->text, C->bg);
+  };
+  hand(hour / 12, 52, 10, 4.2f, 2.4f);
+  hand(minute / 60, 80, 12, 3.2f, 1.6f);
+  tft.fillSmoothCircle(cx, cy, 5, pal_.top, C->bg);
+  tft.fillSmoothCircle(cx, cy, 2, C->bg, pal_.top);
+  analogFull_ = true;  // the full dial, with the second hand, once the buffers are back
+}
+
 // One frame of the analog face: the hands where they are now (the second hand
 // sweeps), redrawn only in the rectangle they moved through.
 void DisplayManager::analogFrame() {
@@ -1253,6 +1295,7 @@ void DisplayManager::analogFrame() {
   };
   const Hand next[3] = {hand(hour / 12, 52, 10, 4.2f, 2.4f), hand(minute / 60, 80, 12, 3.2f, 1.6f),
                         hand(sec / 60, 88, 20, 1.4f, 0.9f)};
+  dialShownKey_ = lastLocal_.tm_hour * 60 + lastLocal_.tm_min;
   if (analogFull_ || !handsValid_) {
     drawDialRect(0, 0, kDialD, kDialD, next);
     memcpy(hands_, next, sizeof(hands_));
