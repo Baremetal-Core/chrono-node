@@ -118,6 +118,15 @@ On the clock, swipe to the Photo screen and tap for the next one. Tap a thumbnai
 <div class="muted">Recent</div><div class="recent" id="recent"></div>
 </section>
 
+<section><h2>Home Assistant</h2>
+<div class="row"><label>Address</label><input id="haurl" placeholder="http://homeassistant.local:8123" style="flex:2 1 220px"></div>
+<div class="row"><label>Access token</label><input id="hatok" type="password" autocomplete="off" style="flex:2 1 220px"></div>
+<div class="muted">A long-lived access token from Home Assistant: your profile &rarr; Security &rarr; Long-lived access tokens. It's kept only on the clock and never shown again.</div>
+<div class="row"><button class="primary" id="hasave">Save</button><button id="haload">Choose devices&hellip;</button></div>
+<div id="hapick" style="display:none"><div class="muted">Up to 6, shown on the clock's Home screen in the order you tick them.</div><input id="hafind" placeholder="Filter" style="width:100%;margin:6px 0"><div id="halist" class="recent"></div></div>
+<div class="muted" id="haerr" style="color:#e57373"></div><div id="hadev"></div>
+</section>
+
 <section><h2>Wi-Fi &amp; device</h2>
 <div class="row"><button id="portal">Open Wi-Fi setup portal</button><button class="danger" id="forget">Forget Wi-Fi</button><button class="danger" id="reboot">Reboot</button><button id="touchcal">Calibrate touch screen</button></div>
 <div class="muted">The setup portal disconnects the clock from this network; join "Chrono-Node-XXXX" to continue.</div>
@@ -340,5 +349,30 @@ x.upload.onprogress=e=>{if(e.lengthComputable)p.value=Math.round(e.loaded*100/e.
 x.onload=()=>{let d={};try{d=JSON.parse(x.responseText)}catch(e){}
 if(x.status===200){toast("Installed. Rebooting...");setTimeout(()=>location.reload(),25000)}else{p.style.display="none";toast("Update failed: "+(d.error||x.status))}};
 x.onerror=()=>{p.style.display="none";toast("Upload interrupted")};x.open("POST","/api/ota?pin="+pin);x.send(fd)};
-loadSettings();loadStatus();setInterval(loadStatus,5000);
+let HA={picked:[],all:[],urlEdited:false};$("haurl").oninput=()=>{HA.urlEdited=true};
+async function loadHa(){try{const d=await(await fetch("/api/ha",{cache:"no-store"})).json();
+if(!HA.urlEdited)$("haurl").value=d.url;$("hatok").placeholder=d.token_set?"saved \u2014 leave empty to keep it":"paste the token";
+if($("hapick").style.display==="none")HA.picked=d.devices.map(x=>x.id);
+$("haerr").textContent=d.error?"Home Assistant: "+d.error:"";
+$("hadev").innerHTML=d.devices.map((x,i)=>{const run=/^(scene|script)\./.test(x.id);const lbl=x.pending?"\u2026":run?"Run":x.on?"On":"Off";
+return `<div class="row"><label>${esc(x.name)} <small>${esc(x.id)} \u00b7 ${esc(x.state||"?")}</small></label><button data-hs="${i}" class="${x.on&&!run?"primary":""}">${lbl}</button></div>`}).join("")}catch(e){}}
+function haList(){const f=$("hafind").value.toLowerCase();const items=HA.all.filter(x=>(x.name+" "+x.id).toLowerCase().includes(f));
+$("halist").innerHTML=items.map(x=>{const n=HA.picked.indexOf(x.id);const off=n<0&&HA.picked.length>=6;
+return `<label style="display:flex;gap:8px;align-items:center;margin:4px 0;opacity:${off?.5:1}"><input type="checkbox" data-ha="${esc(x.id)}" ${n>=0?"checked":""} ${off?"disabled":""}>${n>=0?`<b>${n+1}</b>`:""} ${esc(x.name)} <small>${esc(x.id)}</small></label>`}).join("")||"<div class=muted>Nothing matches.</div>"}
+async function haSave(entities){const body={url:$("haurl").value.trim(),token:$("hatok").value.trim(),entities};
+const r=await fetch("/api/ha/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+if(!r.ok){toast("Error: "+((await r.json().catch(()=>({}))).error||r.status));return false}$("hatok").value="";HA.urlEdited=false;return true}
+$("hasave").onclick=async()=>{if(await haSave(HA.picked)){toast("Saved");$("hapick").style.display="none";loadHa()}};
+$("haload").onclick=async()=>{if(($("haurl").value.trim()||$("hatok").value.trim())&&!(await haSave(HA.picked)))return;
+$("haload").disabled=true;$("haload").textContent="Asking Home Assistant\u2026";
+try{const r=await fetch("/api/ha/entities");const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);
+HA.all=d.sort((a,b)=>a.id.split(".")[0].localeCompare(b.id.split(".")[0])||a.name.localeCompare(b.name));$("hapick").style.display="";haList()}
+catch(e){toast("Couldn't get the devices: "+e.message)}finally{$("haload").disabled=false;$("haload").textContent="Choose devices\u2026"}};
+$("hafind").oninput=haList;
+document.addEventListener("change",e=>{const c=e.target.closest("input[data-ha]");if(!c)return;const id=c.dataset.ha;
+HA.picked=c.checked?[...HA.picked,id]:HA.picked.filter(x=>x!==id);haList()});
+document.addEventListener("click",async e=>{const b=e.target.closest("button[data-hs]");if(!b)return;
+const u="/api/ha/switch?i="+b.dataset.hs;
+try{await fetch(u,{method:"POST"})}catch(_){try{await fetch(u,{method:"POST"})}catch(_){toast("The clock didn't answer")}}setTimeout(loadHa,300);setTimeout(loadHa,1500)});
+loadSettings();loadStatus();loadHa();setInterval(loadStatus,5000);setInterval(loadHa,4000);
 </script></body></html>)HTML";

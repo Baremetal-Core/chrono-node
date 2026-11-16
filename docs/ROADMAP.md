@@ -118,6 +118,9 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - An I2C environment sensor (SHT4x/BME280/SCD41) on the existing GPIO27/22 bus next to the DS3231.
 - Optional I2C light sensor (e.g. BH1750) on the same bus for auto-brightness (the CYD LDR is unusable).
 - Indoor climate display and history graph. MQTT with Home Assistant auto-discovery.
+- Home Assistant control ✅: a Home screen with up to 6 devices (lights, switches, fans,
+  helpers, AC, TV, scenes, scripts) over the REST API with a long-lived token; set up and
+  switched from the web page too.
 
 ## M15 – Extras
 - Lunar calendar (Âm lịch) ✅: the lunar date takes turns with the date; Mùng 1, Rằm, Tết

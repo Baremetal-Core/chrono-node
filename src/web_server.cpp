@@ -16,6 +16,7 @@
 #include "clock_sync.h"
 #include "config.h"
 #include "holidays.h"
+#include "home.h"
 #include "lunar.h"
 #include "moon.h"
 #include "mem_lease.h"
@@ -47,7 +48,7 @@ const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BR
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
                                 "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT",
-                                "TRANSITION",   "TOUCH CAL",    "OTA AUTO "};
+                                "TRANSITION",   "TOUCH CAL",    "OTA AUTO ",  "HA"};
 
 bool allowed(const String& cmd) {
   if (cmd.length() == 0 || cmd.length() >= kCommandLen || cmd.indexOf('\n') >= 0 ||
@@ -299,6 +300,83 @@ String urlEncode(const String& s) {
   return out;
 }
 
+// Home Assistant: the settings (never the token itself) and the devices.
+void handleHa() {
+  home::keepFresh();
+  JsonDocument doc;
+  doc["url"] = settings::haUrl();
+  doc["token_set"] = settings::haToken()[0] != '\0';
+  if (home::configured()) doc["error"] = home::lastErrorText();
+  JsonArray list = doc["devices"].to<JsonArray>();
+  home::Device d[config::kHaMaxDevices];
+  const int n = home::devices(d);
+  for (int i = 0; i < n; ++i) {
+    JsonObject o = list.add<JsonObject>();
+    o["id"] = d[i].entity;
+    o["name"] = d[i].name;
+    o["state"] = d[i].state;
+    o["on"] = home::isOn(d[i]);
+    o["pending"] = d[i].pending;
+  }
+  sendJson(doc);
+}
+
+void handleHaConfig() {
+  JsonDocument in;
+  if (deserializeJson(in, server->arg("plain"))) {
+    server->send(400, "application/json", "{\"error\":\"expected JSON\"}");
+    return;
+  }
+  const char* url = in["url"] | "";
+  const char* token = in["token"] | "";
+  String entities;
+  int count = 0;
+  for (JsonVariant e : in["entities"].as<JsonArray>()) {
+    const char* id = e | "";
+    if (!id[0] || strchr(id, ',') || count == config::kHaMaxDevices) continue;
+    if (count++) entities += ",";
+    entities += id;
+  }
+  if ((url[0] && strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) ||
+      !settings::setHomeAssistant(url, token[0] ? token : nullptr, entities.c_str())) {
+    server->send(400, "application/json", "{\"error\":\"invalid address or too long\"}");
+    return;
+  }
+  home::begin();
+  Serial.printf("[WEB] %s: Home Assistant settings saved (%s, %d device(s)%s)\n",
+                server->client().remoteIP().toString().c_str(), url, count,
+                token[0] ? ", new token" : "");
+  server->send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleHaEntities() {
+  String json, error;
+  if (!home::listEntities(json, error)) {
+    JsonDocument doc;
+    doc["error"] = error;
+    String out;
+    serializeJson(doc, out);
+    server->send(502, "application/json", out);
+    return;
+  }
+  server->sendHeader("Cache-Control", "no-store");
+  server->send(200, "application/json", json);
+}
+
+void handleHaSwitch() {
+  const String arg = server->arg("i");
+  if (arg.length() == 0 || arg.length() > 2 || !isDigit(arg[0]) || !isDigit(arg[arg.length() - 1])) {
+    server->send(400, "application/json", "{\"error\":\"i must be the device's index, from 0\"}");
+    return;
+  }
+  const int i = arg.toInt();
+  if (!home::requestSwitch(i)) {
+    server->send(409, "application/json", "{\"error\":\"no such device, or it's switching\"}");
+    return;
+  }
+  server->send(202, "application/json", "{\"queued\":true}");
+}
+
 void handleGeocode() {
   String q = server->arg("q");
   q.trim();
@@ -513,6 +591,10 @@ void start() {
   server->on("/api/status", HTTP_GET, handleStatus);
   server->on("/api/settings", HTTP_GET, handleSettings);
   server->on("/api/geocode", HTTP_GET, handleGeocode);
+  server->on("/api/ha", HTTP_GET, handleHa);
+  server->on("/api/ha/config", HTTP_POST, handleHaConfig);
+  server->on("/api/ha/entities", HTTP_GET, handleHaEntities);
+  server->on("/api/ha/switch", HTTP_POST, handleHaSwitch);
   server->on("/api/command", HTTP_POST, handleCommand);
   server->on("/api/photo", HTTP_GET, handlePhotoGet);
   server->on("/api/photo", HTTP_POST, handlePhotoDone, handlePhotoUpload);

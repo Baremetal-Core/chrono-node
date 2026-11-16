@@ -115,6 +115,16 @@ constexpr int kPhotoShowAtSecond = 28;          // between the banner (15) and f
 constexpr uint32_t kTaskWatchdogS = 15;
 // Air quality older than this is hidden.
 constexpr uint32_t kAirStaleS = 3 * 3600;
+// Home Assistant (src/home.*).
+constexpr size_t kHaUrlMaxLen = 96;
+constexpr size_t kHaTokenMaxLen = 320;     // long-lived tokens are ~183 characters
+constexpr size_t kHaEntitiesMaxLen = 6 * 64;
+constexpr int kHaMaxDevices = 6;
+constexpr uint32_t kHaPollMs = 3000;       // while the Home screen shows
+constexpr uint32_t kHaPendingMs = 6000;    // a tile waits this long for the new state
+constexpr uint32_t kHaTimeoutMs = 4000;
+constexpr uint32_t kHaRetryMs = 15000;  // poll interval while Home Assistant is down
+constexpr size_t kHaBodyMaxBytes = 12 * 1024;  // one device's state (a TV with many sources is a few KB)
 // The clock face counts down to Tết in the last days before it.
 constexpr int kTetCountdownDays = 30;
 // After this many crashes in a row the clock starts in safe mode (plain

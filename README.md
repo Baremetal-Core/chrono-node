@@ -120,9 +120,10 @@ low-precision formulas (`src/moon.*`): against the JPL ephemeris the lit fractio
 
 ## Touch and screens
 
-- **Screens**, in swipe order: Clock → Forecast → Photo → Info → Settings, then back to
+- **Screens**, in swipe order: Clock → Forecast → Photo → Home → Info → Settings, then back to
   Clock. Swipe left for the next screen and right for the previous one. The forecast is
-  skipped until weather data exists, and the photo screen while there are no photos. Screen changes happen behind a quick backlight dip.
+  skipped until weather data exists, the photo screen while there are no photos, and Home
+  until Home Assistant is set up (see Home Assistant). Screen changes happen behind a quick backlight dip.
 - **The time on every screen:** the other screens show it too, updated each minute: at the
   right of the title bar (Info, Settings, Storage, Update, Wi-Fi), in the forecast header
   (after "N h old" when the weather is stale), and in a translucent pill in the bottom-right
@@ -203,6 +204,8 @@ stays online:
 - **Weather location:** search a city or district (Open-Meteo geocoding, top 5 matches with
   province, country and population, *Vietnam only* on by default), or enter coordinates, or
   pick a recent location (✕ removes one from the list).
+- **Home Assistant:** address, access token, the devices on the Home screen, and On/Off/Run
+  buttons for them.
 - **Wi-Fi & device:** open the setup portal, forget the Wi-Fi network, reboot, calibrate the
   touch screen.
 
@@ -225,6 +228,10 @@ stays in one task.
 | `POST /api/command` | Body (`text/plain`): one console command. Returns `202 {"queued":true}` |
 | `GET /api/photo?n=<slot>` | A stored photo (JPEG) |
 | `POST /api/photo` | Multipart field `photo`: a baseline JPEG ≤ 64 KB, saved in a free slot. Returns `200 {"ok":true,"slot":n}` or `400 {"error":...}` |
+| `GET /api/ha` | Home Assistant address, `token_set`, last `error`, and the chosen devices with their states (never the token) |
+| `POST /api/ha/config` | JSON `{"url":..., "token":... (optional: omit to keep it), "entities":[up to 6 ids]}` |
+| `GET /api/ha/entities` | The switchable devices Home Assistant has: `[{"id":..., "name":...}]` (the clock asks Home Assistant, so the browser doesn't need CORS) |
+| `POST /api/ha/switch?i=N` | Switch a chosen device; `i` counts from 0 (the `HA` console command numbers them from 1). Returns `202`, `400` without a valid `i`, or `409` while it's switching |
 | `POST /api/ota/release?tag=vX.Y.Z&pin=NNNN` | The clock downloads and installs that GitHub release (`tag=latest`: the newest). Returns `202`, then restarts; failures show in `/api/status` → `ota.error` |
 | `POST /api/ota/pin` | Shows a one-time update PIN on the clock (2 min) |
 | `POST /api/ota?pin=NNNN` | Multipart firmware upload. Returns `200`, `403` (PIN) or `500` (image) |
@@ -232,7 +239,7 @@ stays in one task.
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
 `PHOTO`, `FACE`, `LUNAR`, `HOLIDAYS`, `PHRASE`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
-`OTA AUTO`.
+`OTA AUTO`, `HA`.
 Diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
 ```bash
@@ -487,6 +494,36 @@ Your own photos can be shown on the clock, for example a picture of someone you 
 curl -F "photo=@me.jpg" http://chrono-node.local/api/photo   # baseline JPEG, max 64 KB
 ```
 
+## Home Assistant
+
+The **Home** screen switches up to 6 [Home Assistant](https://www.home-assistant.io/)
+devices: lights, switches, fans, helpers (input booleans), air conditioners (climate), TVs
+(media players), scenes and scripts.
+
+- **Setting up**, on the web page's *Home Assistant* section:
+  1. **Address**: your Home Assistant, for example `http://homeassistant.local:8123` or
+     `http://192.168.1.10:8123` (`https://` works too; the certificate is checked).
+  2. **Access token**: in Home Assistant, open your profile → *Security* → *Long-lived
+     access tokens* → *Create token*, and paste it. It's kept only on the clock, and never
+     shown again, in the API or the logs. Leave the field empty later to keep it.
+  3. **Save**, then **Choose devices…**: the clock asks Home Assistant for the devices it
+     can switch. Filter, tick up to 6 (the Home screen shows them in the order you tick
+     them) and **Save**.
+- **On the clock:** swipe to **Home** (after Photo). Each tile shows the device's name and
+  state: filled in the accent colour when on, dim when off, outlined with *Tap to run* for
+  scenes and scripts, "…" while switching, *Unavailable* when Home Assistant can't be
+  reached. Tap a tile to switch it:
+  - lights, switches, fans and helpers toggle;
+  - air conditioners and TVs turn off when on, else on (Home Assistant resumes their last
+    mode);
+  - scenes and scripts run.
+- **Up to date:** the states are read every 3 s while the Home screen or the web page shows
+  them, so changes made elsewhere (the Home Assistant app, a wall switch) appear within a few
+  seconds. Nothing is polled otherwise. If Home Assistant is down, the tiles show
+  *Unavailable* and the web page shows the error (for example *HTTP 401: the access token
+  was refused*).
+- **Console:** `HA` prints the address and each device's state; `HA REFRESH` reads them now.
+
 ## Brightness and night mode
 
 - The backlight (GPIO21) is driven by 12-bit PWM with gamma correction, so 50% looks like
@@ -701,7 +738,9 @@ LUNAR                       # today's lunar date and days to Tết (LUNAR ON|OFF
 HOLIDAYS                    # the holidays shown on the date line (HOLIDAYS ON|OFF)
 PHRASE                      # today's phrases
 PHRASE BOTH                 # above the time: VI, EN, BOTH (in turn) or OFF
-SCREEN SETTINGS             # CLOCK, FORECAST, PHOTO, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
+HA                          # Home Assistant address, devices and states, last error
+HA REFRESH                  # read the devices' states now
+SCREEN SETTINGS             # CLOCK, FORECAST, PHOTO, HOME, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
 SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web page)
@@ -809,6 +848,7 @@ src/lunar_table.h               generated lunar month table (do not edit)
 src/holidays.*                  Vietnamese holidays and festivals (solar and lunar dates)
 src/moon.*                      moon phase (illuminated fraction, waxing/waning, names)
 src/phrases.*                   phrase of the day (Vietnamese proverbs and English proverbs)
+src/home.*                      Home Assistant: device states, switching, device list (REST API)
 tools/gen_lunar_table.py        lunar table generator (Skyfield + JPL DE440s)
 src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)
 ```

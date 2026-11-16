@@ -48,6 +48,19 @@ struct AnalogInfo {
   int16_t aqi;         // -1 to hide
 };
 
+// The Home screen: Home Assistant devices as tiles (2 x 3).
+struct HomeTile {
+  enum class Look : uint8_t { Off, On, Unavailable, Run, Pending };
+  char name[32];
+  char state[16];  // the line under the name ("On", "Off", "Cool", ...)
+  Look look;
+};
+struct HomeView {
+  static constexpr int kMax = 6;
+  HomeTile tiles[kMax];
+  int count;
+};
+
 // The software update screen.
 struct UpdateView {
   char installed[24];  // "v0.13.0"
@@ -140,6 +153,10 @@ class DisplayManager {
   // 2); a long one is shown in parts. 0 clears the line.
   void setPhrases(const char* const* texts, int count);
 
+  // The Home screen; calling again redraws only the tiles that changed.
+  void showHomeScreen(const HomeView& v);
+  int homeHitTest(int16_t x, int16_t y) const;  // tile index, or -1
+
   // Analog face instead of the digits; its right column's content.
   void setAnalog(bool analog);
   bool analog() const { return analog_; }
@@ -210,7 +227,7 @@ class DisplayManager {
 
  private:
   enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo, Confirm,
-                    Storage, Update };
+                    Storage, Update, Home };
   struct Roll {
     char from = ' ';
     char to = ' ';
@@ -253,6 +270,9 @@ class DisplayManager {
 
   theme::Palette pal_{0, 0};
   bool palValid_ = false;
+  HomeView homeView_ = {};
+  bool homeValid_ = false;
+  void drawHomeTile(int i, const HomeTile* t);
   // The time overlay on the other screens.
   char nowText_[12] = "";
   int nowKey_ = -1;

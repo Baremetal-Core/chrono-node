@@ -1597,6 +1597,88 @@ void DisplayManager::drawWeatherHeader() {
   });
 }
 
+// Home screen tiles: 2 columns x 3 rows under the title bar.
+constexpr int16_t kTileW = 148, kTileH = 62, kTileTop = 34, kTileGapY = 6;
+constexpr int16_t kTileX[2] = {8, kScreenW - 8 - kTileW};
+
+void DisplayManager::showHomeScreen(const HomeView& v) {
+  const bool first = mode_ != Mode::Home;
+  if (first) {
+    enterMode(Mode::Home);
+    homeValid_ = false;
+    drawScreenTitle("Home");
+  }
+  if (v.count == 0) {
+    drawBlock(kTileTop, kScreenH - kTileTop, font_small, [&](TFT_eSprite& s, int16_t y0) {
+      s.setTextDatum(MC_DATUM);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString("Choose devices on the web page", kScreenW / 2, 90 - y0);
+      s.drawString("(Home Assistant section)", kScreenW / 2, 112 - y0);
+    });
+    homeView_ = v;
+    homeValid_ = true;
+    return;
+  }
+  if (homeValid_ && homeView_.count == 0) {
+    drawBlock(kTileTop, kScreenH - kTileTop, font_small, [](TFT_eSprite&, int16_t) {});  // the message
+    homeValid_ = false;
+  }
+  for (int i = 0; i < HomeView::kMax; ++i) {
+    const bool has = i < v.count;
+    const bool had = homeValid_ && i < homeView_.count;
+    if (homeValid_ && has == had && (!has || memcmp(&v.tiles[i], &homeView_.tiles[i], sizeof(HomeTile)) == 0)) {
+      continue;
+    }
+    drawHomeTile(i, has ? &v.tiles[i] : nullptr);
+  }
+  homeView_ = v;
+  homeValid_ = true;
+}
+
+// One tile: name (two lines when long) and state, filled in the accent colour
+// when on; an empty slot clears it.
+void DisplayManager::drawHomeTile(int i, const HomeTile* t) {
+  const int16_t x = kTileX[i % 2];
+  const int16_t y = kTileTop + (i / 2) * (kTileH + kTileGapY);
+  drawBlockAt(x, y, kTileW, kTileH, font_small, [&](TFT_eSprite& s, int16_t y0) {
+    if (!t) return;
+    using Look = HomeTile::Look;
+    const bool on = t->look == Look::On;
+    const uint16_t fill = on ? pal_.top : t->look == Look::Unavailable ? C->bg : C->faint;
+    s.fillSmoothRoundRect(0, -y0, kTileW, kTileH, 10, fill, C->bg);
+    if (t->look == Look::Unavailable || t->look == Look::Run) {
+      s.drawSmoothRoundRect(0, -y0, 10, 9, kTileW - 1, kTileH - 1, t->look == Look::Run ? pal_.top : C->faint, fill);
+    }
+    const uint16_t ink = on ? theme::rgb(0, 0, 0) : t->look == Look::Unavailable ? C->dim : C->text;
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(ink, fill);
+    // The name: one line, or two split at the space nearest the middle.
+    if (s.textWidth(t->name) <= kTileW - 12) {
+      s.drawString(t->name, kTileW / 2, 22 - y0);
+    } else {
+      const int len = strlen(t->name);
+      int cut = -1;
+      for (int k = 0; k < len; ++k) {
+        if (t->name[k] == ' ' && (cut < 0 || abs(k - len / 2) < abs(cut - len / 2))) cut = k;
+      }
+      char first[32];
+      strlcpy(first, t->name, cut > 0 ? min<size_t>(sizeof(first), cut + 1) : sizeof(first));
+      s.drawString(first, kTileW / 2, 14 - y0);
+      if (cut > 0) s.drawString(t->name + cut + 1, kTileW / 2, 31 - y0);
+    }
+    s.setTextColor(on ? theme::rgb(0, 0, 0) : C->dim, fill);
+    s.drawString(t->look == Look::Pending ? "\xE2\x80\xA6" : t->state, kTileW / 2, 49 - y0);
+  });
+}
+
+int DisplayManager::homeHitTest(int16_t x, int16_t y) const {
+  if (mode_ != Mode::Home || y < kTileTop - 4) return -1;
+  const int row = (y - kTileTop + kTileGapY / 2) / (kTileH + kTileGapY);
+  const int col = x < kScreenW / 2 ? 0 : 1;
+  const int i = min(row, 2) * 2 + col;
+  return homeValid_ && i < homeView_.count ? i : -1;
+}
+
 void DisplayManager::setNow(const struct tm& local) {
   const int key = local.tm_hour * 60 + local.tm_min + (hour12_ ? 10000 : 0);
   if (key == nowKey_) return;
@@ -1613,6 +1695,7 @@ void DisplayManager::setNow(const struct tm& local) {
     case Mode::Storage:
     case Mode::Update:
     case Mode::Confirm:
+    case Mode::Home:
       if (title_) drawScreenTitle(title_);
       break;
     case Mode::Weather:

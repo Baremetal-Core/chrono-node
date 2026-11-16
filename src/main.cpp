@@ -15,6 +15,7 @@
 #include "config.h"
 #include "display_manager.h"
 #include "holidays.h"
+#include "home.h"
 #include "lunar.h"
 #include "moon.h"
 #include "phrases.h"
@@ -91,10 +92,10 @@ bool nightActive = false;
 // Screens, in swipe order. The forecast is skipped while there is no data,
 // the photo screen while there are no photos. WifiReset (the confirmation
 // opened from Info) isn't in the swipe order.
-enum class Screen : uint8_t { Clock, Forecast, Photo, Info, Settings, WifiReset, Storage, Update };
-constexpr int kScreenCount = 5;  // in the swipe order; the rest open from Info
-const char* const kScreenNames[] = {"clock",      "forecast", "photo",  "info",
-                                    "settings",   "wifi-reset", "storage", "update"};
+enum class Screen : uint8_t { Clock, Forecast, Photo, Home, Info, Settings, WifiReset, Storage, Update };
+constexpr int kScreenCount = 6;  // in the swipe order; the rest open from Info
+const char* const kScreenNames[] = {"clock",    "forecast",   "photo",   "home",  "info",
+                                    "settings", "wifi-reset", "storage", "update"};
 Screen screenOn = Screen::Clock;
 Screen screenWanted = Screen::Clock;  // target of the current/next transition
 // Automatic screens (forecast/photo from a cycle, a SHOW command or the
@@ -117,6 +118,7 @@ int photoSlot = 0;
 int photoWanted = 0;
 uint32_t lastTouchMs = 0;
 uint32_t lastInfoMs = 0;
+uint32_t shownHomeVersion = 0;
 
 // Scrolling banner. Each message has its own period: messages that come due
 // together scroll one after another; continuous ones fill the time between.
@@ -566,6 +568,42 @@ void showUpdate() {
   display.showUpdateScreen(v);
 }
 
+// The Home screen from the Home Assistant devices' states.
+void showHome() {
+  shownHomeVersion = home::version();
+  HomeView v = {};
+  home::Device d[config::kHaMaxDevices];
+  v.count = min(home::devices(d), HomeView::kMax);
+  for (int i = 0; i < v.count; ++i) {
+    HomeTile& t = v.tiles[i];
+    strlcpy(t.name, d[i].name, sizeof(t.name));
+    using Look = HomeTile::Look;
+    const bool unavailable = !strcmp(d[i].state, "unavailable") || !strcmp(d[i].state, "unknown");
+    if (d[i].pending) {
+      t.look = Look::Pending;
+    } else if (d[i].kind == home::Kind::Run) {
+      t.look = unavailable ? Look::Unavailable : Look::Run;
+    } else if (unavailable || !d[i].state[0]) {
+      t.look = Look::Unavailable;
+    } else {
+      t.look = home::isOn(d[i]) ? Look::On : Look::Off;
+    }
+    if (d[i].kind == home::Kind::Run) {
+      strlcpy(t.state, unavailable ? "Unavailable" : "Tap to run", sizeof(t.state));
+    } else if (!d[i].state[0]) {
+      strlcpy(t.state, "\xE2\x80\xA6", sizeof(t.state));
+    } else {
+      // Home Assistant's state, capitalised: "On", "Off", "Cool", "Unavailable".
+      strlcpy(t.state, d[i].state, sizeof(t.state));
+      t.state[0] = toupper(static_cast<unsigned char>(t.state[0]));
+      for (char* c = t.state; *c; ++c) {
+        if (*c == '_') *c = ' ';
+      }
+    }
+  }
+  display.showHomeScreen(v);
+}
+
 void buildInfoView(InfoView& v) {
   v.count = 0;
   v.updateAvailable = ota::checkState(nullptr, 0) == ota::CheckState::Available;
@@ -698,7 +736,10 @@ Screen neighbour(Screen from, int dir) {
   for (int n = 0; n < kScreenCount; ++n) {
     i = (i + dir + kScreenCount) % kScreenCount;
     const Screen s = static_cast<Screen>(i);
-    if ((s != Screen::Forecast || hasForecast) && (s != Screen::Photo || hasPhotos)) break;
+    if ((s != Screen::Forecast || hasForecast) && (s != Screen::Photo || hasPhotos) &&
+        (s != Screen::Home || home::configured())) {
+      break;
+    }
   }
   return static_cast<Screen>(i);
 }
@@ -746,6 +787,9 @@ void handleTouch() {
         requestScreen(Screen::Photo, true);
       }
       if (screenOn == Screen::Settings) applySettingsAction(display.settingsHitTest(ev.at.x, ev.at.y));
+      if (screenOn == Screen::Home && home::requestSwitch(display.homeHitTest(ev.at.x, ev.at.y))) {
+        showHome();  // the tile shows it's switching
+      }
       if (screenOn == Screen::Info) {
         switch (display.infoButtonHit(ev.at.x, ev.at.y)) {
           case DisplayManager::InfoButton::Wifi:
@@ -844,6 +888,9 @@ void finishTransition() {
     case Screen::Settings:
       showSettings();
       break;
+    case Screen::Home:
+      showHome();
+      break;
     case Screen::Storage: {
       StorageView v;
       buildStorageView(v);
@@ -864,6 +911,7 @@ void finishTransition() {
       autoScreen = false;
       break;
   }
+  home::setActive(next == Screen::Home);  // poll the devices only while they show
   if (next != screenOn || next == Screen::Photo) {
     Serial.printf("[SCREEN] %s%s\n", kScreenNames[static_cast<int>(next)],
                   autoScreen && next != Screen::Clock ? " (automatic)" : "");
@@ -1071,6 +1119,7 @@ bool requestScreenByName(const char* name) {
   if (strcasecmp(name, "clock") == 0) s = Screen::Clock;
   else if (strcasecmp(name, "forecast") == 0) s = Screen::Forecast;
   else if (strcasecmp(name, "photo") == 0) s = Screen::Photo;
+  else if (strcasecmp(name, "home") == 0) s = Screen::Home;
   else if (strcasecmp(name, "info") == 0) s = Screen::Info;
   else if (strcasecmp(name, "settings") == 0) s = Screen::Settings;
   else if (strcasecmp(name, "wifi-reset") == 0) s = Screen::WifiReset;
@@ -1129,6 +1178,7 @@ void setup() {
                 config::kFirmwareVersion, config::kGitRevision);
 
   settings::begin();
+  home::begin();
   checkCrashLoop();
 
   if (display.begin()) {
@@ -1179,6 +1229,7 @@ void loop() {
     nightBoost = false;
     if (!transitioning) backlight::fadeTo(brightnessFor(nightActive), config::kNightFadeInMs);
   }
+  if (screenOn == Screen::Home && !transitioning && home::version() != shownHomeVersion) showHome();
   if (screenOn == Screen::Info && !transitioning && nowMsTouch - lastInfoMs >= 2000) {
     lastInfoMs = nowMsTouch;
     InfoView v;

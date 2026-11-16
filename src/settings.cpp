@@ -28,6 +28,9 @@ constexpr const char* kKeyHour12 = "hour12";
 constexpr const char* kKeyLunar = "lunar";
 constexpr const char* kKeyHolidays = "holidays";
 constexpr const char* kKeyFace = "face";
+constexpr const char* kKeyHaUrl = "ha_url";
+constexpr const char* kKeyHaToken = "ha_token";
+constexpr const char* kKeyHaEntities = "ha_ents";
 constexpr const char* kKeyFaceEvery = "face_every";
 constexpr const char* kKeyPhraseLang = "phr_lang";
 constexpr const char* kKeyOtaAuto = "ota_auto";
@@ -93,6 +96,9 @@ bool use12h = false;
 bool lunarOn = true;
 bool holidaysOn = true;
 uint8_t faceSet = 0;  // 0 digital, 1 analog, 2 mix
+char haUrlSet[config::kHaUrlMaxLen + 1] = "";
+char haTokenSet[config::kHaTokenMaxLen + 1] = "";
+char haEntitiesSet[config::kHaEntitiesMaxLen + 1] = "";
 uint8_t faceEverySet = 5;
 uint8_t phraseLangSet = 2;   // phrases::Lang::Both
 bool otaAuto = true;
@@ -160,6 +166,9 @@ void begin() {
       lon = prefs.getFloat(kKeyLon, lon);
     }
     if (prefs.isKey(kKeyPlace)) prefs.getString(kKeyPlace, placeName, sizeof(placeName));
+    if (prefs.isKey(kKeyHaUrl)) prefs.getString(kKeyHaUrl, haUrlSet, sizeof(haUrlSet));
+    if (prefs.isKey(kKeyHaToken)) prefs.getString(kKeyHaToken, haTokenSet, sizeof(haTokenSet));
+    if (prefs.isKey(kKeyHaEntities)) prefs.getString(kKeyHaEntities, haEntitiesSet, sizeof(haEntitiesSet));
     wxCycle = prefs.getBool(kKeyWxCycle, wxCycle);
     lunarOn = prefs.getBool(kKeyLunar, lunarOn);
     holidaysOn = prefs.getBool(kKeyHolidays, holidaysOn);
@@ -535,6 +544,28 @@ bool setBannerSpeed(uint8_t pxPerSecond) {
 bool lunarDate() { return lunarOn; }
 
 bool holidays() { return holidaysOn; }
+
+const char* haUrl() { return haUrlSet; }
+const char* haToken() { return haTokenSet; }
+const char* haEntities() { return haEntitiesSet; }
+
+bool setHomeAssistant(const char* url, const char* token, const char* entities) {
+  if (strlen(url) > config::kHaUrlMaxLen || (token && strlen(token) > config::kHaTokenMaxLen) ||
+      strlen(entities) > config::kHaEntitiesMaxLen) {
+    return false;
+  }
+  bool ok = save([&](Preferences& p) {
+    bool w = p.putString(kKeyHaUrl, url) == strlen(url) && p.putString(kKeyHaEntities, entities) == strlen(entities);
+    if (token) w = w && p.putString(kKeyHaToken, token) == strlen(token);
+    return w;
+  });
+  if (ok) {
+    strlcpy(haUrlSet, url, sizeof(haUrlSet));
+    if (token) strlcpy(haTokenSet, token, sizeof(haTokenSet));
+    strlcpy(haEntitiesSet, entities, sizeof(haEntitiesSet));
+  }
+  return ok;
+}
 
 uint8_t faceMode() { return faceSet; }
 

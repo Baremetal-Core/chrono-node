@@ -12,6 +12,7 @@
 #include "config.h"
 #include "display_manager.h"
 #include "holidays.h"
+#include "home.h"
 #include "lunar.h"
 #include "net_manager.h"
 #include "ota.h"
@@ -648,7 +649,7 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     printRtcTime(rtc);
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
     if (!requestScreenByName(text + 7)) {
-      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|INFO|SETTINGS|STORAGE|UPDATE|WIFI-RESET");
+      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|HOME|INFO|SETTINGS|STORAGE|UPDATE|WIFI-RESET");
     }
   } else if (strcasecmp(text, "TOUCH CAL") == 0) {
     calibrateTouch(display);
@@ -687,6 +688,10 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
       }
       delay(10);
     }
+  } else if (strcasecmp(text, "HA") == 0) {
+    home::printStatus();
+  } else if (strcasecmp(text, "HA REFRESH") == 0) {
+    home::begin();  // re-reads the settings and polls the states now
   } else if (strcasecmp(text, "OTA") == 0) {
     ota::printStatus();
   } else if (strcasecmp(text, "OTA AUTO ON") == 0 || strcasecmp(text, "OTA AUTO OFF") == 0) {
@@ -744,7 +749,7 @@ void serialConsolePrintHelp() {
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
       "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | FACE [DIGITAL|ANALOG|MIX|EVERY n] | LUNAR [ON|OFF] | HOLIDAYS [ON|OFF] | PHRASE [VI|EN|BOTH|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
-      "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
+      "SCREEN name | SETEPOCH n | REBOOT | HA [REFRESH] | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }
 

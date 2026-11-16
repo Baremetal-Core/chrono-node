@@ -114,6 +114,14 @@ bool setLunarDate(bool enabled);
 bool holidays();
 bool setHolidays(bool enabled);
 
+// Home Assistant: base URL (e.g. http://falcon.local:8123), long-lived access
+// token, and the devices on the Home screen (comma-separated entity ids, up
+// to 6). setHomeAssistant() keeps the token when `token` is nullptr.
+const char* haUrl();
+const char* haToken();
+const char* haEntities();
+bool setHomeAssistant(const char* url, const char* token, const char* entities);
+
 // The clock face: 0 digital, 1 analog, 2 mix (taking turns every N minutes,
 // 1-60, default 5).
 uint8_t faceMode();
