@@ -114,6 +114,10 @@ bool setLunarDate(bool enabled);
 bool holidays();
 bool setHolidays(bool enabled);
 
+// The analog clock face instead of the digits.
+bool analogFace();
+bool setAnalogFace(bool analog);
+
 // Phrase of the day: 0 Vietnamese, 1 English, 2 both (by day); scrolls by on
 // the clock every N minutes (0: only on the web page; max 120).
 uint8_t phraseLang();

@@ -481,6 +481,7 @@ void buildSettingsView(SettingsView& v) {
            settings::nightStart() / 60, settings::nightStart() % 60, settings::nightEnd() / 60,
            settings::nightEnd() % 60);
   v.hour12 = settings::hour12();
+  v.analog = settings::analogFace();
   strlcpy(v.colorName, theme::styleName(colorSettings().style), sizeof(v.colorName));
   strlcpy(v.place, settings::place(), sizeof(v.place));
   v.recentCount = settings::recentLocationCount();
@@ -630,8 +631,17 @@ void applySettingsAction(SettingsAction a) {
       settings::setNightEnabled(!settings::nightEnabled());
       break;
     case SettingsAction::FormatToggle:
-      settings::setHour12(!settings::hour12());
+      // Cycles 24-hour -> 12-hour -> analog -> 24-hour.
+      if (settings::analogFace()) {
+        settings::setAnalogFace(false);
+        settings::setHour12(false);
+      } else if (settings::hour12()) {
+        settings::setAnalogFace(true);
+      } else {
+        settings::setHour12(true);
+      }
       display.setHour12(settings::hour12());
+      display.setAnalog(settings::analogFace());
       break;
     case SettingsAction::ColorPrev:
     case SettingsAction::ColorNext: {
@@ -796,6 +806,7 @@ void finishTransition() {
   }
   display.setNightMode(nightActive);
   display.setHour12(settings::hour12());
+  display.setAnalog(settings::analogFace());
   weather::Data wx;
   Screen next = screenWanted;
   if (next == Screen::Forecast && !weather::get(wx)) next = Screen::Clock;
@@ -903,12 +914,36 @@ void updateStatus() {
   st.hasTemp = hasTemp && !hasWeather;
   st.tempC = static_cast<int8_t>(lroundf(tempC));
   const uint32_t nowUtc = static_cast<uint32_t>(time(nullptr));
-  if (nowUtc > 1700000000) st.moonAngle = static_cast<int16_t>(lroundf(moon::at(nowUtc).angle)) % 360;
+  moon::Phase mp = {};
+  if (nowUtc > 1700000000) {
+    mp = moon::at(nowUtc);
+    st.moonAngle = static_cast<int16_t>(lroundf(mp.angle)) % 360;
+  }
   // Signed: a clock set back a little mustn't make a fresh reading look stale.
   if (hasWeather && wx.aqi >= 0 && static_cast<int32_t>(nowUtc - wx.aqiUtc) < (int32_t)config::kAirStaleS) {
     st.aqi = wx.aqi;
   }
   display.setStatus(st);
+  if (display.analog()) {
+    AnalogInfo a;
+    memset(&a, 0, sizeof(a));  // compared with memcmp: padding too
+    const struct tm& lt = lastLocalTm;
+    strftime(a.weekday, sizeof(a.weekday), "%A", &lt);
+    snprintf(a.day, sizeof(a.day), "%d", lt.tm_mday);
+    strftime(a.month, sizeof(a.month), "%b %Y", &lt);
+    const int d = lt.tm_mday, m = lt.tm_mon + 1, y = lt.tm_year + 1900;
+    const lunar::Date l = lunar::fromSolar(d, m, y);
+    if (settings::lunarDate()) {
+      snprintf(a.lunar, sizeof(a.lunar), "ÂL %d/%d%s", l.day, l.month, l.leap ? " nhuận" : "");
+      lunar::yearName(l.year, a.lunarYear, sizeof(a.lunarYear));
+    }
+    const holidays::Holiday* h = settings::holidays() ? holidays::today(d, m, l) : nullptr;
+    if (h) strlcpy(a.holiday, h->name, sizeof(a.holiday));
+    a.moonAngle = st.moonAngle;
+    a.moonLit = static_cast<uint8_t>(lroundf(mp.lit * 100));
+    a.aqi = st.aqi;
+    display.setAnalogInfo(a);
+  }
   const uint32_t age = weather::ageSeconds();
   display.setWeather(hasWeather ? &wx : nullptr, age != UINT32_MAX && age > config::kWeatherStaleS);
 
@@ -1104,6 +1139,7 @@ void setup() {
   }
 
   display.setHour12(settings::hour12());
+  display.setAnalog(settings::analogFace());
   applyColors();
   if (!nightKnown) backlight::fadeTo(settings::brightnessDay(), config::kNightFadeInMs);
 
@@ -1160,6 +1196,7 @@ void loop() {
     rtcLostPower = rtc.lostPower();
     lastSecond = -1;
     display.setHour12(settings::hour12());
+    display.setAnalog(settings::analogFace());
     applyColors();
     if (screenOn == Screen::Settings && !transitioning) showSettings();
     if (!transitioning && nightKnown) {

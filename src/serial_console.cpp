@@ -656,6 +656,10 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
   } else if (strcasecmp(text, "TOUCH CAL") == 0) {
     calibrateTouch(display);
     return true;
+  } else if (strcasecmp(text, "FACE ANALOG") == 0 || strcasecmp(text, "FACE DIGITAL") == 0) {
+    settings::setAnalogFace(strcasecmp(text, "FACE ANALOG") == 0);
+    Serial.printf("[SETTINGS] %s clock face (saved)\n", settings::analogFace() ? "Analog" : "Digital");
+    return true;
   } else if (strcasecmp(text, "FORMAT 12") == 0 || strcasecmp(text, "FORMAT 24") == 0) {
     settings::setHour12(strcasecmp(text, "FORMAT 12") == 0);
     Serial.printf("[SETTINGS] %s-hour clock (saved)\n", settings::hour12() ? "12" : "24");
@@ -730,7 +734,7 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | LUNAR [ON|OFF] | HOLIDAYS [ON|OFF] | PHRASE [SHOW|VI|EN|BOTH|EVERY n] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | FACE ANALOG|DIGITAL | LUNAR [ON|OFF] | HOLIDAYS [ON|OFF] | PHRASE [SHOW|VI|EN|BOTH|EVERY n] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
       "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }

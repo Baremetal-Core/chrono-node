@@ -35,6 +35,19 @@ struct DateAlt {
   char shortRest[48];
 };
 
+// The analog face's right column (UTF-8; empty strings are left out).
+struct AnalogInfo {
+  char weekday[12];
+  char day[4];
+  char month[16];      // "Nov 2026"
+  char lunar[24];      // "ÂL 8/10"
+  char lunarYear[24];  // "Bính Ngọ"
+  char holiday[32];
+  int16_t moonAngle;   // -1 to hide
+  uint8_t moonLit;     // %
+  int16_t aqi;         // -1 to hide
+};
+
 // The software update screen.
 struct UpdateView {
   char installed[24];  // "v0.13.0"
@@ -58,6 +71,7 @@ struct SettingsView {
   bool nightOn;
   char nightWindow[16];  // e.g. "22:00-06:30"
   bool hour12;
+  bool analog;
   char colorName[24];  // current colour style
   char place[32];
   int recentIndex;  // position of the current place in the recent list (-1 if not in it)
@@ -117,6 +131,11 @@ class DisplayManager {
   // for 10 s, then each one for 5 s (10 s each with `even`). 0 to stop.
   static constexpr int kMaxDateAlts = 3;
   void setDateAlts(const DateAlt* alts, int count, bool even);
+
+  // Analog face instead of the digits; its right column's content.
+  void setAnalog(bool analog);
+  bool analog() const { return analog_; }
+  void setAnalogInfo(const AnalogInfo& info);
 
   // Weather shown on the clock face's bottom line when there is no notice.
   // Pass nullptr to clear. `stale` dims it and marks it as old.
@@ -226,6 +245,21 @@ class DisplayManager {
 
   theme::Palette pal_{0, 0};
   bool palValid_ = false;
+  // Analog face: a dial on the left, the date column on the right.
+  bool analog_ = false;
+  bool analogFull_ = true;  // redraw the whole dial on the next frame
+  AnalogInfo analogInfo_ = {};
+  bool analogInfoValid_ = false;
+  uint32_t lastAnalogMs_ = 0;
+  struct Hand {
+    float ax, ay, bx, by;  // tail and tip, dial coordinates
+    float ar, br;          // half widths at the tail and the tip
+  };
+  Hand hands_[3] = {};  // as drawn: hour, minute, second
+  bool handsValid_ = false;
+  void analogFrame();
+  void drawDialRect(int16_t x0, int16_t y0, int16_t w, int16_t h, const Hand* hands);
+  void drawAnalogColumn();
   struct tm lastLocal_ = {};
   int lastYday_ = -1;
   DateAlt dateAlts_[kMaxDateAlts] = {};

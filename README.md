@@ -92,6 +92,22 @@ Dates far ahead can still change: the Earth's rotation varies unpredictably, so 
 within about a minute of midnight decades from now (the next is in December 2072) can't be
 placed on a day with certainty by anyone; official calendars are published a few years ahead.
 
+### Analog face
+
+![Analog face](docs/images/analog-face.png)
+
+Instead of the digits: a dial on the left with hour and minute hands, and a second hand in
+the accent colour that sweeps smoothly; the ring takes the colour style's gradient. The right
+column shows the weekday, the day in large digits, month and year, the lunar date, a holiday,
+and the moon and air quality. The bottom line keeps the weather, banners and notices.
+
+Choose it on the clock (Settings → *Clock face*), the web page (*Display* → *Clock face*) or
+with `FACE ANALOG` / `FACE DIGITAL`. How it works: the dial's ticks, numerals and ring are
+rendered once into a 43 KB mask (coverage and ink per pixel). Each frame (20 fps) rebuilds
+only the rectangle the hands moved through from the mask and draws anti-aliased hands over
+it: ~10 ms a frame. Like the colour effects' buffers, the mask is freed off the clock screen
+and while an HTTPS request needs the memory (the face holds still for those seconds).
+
 ### Moon phase
 
 Tonight's moon is drawn in the status bar and, with how much of it is lit (`37%`), after the
@@ -133,7 +149,7 @@ low-precision formulas (`src/moon.*`): against the JPL ephemeris the lit fractio
 - **Settings** (tap):
   - day brightness (±10 %) and night brightness (±5 %)
   - night mode on/off (the schedule itself is set with `NIGHT HH:MM HH:MM`)
-  - 12/24-hour time
+  - clock face: tap to cycle 24-hour → 12-hour → Analog
   - colour style (`<` / `>`, see Colours); the forecast cycle is switched on the web page or
     with `WEATHER CYCLE`
   - weather location, chosen from the last 5 used locations (`<` / `>`). New locations are
@@ -172,7 +188,8 @@ stays online:
 
 - **Status:** time, lunar date and days to Tết, moon phase, phrase of the day, Wi-Fi, IP, NTP sync, RTC, weather, air
   quality, current screen, uptime, memory.
-- **Display:** day/night brightness, night mode and its hours, 12/24-hour time, the lunar
+- **Display:** day/night brightness, night mode and its hours, 12/24-hour time, digital or
+  analog face, the lunar
   date, holidays, phrase of the day, forecast cycle.
 - **Time:** time zone by name (common zones are mapped to POSIX strings, **Detect** uses the
   browser's zone, or enter a custom POSIX string), NTP server, **Sync now**, and **Set clock
@@ -208,7 +225,7 @@ stays in one task.
 
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
-`PHOTO`, `LUNAR`, `HOLIDAYS`, `PHRASE`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
+`PHOTO`, `FACE`, `LUNAR`, `HOLIDAYS`, `PHRASE`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
 `OTA AUTO`.
 Diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
@@ -670,6 +687,7 @@ TIMEOUT PHOTO 12            # each photo stays up 12 s (3-120)
 TIMEOUT IDLE 30             # other screens go back to the clock after 30 s without touch (5-600)
 PREVIEW                     # show the forecast and each photo once now, even at night
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
+FACE ANALOG                 # analog clock face (FACE DIGITAL for the digits)
 LUNAR                       # today's lunar date and days to Tết (LUNAR ON|OFF on the clock)
 HOLIDAYS                    # the holidays shown on the date line (HOLIDAYS ON|OFF)
 PHRASE                      # today's phrase; PHRASE SHOW scrolls it now

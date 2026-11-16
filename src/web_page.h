@@ -53,6 +53,7 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div class="row"><label>Night mode</label><select id="non"><option value="ON">On</option><option value="OFF">Off</option></select>
 <input type="time" id="nstart"> to <input type="time" id="nend"><button id="nsave">Save</button></div>
 <div class="row"><label>Time format</label><select id="fmt"><option value="24">24-hour</option><option value="12">12-hour</option></select></div>
+<div class="row"><label>Clock face</label><select id="face"><option value="DIGITAL">Digital</option><option value="ANALOG">Analog</option></select></div>
 <div class="row"><label>Lunar date (&Acirc;m l&#7883;ch) on the clock</label><select id="lunar"><option value="ON">On</option><option value="OFF">Off</option></select></div>
 <div class="row"><label>Holidays and festivals on the clock</label><select id="hol"><option value="ON">On</option><option value="OFF">Off</option></select></div>
 <div class="row"><label>Phrase of the day</label><select id="phrlang"><option value="BOTH">Vietnamese &amp; English (by day)</option><option value="VI">Vietnamese</option><option value="EN">English</option></select><select id="phrev"><option value="0">Only here</option><option value="15">Every 15 min</option><option value="30">Every 30 min</option><option value="60">Every hour</option><option value="120">Every 2 hours</option></select><button id="phrshow">Show now</button></div>
@@ -220,7 +221,7 @@ function esc(t){return t.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;
 let S;
 async function loadSettings(){S=await(await fetch("/api/settings")).json();
 $("bday").value=S.brightness_day;$("bdayv").textContent=S.brightness_day+"%";$("bnight").value=S.brightness_night;$("bnightv").textContent=S.brightness_night+"%";
-$("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("lunar").value=S.lunar?"ON":"OFF";$("hol").value=S.holidays?"ON":"OFF";$("phrlang").value=S.phrase.lang.toUpperCase();selVal("phrev",S.phrase.every_min,"Every "+S.phrase.every_min+" min");$("otaauto").value=S.update_check?"ON":"OFF";$("cyc").value=S.forecast_cycle?"ON":"OFF";
+$("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("face").value=S.face.toUpperCase();$("lunar").value=S.lunar?"ON":"OFF";$("hol").value=S.holidays?"ON":"OFF";$("phrlang").value=S.phrase.lang.toUpperCase();selVal("phrev",S.phrase.every_min,"Every "+S.phrase.every_min+" min");$("otaauto").value=S.update_check?"ON":"OFF";$("cyc").value=S.forecast_cycle?"ON":"OFF";
 clrRender(S.colors);selVal("tofc",S.timeouts.forecast_s,S.timeouts.forecast_s+" seconds");selVal("toph",S.timeouts.photo_s,S.timeouts.photo_s+" seconds");selVal("toidle",S.timeouts.idle_s,S.timeouts.idle_s+" seconds");
 const known=TZ.find(z=>z[1]===S.timezone);$("tz").value=known?known[0]:"custom";$("tzcustom").value=S.timezone;$("tzcustomrow").style.display=known?"none":"flex";
 $("ntp").value=S.ntp_server;
@@ -286,6 +287,7 @@ $("bday").oninput=e=>$("bdayv").textContent=e.target.value+"%";$("bnight").oninp
 $("bday").onchange=e=>cmd("BRIGHT DAY "+e.target.value);$("bnight").onchange=e=>cmd("BRIGHT NIGHT "+e.target.value);
 $("non").onchange=e=>cmd("NIGHT "+e.target.value);$("nsave").onclick=()=>cmd(`NIGHT ${$("nstart").value} ${$("nend").value}`);
 $("fmt").onchange=e=>cmd("FORMAT "+e.target.value);
+$("face").onchange=e=>cmd("FACE "+e.target.value);
 $("lunar").onchange=e=>cmd("LUNAR "+e.target.value);
 $("hol").onchange=e=>cmd("HOLIDAYS "+e.target.value);
 $("phrlang").onchange=e=>cmd("PHRASE "+e.target.value);

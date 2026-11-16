@@ -43,7 +43,7 @@ ClockState clockState = {};
 // Console commands the web UI may run. Blocking/diagnostic ones (SHOT, TEST,
 // TOUCH) are excluded.
 const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BRIGHT ",
-                                "NIGHT ",       "FORMAT ",     "LUNAR ",      "HOLIDAYS ",   "PHRASE",     "WEATHER LOC ", "WEATHER CYCLE ", "WEATHER FORGET ",
+                                "NIGHT ",       "FORMAT ",     "FACE ",     "LUNAR ",      "HOLIDAYS ",   "PHRASE",     "WEATHER LOC ", "WEATHER CYCLE ", "WEATHER FORGET ",
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
                                 "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT",
@@ -192,6 +192,7 @@ void handleSettings() {
   doc["forecast_cycle"] = settings::weatherCycle();
   doc["lunar"] = settings::lunarDate();
   doc["holidays"] = settings::holidays();
+  doc["face"] = settings::analogFace() ? "analog" : "digital";
   JsonObject phr = doc["phrase"].to<JsonObject>();
   phr["lang"] = settings::phraseLang() == 0 ? "vi" : settings::phraseLang() == 1 ? "en" : "both";
   phr["every_min"] = settings::phraseEveryMinutes();

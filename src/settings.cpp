@@ -27,6 +27,7 @@ constexpr const char* kKeyRecent = "wx_recent";
 constexpr const char* kKeyHour12 = "hour12";
 constexpr const char* kKeyLunar = "lunar";
 constexpr const char* kKeyHolidays = "holidays";
+constexpr const char* kKeyFace = "face";
 constexpr const char* kKeyPhraseLang = "phr_lang";
 constexpr const char* kKeyPhraseEvery = "phr_every";
 constexpr const char* kKeyOtaAuto = "ota_auto";
@@ -91,6 +92,7 @@ int recentCount = 0;
 bool use12h = false;
 bool lunarOn = true;
 bool holidaysOn = true;
+bool analogOn = false;
 uint8_t phraseLangSet = 2;   // phrases::Lang::Both
 uint8_t phraseEverySet = 60;
 bool otaAuto = true;
@@ -161,6 +163,7 @@ void begin() {
     wxCycle = prefs.getBool(kKeyWxCycle, wxCycle);
     lunarOn = prefs.getBool(kKeyLunar, lunarOn);
     holidaysOn = prefs.getBool(kKeyHolidays, holidaysOn);
+    analogOn = prefs.getUChar(kKeyFace, 0) == 1;
     phraseLangSet = prefs.getUChar(kKeyPhraseLang, phraseLangSet);
     phraseEverySet = prefs.getUChar(kKeyPhraseEvery, phraseEverySet);
     otaAuto = prefs.getBool(kKeyOtaAuto, otaAuto);
@@ -531,6 +534,14 @@ bool setBannerSpeed(uint8_t pxPerSecond) {
 bool lunarDate() { return lunarOn; }
 
 bool holidays() { return holidaysOn; }
+
+bool analogFace() { return analogOn; }
+
+bool setAnalogFace(bool analog) {
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyFace, analog ? 1 : 0) > 0; });
+  if (ok) analogOn = analog;
+  return ok;
+}
 
 uint8_t phraseLang() { return phraseLangSet; }
 
