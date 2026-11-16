@@ -1556,12 +1556,28 @@ void DisplayManager::drawMeridiem() {
   s.deleteSprite();
 }
 
+constexpr int16_t kCalTodayW = 58, kCalTodayH = 22;  // the calendar's Today button
+
 void DisplayManager::drawScreenTitle(const char* title) {
   title_ = title;
   drawLine(0, 28, font_small, [&](TFT_eSprite& s) {
     s.setTextDatum(ML_DATUM);
     s.setTextColor(pal_.top, C->bg);
     s.drawString(title, 10, 15);
+    if (mode_ == Mode::Calendar) {
+      // Today: lit while another month shows.
+      calTodayX_ = 10 + s.textWidth(title) + 12;
+      const int16_t ty = 15 - kCalTodayH / 2;
+      if (calView_.away) {
+        s.fillSmoothRoundRect(calTodayX_, ty, kCalTodayW, kCalTodayH, kCalTodayH / 2, pal_.top, C->bg);
+      } else {
+        s.drawSmoothRoundRect(calTodayX_, ty, kCalTodayH / 2, kCalTodayH / 2 - 1, kCalTodayW, kCalTodayH,
+                              C->faint, C->bg);
+      }
+      s.setTextDatum(MC_DATUM);
+      s.setTextColor(calView_.away ? C->bg : C->dim, calView_.away ? pal_.top : C->bg);
+      s.drawString("Today", calTodayX_ + kCalTodayW / 2, 15);
+    }
     s.setTextDatum(MR_DATUM);
     s.setTextColor(C->text, C->bg);
     s.drawString(nowText_, kScreenW - 10, 15);
@@ -1636,9 +1652,12 @@ void DisplayManager::drawWeatherHeader() {
 }
 
 // The calendar: weekday names under the title bar, then the weeks.
-constexpr int16_t kCalHeadTop = 30, kCalHeadH = 20, kCalGridTop = kCalHeadTop + kCalHeadH;
-constexpr int16_t kCalGridH = kScreenH - kCalGridTop - 2;
-constexpr int16_t kCalCellW = 45, kCalX0 = (kScreenW - 7 * kCalCellW) / 2;
+// The week numbers in a narrow column on the left.
+constexpr int16_t kCalHeadTop = 29, kCalHeadH = 17, kCalGridTop = kCalHeadTop + kCalHeadH;
+constexpr int16_t kCalGridH = kScreenH - kCalGridTop - 1;
+constexpr int16_t kCalWeekW = 24, kCalCellW = 42;
+constexpr int16_t kCalX0 = (kScreenW - kCalWeekW - 7 * kCalCellW) / 2 + kCalWeekW;
+
 constexpr int16_t kCalCardX = 8, kCalCardW = kScreenW - 2 * kCalCardX;
 
 void DisplayManager::showCalendarScreen(const CalendarView& v) {
@@ -1649,11 +1668,13 @@ void DisplayManager::showCalendarScreen(const CalendarView& v) {
       s.setTextDatum(MC_DATUM);
       for (int c = 0; c < 7; ++c) {
         s.setTextColor(c == 6 ? C->error : C->dim, C->bg);
-        s.drawString(kDays[c], kCalX0 + c * kCalCellW + kCalCellW / 2, 10 - y0);
+        s.drawString(kDays[c], kCalX0 + c * kCalCellW + kCalCellW / 2, 8 - y0);
       }
+      s.setTextColor(theme::mix(C->faint, C->dim, 128), C->bg);
+      s.drawString("Wk", kCalX0 - kCalWeekW / 2, 8 - y0);
     });
   }
-  calView_ = v;
+  calView_ = v;  // (before the title: its Today button reads it)
   strlcpy(calTitle_, v.title, sizeof(calTitle_));
   drawScreenTitle(calTitle_);
   const int rows = constrain(v.rows, 4, 6);
@@ -1670,6 +1691,8 @@ void DisplayManager::showCalendarScreen(const CalendarView& v) {
     const int16_t y = kCalGridTop + row * rowH;
     return calCardY_ >= 0 && y < calCardY_ + calCardH_ + 2 && y + rowH > calCardY_ - 2;
   };
+  // The day (digits ~15 px high) and the lunar date (~8 px) 4 px apart, centred in the row.
+  const int16_t pad = (rowH - 27) / 2, dayBase = pad + 15, lunarBase = dayBase + 12;
   drawBlock(kCalGridTop, kCalGridH, font_date, [&](TFT_eSprite& s, int16_t y0) {
     s.setTextDatum(MC_DATUM);
     for (int pass = 0; pass < 2; ++pass) {  // the days in font_date, then the lunar dates in font_tiny
@@ -1686,13 +1709,15 @@ void DisplayManager::showCalendarScreen(const CalendarView& v) {
         const bool today = c.flags & CalendarCell::kToday;
         const uint16_t bg = today ? pal_.top : C->bg;
         if (pass == 0) {
+          // Today's box and the chosen day's ring: around the two numbers.
+          const int16_t by = top + max(0, pad - 3), bh = min<int16_t>(rowH, 33);
           if (today) {
-            s.fillSmoothRoundRect(cx - 19, top + 2, 38, rowH - 4, 9, pal_.top, C->bg);
+            s.fillSmoothRoundRect(cx - 19, by, 38, bh, 9, pal_.top, C->bg);
           } else if (i == v.selected) {
-            s.drawSmoothRoundRect(cx - 19, top + 2, 9, 8, 38, rowH - 4, pal_.top, C->bg);
+            s.drawSmoothRoundRect(cx - 19, by, 9, 8, 38, bh, pal_.top, C->bg);
           }
           if (in && (c.flags & CalendarCell::kHoliday)) {
-            s.fillSmoothCircle(cx + 14, top + 8, 2, today ? C->bg : C->warn, bg);
+            s.fillSmoothCircle(cx + 14, top + pad + 3, 2, today ? C->bg : C->warn, bg);
           }
           char n[4];
           snprintf(n, sizeof(n), "%u", c.day);
@@ -1701,7 +1726,8 @@ void DisplayManager::showCalendarScreen(const CalendarView& v) {
                                : (c.flags & CalendarCell::kHoliday) || i % 7 == 6      ? C->error
                                                                                        : C->text;
           s.setTextColor(ink, bg);
-          s.drawString(n, cx, top + rowH * 2 / 5);
+          s.setTextDatum(C_BASELINE);  // by the baselines: a clear gap even in 6-week months
+          s.drawString(n, cx, top + dayBase);
         } else {
           char n[8];
           const bool first = c.flags & CalendarCell::kLunarFirst;
@@ -1715,7 +1741,13 @@ void DisplayManager::showCalendarScreen(const CalendarView& v) {
                                : first ? pal_.top
                                        : C->dim;
           s.setTextColor(ink, bg);
-          s.drawString(n, cx, top + rowH * 4 / 5);
+          s.setTextDatum(C_BASELINE);
+          s.drawString(n, cx, top + lunarBase);
+          if (i % 7 == 0) {  // the week number
+            snprintf(n, sizeof(n), "%u", v.weeks[i / 7]);
+            s.setTextColor(i / 7 == v.todayRow ? pal_.top : theme::mix(C->faint, C->dim, 128), C->bg);
+            s.drawString(n, kCalX0 - kCalWeekW / 2, top + (dayBase + lunarBase) / 2 - 2);
+          }
         }
       }
     }
@@ -1735,7 +1767,7 @@ void DisplayManager::showCalendarScreen(const CalendarView& v) {
 
 int DisplayManager::calendarHitTest(int16_t x, int16_t y) const {
   if (mode_ != Mode::Calendar) return 0;
-  if (y < kCalHeadTop) return kCalendarTitle;
+  if (y < kCalHeadTop) return kCalendarToday;  // the button, or anywhere on the title
   if (calCardY_ >= 0 && y >= calCardY_ && y < calCardY_ + calCardH_) return 0;
   const int rows = constrain(calView_.rows, 4, 6);
   const int16_t rowH = kCalGridH / rows;

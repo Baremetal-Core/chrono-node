@@ -121,14 +121,15 @@ low-precision formulas (`src/moon.*`): against the JPL ephemeris the lit fractio
 ### Calendar
 
 The **Calendar** screen (after Home in the swipe order) shows a month from
-Monday to Sunday, with the lunar date small under each day:
+Monday to Sunday, with the lunar date small under each day and the ISO week number of each
+week on the left (this week's in the accent colour):
 
 - **Today** is filled in the accent colour; Sundays and holidays are red, and holidays
   (including the first three days of Tết) have an amber dot.
 - The first day of each lunar month reads *day/month* in the accent colour (`1/10`), so the
   lunar months are easy to follow; days of the months around it are dimmed.
-- **Swipe up** for the next month and **down** for the previous one; **tap the title** to come
-  back to this month. It always opens on this month and moves to the next day at midnight.
+- **Swipe up** for the next month and **down** for the previous one; **Today** (next to the
+  month, lit while another month shows) comes back to this month. It always opens on this month and moves to the next day at midnight.
 - **Tap a day** for a card with its date in full, the lunar date with the year's name
   (*Âm lịch: 1 tháng 1, năm Đinh Mùi*) and its holiday. Tap it again (or anywhere else) to
   close it.

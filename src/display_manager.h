@@ -74,6 +74,9 @@ struct CalendarView {
   char title[24];  // "November 2026"
   uint8_t rows;    // weeks shown
   CalendarCell cells[42];
+  uint8_t weeks[6];  // ISO week numbers of the rows
+  int8_t todayRow;   // the row with today, -1: another month
+  bool away;         // another month than this one (the Today button lights up)
   int8_t selected;   // the cell whose card is open, -1: none
   char card[3][64];  // the card: date, lunar date, holiday ("" when none)
 };
@@ -175,8 +178,8 @@ class DisplayManager {
   int homeHitTest(int16_t x, int16_t y) const;  // tile index, or -1
   void showCalendarScreen(const CalendarView& v);
   // A day of the shown month (1-31), 0 elsewhere (other months' days, the card),
-  // kCalendarTitle for the title bar.
-  static constexpr int kCalendarTitle = -2;
+  // kCalendarToday for the Today button (or the title).
+  static constexpr int kCalendarToday = -2;
   int calendarHitTest(int16_t x, int16_t y) const;
 
   // Analog face instead of the digits; its right column's content.
@@ -295,6 +298,7 @@ class DisplayManager {
   CalendarView calView_ = {};
   char calTitle_[24] = "";
   int16_t calCardY_ = -1, calCardH_ = 0;  // the open card's place
+  int16_t calTodayX_ = 0;                 // the Today button's left edge
   HomeView homeView_ = {};
   bool homeValid_ = false;
   // Switch knobs: 0 left (off) to 1 right (on), sliding to their new place.

@@ -587,6 +587,19 @@ int weekday(int y, int m, int d) {  // 0 Sunday (Sakamoto)
   return (y + y / 4 - y / 100 + y / 400 + t[m - 1] + d) % 7;
 }
 
+// ISO 8601 week number (weeks from Monday; week 1 holds the year's first Thursday).
+int isoWeek(int y, int m, int d) {
+  auto weeksIn = [](int year) {
+    auto p = [](int yy) { return (yy + yy / 4 - yy / 100 + yy / 400) % 7; };
+    return p(year) == 4 || p(year - 1) == 3 ? 53 : 52;
+  };
+  int doy = d;
+  for (int k = 1; k < m; ++k) doy += daysInMonth(y, k);
+  const int w = (doy - (weekday(y, m, d) + 6) % 7 + 9) / 7;
+  if (w < 1) return weeksIn(y - 1);
+  return w > weeksIn(y) ? 1 : w;
+}
+
 void showCalendar() {
   static const char* const kMonths[] = {"January", "February", "March",     "April",   "May",      "June",
                                         "July",    "August",   "September", "October", "November", "December"};
@@ -607,6 +620,8 @@ void showCalendar() {
   const int py = calMonth == 1 ? calYear - 1 : calYear, pm = calMonth == 1 ? 12 : calMonth - 1;
   const int prevDays = daysInMonth(py, pm);
   v.selected = -1;
+  v.todayRow = -1;
+  v.away = calYear != ty || calMonth != tmon;
   for (int i = 0; i < v.rows * 7; ++i) {
     int y = calYear, m = calMonth, d = i - first + 1;
     const bool in = d >= 1 && d <= days;
@@ -622,6 +637,8 @@ void showCalendar() {
     const lunar::Date l = lunar::fromSolar(d, m, y);
     const bool tet = l.month == 1 && !l.leap && l.day <= 3;
     CalendarCell& c = v.cells[i];
+    if (i % 7 == 0) v.weeks[i / 7] = isoWeek(y, m, d);
+    if (y == ty && m == tmon && d == td) v.todayRow = i / 7;
     c.day = d;
     c.lunarDay = l.day;
     c.lunarMonth = l.month;
@@ -911,7 +928,7 @@ void handleTouch() {
       if (screenOn == Screen::Settings) applySettingsAction(display.settingsHitTest(ev.at.x, ev.at.y));
       if (screenOn == Screen::Calendar) {
         const int hit = display.calendarHitTest(ev.at.x, ev.at.y);
-        if (hit == DisplayManager::kCalendarTitle) {
+        if (hit == DisplayManager::kCalendarToday) {
           calYear = calMonth = 0;  // back to this month
           calSelected = 0;
         } else {
