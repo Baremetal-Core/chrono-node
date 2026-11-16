@@ -118,10 +118,19 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - An I2C environment sensor (SHT4x/BME280/SCD41) on the existing GPIO27/22 bus next to the DS3231.
 - Optional I2C light sensor (e.g. BH1750) on the same bus for auto-brightness (the CYD LDR is unusable).
 - Indoor climate display and history graph. MQTT with Home Assistant auto-discovery.
+- Home Assistant control ✅: a Home screen with up to 6 devices (lights, switches, fans,
+  helpers, AC, TV, scenes, scripts) over the REST API with a long-lived token; set up and
+  switched from the web page too.
 
 ## M15 – Extras
 - Lunar calendar (Âm lịch) ✅: the lunar date takes turns with the date; Mùng 1, Rằm, Tết
   and a Tết countdown.
+- Holidays and festivals ✅: 9 solar and 7 lunar days on the date line.
+- Time on every screen ✅: title bars, forecast header, a pill on photos.
+- Analog face ✅: dial with a sweeping second hand, date column; Mix takes turns with the
+  digits every N minutes; Settings / web / `FACE`.
+- Phrases of the day ✅: a Vietnamese and an English proverb in turn above the time.
+- Moon phase ✅: status bar, forecast screen, web status.
 - Air quality ✅: US AQI and PM2.5 from Open-Meteo, coloured by category (status bar,
   forecast screen, web status).
 - Update notice ✅: a daily check for a new release; a scrolling note every hour and a

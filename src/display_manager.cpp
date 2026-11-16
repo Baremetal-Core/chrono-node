@@ -1,6 +1,8 @@
 #include "display_manager.h"
 
 #include "mem_lease.h"
+#include "moon.h"
+#include <math.h>
 
 #include <Arduino.h>
 #include <LittleFS.h>
@@ -60,8 +62,15 @@ constexpr int16_t kMeridiemW = 30;  // "AM"/"PM" before the bar in 12-hour mode
 constexpr int16_t kBarY = kRowY - kBarH / 2;
 
 // Date and notice lines
-constexpr int16_t kDateTop = kRowY + 18;
-constexpr int16_t kDateH = 30;
+// The date line starts just under the seconds and leaves room above the capitals
+// for stacked Vietnamese accents (Ỗ, Ổ, Ằ reach 27 px above the baseline).
+constexpr int16_t kDateTop = kRowY + 14;
+constexpr int16_t kDateH = 34;
+constexpr int16_t kDateBaseline = 28;
+constexpr int16_t kPhraseTop = kStatusH;  // the phrase line, between the status bar and the time
+constexpr int16_t kPhraseH = kTimeTop - kStatusH - 2;
+constexpr uint32_t kPhraseMinMs = 4000;   // each part shows at least this long,
+constexpr uint32_t kPhraseCharMs = 70;    // plus this per character
 constexpr int16_t kNoticeTop = 212;
 constexpr int16_t kNoticeH = 24;
 
@@ -133,6 +142,53 @@ constexpr int kGlowRadius = 4;
 constexpr uint8_t kGlowStrength = 150;  // 0-255
 uint8_t* glowA = nullptr;  // two kDigitW * kDigitH buffers, only while glow is on
 uint8_t* glowB = nullptr;
+
+// Analog face. The dial's static parts (ring, ticks, numerals) are rendered
+// once into a mask, one byte per pixel: coverage (high 4 bits) and which ink
+// (low bits: 0 minute ticks, 1 hour ticks and numerals, 2 the ring). Frames
+// rebuild only the rectangle the hands moved through, from the mask, in a
+// band sprite. Both are allocated only while the analog face shows (see
+// syncFxBuffers), like the animation buffers.
+constexpr int16_t kDialD = 208;  // the dial's square, at the screen's top left
+constexpr int16_t kDialX = 2, kDialY = 0;
+constexpr int16_t kDialC = kDialD / 2;  // centre, dial coordinates
+constexpr int16_t kDialR = 100;
+constexpr int16_t kDialBandH = 32;
+constexpr int16_t kColX = kDialX + kDialD + 4;  // the date column
+constexpr int16_t kColW = kScreenW - kColX;
+constexpr uint32_t kAnalogFrameMs = 50;  // 20 fps for the sweeping second hand
+// The mask in row chunks: after HTTPS the heap rarely has one 43 KB block
+// free again, but always has eight 5.4 KB ones.
+constexpr int16_t kDialChunkRows = 26, kDialChunks = kDialD / kDialChunkRows;
+static_assert(kDialChunks * kDialChunkRows == kDialD, "whole chunks");
+uint8_t* dialChunks[kDialChunks] = {};
+bool dialMask = false;  // all chunks allocated
+bool dialMaskBuilt = false;
+uint32_t dialRetryMs = 0;  // the last try to allocate the dial's memory
+bool dialMissLogged = false;
+inline uint8_t* dialRow(int16_t y) {
+  return dialChunks[y / kDialChunkRows] + (y % kDialChunkRows) * kDialD;
+}
+void freeDialMask() {
+  for (uint8_t*& c : dialChunks) {
+    free(c);
+    c = nullptr;
+  }
+  dialMask = false;
+}
+bool allocDialMask() {
+  for (uint8_t*& c : dialChunks) {
+    c = static_cast<uint8_t*>(malloc(kDialChunkRows * kDialD));
+    if (!c) {
+      freeDialMask();
+      return false;
+    }
+  }
+  dialMask = true;
+  return true;
+}
+TFT_eSprite dialBand(&tft);
+bool dialBandOk = false;
 
 // Repaint intervals: a colour frame (time row, bar and date, re-tinting kept
 // glyph shapes) takes ~30 ms (~46 ms with glow), so colour styles run at
@@ -277,22 +333,28 @@ bool drawLine(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
 // runs. `draw(s, y0)` draws the whole block shifted up by y0; the sprite clips.
 constexpr int16_t kBandH = 30;
 template <typename Fn>
-bool drawBlock(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
+bool drawBlockAt(int16_t x, int16_t top, int16_t width, int16_t height, const uint8_t* font,
+                 Fn&& draw) {
   const int16_t bands = (height + kBandH - 1) / kBandH;
   const int16_t bandH = (height + bands - 1) / bands;
   TFT_eSprite band(&tft);
   band.setColorDepth(16);
-  if (!band.createSprite(kScreenW, bandH)) return false;
+  if (!band.createSprite(width, bandH)) return false;
   for (int16_t y0 = 0; y0 < height; y0 += bandH) {
     if (ESP.getMaxAllocHeap() < kFontHeapBytes) return false;  // the sprite frees itself
     band.fillSprite(C->bg);
     band.loadFont(font);
     draw(band, y0);
     band.unloadFont();
-    band.pushSprite(0, top + y0, 0, 0, kScreenW, min<int16_t>(bandH, height - y0));
+    band.pushSprite(x, top + y0, 0, 0, width, min<int16_t>(bandH, height - y0));
   }
   band.deleteSprite();
   return true;
+}
+
+template <typename Fn>
+bool drawBlock(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
+  return drawBlockAt(0, top, kScreenW, height, font, draw);
 }
 
 void drawWifiIcon(TFT_eSprite& s, int16_t cx, int16_t baseY, uint8_t bars, uint16_t on,
@@ -314,6 +376,33 @@ uint16_t aqiColor(int aqi) {
   if (aqi <= 200) return theme::rgb(255, 40, 40);
   if (aqi <= 300) return theme::rgb(190, 110, 255);
   return theme::rgb(220, 40, 90);
+}
+
+// The moon at phase `angle` (0 new, 90 first quarter, 180 full, 270 last
+// quarter), lit from the right while waxing, with smooth edges. The dark part
+// keeps a faint "earthshine" so the disc stays visible.
+void drawMoon(TFT_eSprite& s, int16_t cx, int16_t cy, float r, float angle, uint16_t lit,
+              uint16_t bg) {
+  const uint16_t dark = theme::mix(bg, lit, 50);
+  const float t = cosf(angle * DEG_TO_RAD);
+  const bool waxing = angle < 180;
+  const int16_t n = static_cast<int16_t>(r) + 1;
+  for (int16_t dy = -n; dy <= n; ++dy) {
+    const float w = sqrtf(max(r * r - dy * dy, 0.0f));
+    const float term = w * t;  // the terminator's x on this row
+    for (int16_t dx = -n; dx <= n; ++dx) {
+      const float disc = constrain(r + 0.5f - sqrtf(dx * dx + dy * dy), 0.0f, 1.0f);
+      if (disc <= 0) continue;
+      const float side = waxing ? dx - term : -dx - term;
+      const uint16_t c = theme::mix(dark, lit, static_cast<uint8_t>(constrain(side + 0.5f, 0.0f, 1.0f) * 255));
+      s.drawPixel(cx + dx, cy + dy, theme::mix(bg, c, static_cast<uint8_t>(disc * 255)));
+    }
+  }
+}
+
+uint16_t moonColor(bool night) {
+  const uint16_t c = theme::rgb(255, 236, 170);
+  return night ? theme::mix(theme::kNightColors.bg, c, 150) : c;
 }
 
 void drawGlyphString(TFT_eSprite& s, const char* text, int16_t cellX, int16_t cellW, int16_t y) {
@@ -362,6 +451,11 @@ bool DisplayManager::begin() {
 void DisplayManager::enterMode(Mode mode) {
   if (mode_ == mode) return;
   mode_ = mode;
+  title_ = nullptr;
+  if (photoCorner_ && mode != Mode::Photo) {
+    free(photoCorner_);
+    photoCorner_ = nullptr;
+  }
   syncFxBuffers();
   tft.fillScreen(C->bg);
   for (int i = 0; i < 4; ++i) {
@@ -470,6 +564,13 @@ void DisplayManager::setPalette(const theme::Palette& palette) {
   pal_ = palette;
   palValid_ = true;
   if (!theme::styleAnimated(colors_.style) || night_) refreshField(millis());
+  if (analog_) {
+    // The dial's ring and hands use the palette; the column only when it
+    // changes by the minute (animated styles keep its first colours).
+    analogFull_ = true;
+    if (!firstFrame && (night_ || !theme::styleAnimated(colors_.style))) drawAnalogColumn();
+    return;
+  }
   if (firstFrame) return;  // showTime draws everything on the first frame
   // Re-tint everything that uses the gradient colours.
   for (int i = 0; i < 4; ++i) {
@@ -485,6 +586,20 @@ void DisplayManager::setPalette(const theme::Palette& palette) {
 void DisplayManager::showTime(const struct tm& local) {
   if (!spritesOk_) return;
   if (mode_ == Mode::Test && (int32_t)(millis() - testUntilMs_) < 0) return;
+  if (analog_) {
+    const bool first = mode_ != Mode::Clock;
+    enterMode(Mode::Clock);
+    const uint32_t now = millis();
+    if (first || local.tm_sec != lastLocal_.tm_sec) secondStartMs_ = now;
+    lastLocal_ = local;
+    setPalette(basePalette(local, now));
+    if (first) {
+      analogFull_ = true;
+      drawAnalogColumn();
+      drawNotice();
+    }
+    return;
+  }
   const bool firstFrame = mode_ != Mode::Clock;
   enterMode(Mode::Clock);
   const uint32_t now = millis();
@@ -552,6 +667,7 @@ void DisplayManager::showTime(const struct tm& local) {
   if (firstFrame) {
     drawColon();
     drawStatusBar();
+    drawPhraseLine();
     drawNotice();
   }
 }
@@ -562,7 +678,9 @@ void DisplayManager::tick() {
     // repaint the time with the effects when the memory is back.
     syncFxBuffers();
     lastPhaseMs_ = millis();  // colours carry on from where they held
-    if (!fxLeased_ && mode_ == Mode::Clock && palValid_) {
+    if (analog_) {
+      analogFull_ = true;
+    } else if (!fxLeased_ && mode_ == Mode::Clock && palValid_) {
       for (int i = 0; i < 4; ++i) {
         if (!bigRoll_[i].active) drawBigDigit(i, 1.0f);
       }
@@ -575,6 +693,15 @@ void DisplayManager::tick() {
   const uint32_t now = millis();
   if (now - lastFrameMs_ < kFrameMs) return;
   lastFrameMs_ = now;
+  if (analog_) {
+    if (!fxLeased_ && (!dialMask || !dialBandOk) && now - dialRetryMs >= 1000) syncFxBuffers();
+    if (!fxLeased_ && now - lastAnalogMs_ >= kAnalogFrameMs) {
+      lastAnalogMs_ = now;
+      analogFrame();
+    }
+    if (bannerActive_) drawBanner(now);
+    return;
+  }
 
   // Animated styles and effects repaint the time about 15 times a second.
   const bool animatedStyle = !night_ && theme::styleAnimated(colors_.style);
@@ -611,6 +738,19 @@ void DisplayManager::tick() {
   drawBar(false, false);  // the bar fills smoothly: redrawn whenever it grows a pixel
 
   if (bannerActive_) drawBanner(now);
+
+  // The next phrase, or the next part of a long one.
+  if (phraseCount_ && !fxLeased_ && (int32_t)(now - phraseNextMs_) >= 0) {
+    if (phraseCount_ == 1 && phraseParts_ == 1) {
+      phraseNextMs_ = now + kPhraseMinMs;  // nothing else to show
+    } else {
+      if (++phrasePart_ >= phraseParts_) {
+        phrasePart_ = 0;
+        phraseIdx_ = (phraseIdx_ + 1) % phraseCount_;
+      }
+      drawPhraseLine();
+    }
+  }
 
   for (int i = 0; i < 4; ++i) {
     Roll& r = bigRoll_[i];
@@ -763,7 +903,7 @@ void DisplayManager::drawDate(const struct tm& local) {
   auto layout = [&](TFT_eSprite& s, uint16_t weekdayColor, uint16_t restColor, uint16_t bg) {
     // Long weekday/month combinations (e.g. WEDNESDAY, September) don't fit:
     // shorten the month first, then the weekday.
-    char weekday[24];
+    char weekday[sizeof(DateAlt::head)];
     char rest[48];
     int16_t w1 = 0;
     if (dateView_ > 0) {
@@ -781,18 +921,18 @@ void DisplayManager::drawDate(const struct tm& local) {
       if (w1 + s.textWidth(rest) <= kScreenW - 16) break;
     }
     const int16_t x = (kScreenW - w1 - s.textWidth(rest)) / 2;
-    s.setTextDatum(ML_DATUM);
+    s.setTextDatum(L_BASELINE);
     s.setTextColor(weekdayColor, bg);
-    s.drawString(weekday, x, kDateH / 2);
+    s.drawString(weekday, x, kDateBaseline);
     s.setTextColor(restColor, bg);
-    s.drawString(rest, x + w1, kDateH / 2);
+    s.drawString(rest, x + w1, kDateBaseline);
   };
   if (night_) {
     drawLine(kDateTop, kDateH, font_face,
              [&](TFT_eSprite& s) { layout(s, pal_.top, C->date, C->bg); });
     return;
   }
-  const int16_t y0 = kDateH / 2 - 10, y1 = kDateH / 2 + 9;  // gradient rows
+  const int16_t y0 = kDateBaseline - 19, y1 = kDateBaseline;  // gradient rows: the capitals
   const int32_t key = (local.tm_year * 400 + local.tm_yday) * 4 + max(dateView_, 0);
   if (!fxCache || !dateOk || key != dateCovKey) {
     // Lay the text out in a temporary full-height sprite.
@@ -838,7 +978,9 @@ void DisplayManager::syncFxBuffers() {
   // then waits for the next sync instead of overlapping our allocations.
   mem_lease::setReleased(false);
   fxLeased_ = mem_lease::requested();
-  const bool clock = mode_ == Mode::Clock && !fxLeased_;
+  const bool face = mode_ == Mode::Clock && !fxLeased_;
+  const bool clock = face && !analog_;  // the digital face's buffers
+  const bool dial = face && analog_;
   const bool fx = clock && effectsOn();
   const bool animated = clock && !night_ && theme::styleAnimated(colors_.style);
   const bool cache = animated || (fx && (colors_.effects & (theme::kFxShine | theme::kFxGlow)));
@@ -866,7 +1008,32 @@ void DisplayManager::syncFxBuffers() {
     free(glowA);
     glowA = glowB = nullptr;
   }
-  mem_lease::setReleased(!fxCache && !dateOk && !glowA);
+  if (dial && !dialMask) {
+    allocDialMask();
+    dialMaskBuilt = false;
+  } else if (!dial && dialMask) {
+    freeDialMask();
+  }
+  if (dial && !dialBandOk) {
+    dialBand.setColorDepth(16);
+    dialBandOk = dialBand.createSprite(kDialD, kDialBandH) != nullptr;
+  } else if (!dial && dialBandOk) {
+    dialBand.deleteSprite();
+    dialBandOk = false;
+  }
+  if (dial && dialMask && dialBandOk) dialMissLogged = false;
+  if (dial && (!dialMask || !dialBandOk)) {
+    // tick() tries again every second.
+    dialRetryMs = millis();
+    if (!dialMissLogged) Serial.printf("[DISPLAY] No memory for the analog dial yet (free %u, largest block %u)\n",
+                  heap_caps_get_free_size(MALLOC_CAP_8BIT), heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    dialMissLogged = true;
+  }
+  if (!dial) {
+    analogFull_ = true;  // the dial is drawn whole when it's back
+    handsValid_ = false;
+  }
+  mem_lease::setReleased(!fxCache && !dateOk && !glowA && !dialMask && !dialBandOk);
 }
 
 void DisplayManager::setStatus(const StatusInfo& status) {
@@ -877,7 +1044,7 @@ void DisplayManager::setStatus(const StatusInfo& status) {
 }
 
 void DisplayManager::drawStatusBar() {
-  if (mode_ != Mode::Clock || !statusValid_) return;
+  if (mode_ != Mode::Clock || !statusValid_ || analog_) return;
   const StatusInfo& st = status_;
   statusValid_ = drawLine(0, kStatusH, font_small, [&](TFT_eSprite& s) {
     uint16_t iconColor = C->dim;
@@ -927,6 +1094,298 @@ void DisplayManager::drawStatusBar() {
     }
     s.setTextColor(st.ntpWarn ? C->warn : C->dim, C->bg);
     s.drawString(st.ntpText, x, kStatusBaseline);
+    if (st.moonAngle >= 0) {
+      x -= s.textWidth(st.ntpText) + 16;
+      drawMoon(s, x, kStatusBaseline - 5, 6.5f, st.moonAngle, moonColor(night_), C->bg);
+    }
+  });
+}
+
+namespace {
+
+// Renders the dial's ticks, numerals and ring into dialMask, band by band:
+// each ink is drawn in its own pure colour on black, so a pixel's strongest
+// channel says which ink it is and how much it covers.
+void buildDialMask() {
+  constexpr uint16_t kInkMinute = TFT_BLUE, kInkHour = TFT_GREEN, kInkRing = TFT_RED;
+  dialBand.loadFont(font_date);
+  for (int16_t y0 = 0; y0 < kDialD; y0 += kDialBandH) {
+    TFT_eSprite& s = dialBand;
+    s.fillSprite(TFT_BLACK);
+    const int16_t cy = kDialC - y0;
+    s.fillSmoothCircle(kDialC, cy, kDialR, kInkRing, TFT_BLACK);
+    s.fillSmoothCircle(kDialC, cy, kDialR - 2, TFT_BLACK, kInkRing);
+    for (int i = 0; i < 60; ++i) {
+      const float a = i * PI / 30, sx = sinf(a), cx = cosf(a);
+      const bool hour = i % 5 == 0;
+      const float r0 = kDialR - (hour ? 15 : 9), r1 = kDialR - 5;
+      const float w = hour ? 1.7f : 0.7f;
+      s.drawWedgeLine(kDialC + r0 * sx, cy - r0 * cx, kDialC + r1 * sx, cy - r1 * cx, w, w,
+                      hour ? kInkHour : kInkMinute, TFT_BLACK);
+    }
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(kInkHour, TFT_BLACK);
+    for (int h = 1; h <= 12; ++h) {
+      const float a = h * PI / 6;
+      char n[4];
+      snprintf(n, sizeof(n), "%d", h);
+      s.drawString(n, kDialC + (kDialR - 30) * sinf(a), cy - (kDialR - 30) * cosf(a) + 1);
+    }
+    const uint16_t* px = static_cast<uint16_t*>(s.getPointer());
+    for (int16_t r = 0; r < kDialBandH && y0 + r < kDialD; ++r) {
+      for (int16_t c = 0; c < kDialD; ++c) {
+        const uint16_t v = swap16(px[r * kDialD + c]);
+        const int red = (v >> 11) * 255 / 31, green = ((v >> 5) & 0x3F) * 255 / 63,
+                  blue = (v & 0x1F) * 255 / 31;
+        const int top = max(red, max(green, blue));
+        const uint8_t ink = top == red ? 2 : top == green ? 1 : 0;
+        dialRow(y0 + r)[c] = static_cast<uint8_t>(((top * 15 + 127) / 255) << 4 | ink);
+      }
+    }
+  }
+  dialBand.unloadFont();
+  dialMaskBuilt = true;
+}
+
+}  // namespace
+
+void DisplayManager::setPhrases(const char* const* texts, int count) {
+  count = constrain(count, 0, 2);
+  bool same = count == phraseCount_;
+  for (int i = 0; i < count && same; ++i) same = texts[i] == phrases_[i];
+  if (same) return;
+  for (int i = 0; i < count; ++i) phrases_[i] = texts[i];
+  phraseCount_ = count;
+  phraseIdx_ = phrasePart_ = 0;
+  drawPhraseLine();
+}
+
+// The phrase line above the digits: the current phrase, or the current part
+// of one too long for the line (split at spaces, with "…" where it continues).
+void DisplayManager::drawPhraseLine() {
+  if (mode_ != Mode::Clock || analog_) return;
+  drawLine(kPhraseTop, kPhraseH, font_small, [&](TFT_eSprite& s) {
+    if (!phraseCount_) return;
+    const char* text = phrases_[phraseIdx_ % phraseCount_];
+    constexpr int kMaxParts = 6;
+    const char* starts[kMaxParts];
+    int lens[kMaxParts];
+    int parts = 0;
+    const int16_t maxW = kScreenW - 40;  // room for the quote marks and "…"
+    char buf[160];
+    // Greedy split at spaces into parts no wider than `limit`.
+    auto split = [&](int16_t limit) {
+      parts = 0;
+      const char* p = text;
+      while (*p && parts < kMaxParts) {
+        const char* start = p;
+        const char* fit = nullptr;
+        for (const char* q = p;;) {
+          const char* space = strchr(q, ' ');
+          const char* end = space ? space : q + strlen(q);
+          const int len = min<int>(end - start, sizeof(buf) - 1);
+          memcpy(buf, start, len);
+          buf[len] = '\0';
+          if (fit && s.textWidth(buf) > limit) break;
+          fit = end;
+          if (!space) break;
+          q = space + 1;
+        }
+        starts[parts] = start;
+        lens[parts++] = fit - start;
+        p = fit;
+        while (*p == ' ') ++p;
+      }
+    };
+    split(maxW);
+    if (parts > 1) {
+      // Balance the parts: the narrowest limit that still needs no more of them.
+      const int n = parts;
+      for (int16_t limit = s.textWidth(text) / n; limit < maxW; limit += 6) {
+        split(limit);
+        if (parts <= n) break;
+      }
+      if (parts > n) split(maxW);
+    }
+    phraseParts_ = max(parts, 1);
+    const int part = min(phrasePart_, phraseParts_ - 1);
+    const bool last = part == phraseParts_ - 1;
+    snprintf(buf, sizeof(buf), "%s%.*s%s", part == 0 ? "\xE2\x80\x9C" : "\xE2\x80\xA6", lens[part],
+             starts[part], last ? "\xE2\x80\x9D" : "\xE2\x80\xA6");
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->dim, C->bg);
+    s.drawString(buf, kScreenW / 2, kPhraseH / 2 + 1);
+    int chars = 0;
+    for (const char* c = buf; *c; ++c) chars += (*c & 0xC0) != 0x80;  // UTF-8 code points
+    phraseNextMs_ = millis() + kPhraseMinMs + chars * kPhraseCharMs;
+  });
+}
+
+void DisplayManager::setAnalog(bool analog) {
+  if (analog == analog_) return;
+  analog_ = analog;
+  if (mode_ == Mode::Clock) mode_ = Mode::None;  // the next showTime() draws the whole face
+}
+
+void DisplayManager::setAnalogInfo(const AnalogInfo& info) {
+  if (analogInfoValid_ && memcmp(&info, &analogInfo_, sizeof(AnalogInfo)) == 0) return;
+  analogInfo_ = info;
+  analogInfoValid_ = true;
+  drawAnalogColumn();
+}
+
+// One frame of the analog face: the hands where they are now (the second hand
+// sweeps), redrawn only in the rectangle they moved through.
+void DisplayManager::analogFrame() {
+  if (mode_ != Mode::Clock || !dialMask || !dialBandOk) return;
+  if (!dialMaskBuilt) {
+    buildDialMask();
+    analogFull_ = true;
+  }
+  const float frac = constrain((millis() - secondStartMs_) / 1000.0f, 0.0f, 0.999f);
+  const float sec = lastLocal_.tm_sec + frac;
+  const float minute = lastLocal_.tm_min + sec / 60;
+  const float hour = lastLocal_.tm_hour % 12 + minute / 60;
+  auto hand = [](float turns, float len, float tail, float ar, float br) {
+    const float a = turns * 2 * PI, sx = sinf(a), cx = cosf(a);
+    return Hand{kDialC - tail * sx, kDialC + tail * cx, kDialC + len * sx, kDialC - len * cx, ar, br};
+  };
+  const Hand next[3] = {hand(hour / 12, 52, 10, 4.2f, 2.4f), hand(minute / 60, 80, 12, 3.2f, 1.6f),
+                        hand(sec / 60, 88, 20, 1.4f, 0.9f)};
+  if (analogFull_ || !handsValid_) {
+    drawDialRect(0, 0, kDialD, kDialD, next);
+    memcpy(hands_, next, sizeof(hands_));
+    handsValid_ = true;
+    analogFull_ = false;
+    return;
+  }
+  // The second hand's old and new places, the others' only when they moved
+  // (they're drawn where they were otherwise), and the centre cap.
+  float x0 = kDialC - 8, y0 = kDialC - 8, x1 = kDialC + 8, y1 = kDialC + 8;
+  auto grow = [&](const Hand& h) {
+    const float m = max(h.ar, h.br) + 2;
+    x0 = min(x0, min(h.ax, h.bx) - m);
+    y0 = min(y0, min(h.ay, h.by) - m);
+    x1 = max(x1, max(h.ax, h.bx) + m);
+    y1 = max(y1, max(h.ay, h.by) + m);
+  };
+  Hand drawn[3];
+  for (int i = 0; i < 3; ++i) {
+    const bool moved = i == 2 || fabsf(next[i].bx - hands_[i].bx) + fabsf(next[i].by - hands_[i].by) > 0.25f;
+    drawn[i] = moved ? next[i] : hands_[i];
+    if (moved) {
+      grow(hands_[i]);
+      grow(next[i]);
+    }
+  }
+  const int16_t ix0 = constrain(static_cast<int16_t>(floorf(x0)), 0, kDialD);
+  const int16_t iy0 = constrain(static_cast<int16_t>(floorf(y0)), 0, kDialD);
+  const int16_t ix1 = constrain(static_cast<int16_t>(ceilf(x1)), 0, kDialD);
+  const int16_t iy1 = constrain(static_cast<int16_t>(ceilf(y1)), 0, kDialD);
+  if (ix1 > ix0 && iy1 > iy0) drawDialRect(ix0, iy0, ix1 - ix0, iy1 - iy0, drawn);
+  memcpy(hands_, drawn, sizeof(hands_));
+}
+
+// Rebuilds dial rectangle (x0, y0, w, h) from the mask, draws the hands over
+// it and pushes it, kDialBandH rows at a time.
+void DisplayManager::drawDialRect(int16_t x0, int16_t y0, int16_t w, int16_t h, const Hand* hands) {
+  const uint16_t inks[2] = {C->dim, C->text};
+  const uint16_t bg = swap16(C->bg);
+  const uint16_t accent = pal_.top;
+  uint16_t* buf = static_cast<uint16_t*>(dialBand.getPointer());
+  for (int16_t yy = y0; yy < y0 + h; yy += kDialBandH) {
+    const int16_t hh = min<int16_t>(kDialBandH, y0 + h - yy);
+    for (int16_t r = 0; r < hh; ++r) {
+      const int16_t my = yy + r;
+      const uint16_t ring = theme::mix(pal_.top, pal_.bottom, my * 255 / kDialD);
+      const uint8_t* m = dialRow(my) + x0;
+      uint16_t* out = buf + r * kDialD;
+      for (int16_t c = 0; c < w; ++c) {
+        const uint8_t v = m[c];
+        out[c] = v >> 4 ? swap16(theme::mix(C->bg, (v & 3) == 2 ? ring : inks[v & 1], (v >> 4) * 17))
+                        : bg;
+      }
+    }
+    // The hands, shifted into the band; the sprite clips them. 0x00FFFFFF
+    // blends their edges with what's already there.
+    const float ox = -x0, oy = -yy;
+    for (int i = 0; i < 3; ++i) {
+      const Hand& hd = hands[i];
+      dialBand.drawWedgeLine(hd.ax + ox, hd.ay + oy, hd.bx + ox, hd.by + oy, hd.ar, hd.br,
+                             i == 2 ? accent : C->text, 0x00FFFFFF);
+    }
+    dialBand.fillSmoothCircle(kDialC - x0, kDialC - yy, 5, accent, C->bg);
+    dialBand.fillSmoothCircle(kDialC - x0, kDialC - yy, 2, C->bg, accent);
+    dialBand.pushSprite(kDialX + x0, kDialY + yy, 0, 0, w, hh);
+  }
+}
+
+// The analog face's right column: weekday, the day in large digits, month and
+// year, the lunar date, a holiday, and the moon and air quality.
+void DisplayManager::drawAnalogColumn() {
+  if (mode_ != Mode::Clock || !analog_ || !analogInfoValid_) return;
+  const AnalogInfo& a = analogInfo_;
+  drawBlockAt(kColX, 0, kColW, kDialD, font_date, [&](TFT_eSprite& s, int16_t y0) {
+    const int16_t cx = kColW / 2;
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(pal_.top, C->bg);
+    s.drawString(a.weekday, cx, 16 - y0);
+    s.unloadFont();
+    s.loadFont(font_temp);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(a.day, cx, 56 - y0);
+    s.unloadFont();
+    s.loadFont(font_small);
+    s.setTextColor(C->dim, C->bg);
+    s.drawString(a.month, cx, 92 - y0);
+    s.drawFastHLine(14, 106 - y0, kColW - 28, C->faint);
+    // With a holiday the lunar lines move up to make room for two more.
+    const int16_t ly = a.holiday[0] ? 118 : 124;
+    if (a.lunar[0]) {
+      s.setTextColor(C->text, C->bg);
+      s.drawString(a.lunar, cx, ly - y0);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(a.lunarYear, cx, ly + 17 - y0);
+    }
+    if (a.holiday[0]) {
+      // One line, or two split at the space nearest the middle.
+      const int16_t hy = a.lunar[0] ? ly + 38 : 128;
+      s.setTextColor(pal_.top, C->bg);
+      if (s.textWidth(a.holiday) <= kColW - 6) {
+        s.drawString(a.holiday, cx, hy + 8 - y0);
+      } else {
+        const int len = strlen(a.holiday);
+        int cut = -1;
+        for (int i = 0; i < len; ++i) {
+          if (a.holiday[i] == ' ' && (cut < 0 || abs(i - len / 2) < abs(cut - len / 2))) cut = i;
+        }
+        char first[32];
+        strlcpy(first, a.holiday, cut > 0 ? min<size_t>(sizeof(first), cut + 1) : sizeof(first));
+        s.drawString(first, cx, hy - y0);
+        if (cut > 0) s.drawString(a.holiday + cut + 1, cx, hy + 17 - y0);
+      }
+    }
+    // The moon and the air quality share the last row, centred.
+    s.setTextDatum(ML_DATUM);
+    char lit[8], aqi[8];
+    snprintf(lit, sizeof(lit), "%u%%", a.moonLit);
+    snprintf(aqi, sizeof(aqi), "%d", a.aqi);
+    const int16_t moonW = a.moonAngle >= 0 ? 18 + s.textWidth(lit) : 0;
+    const int16_t aqiW = a.aqi >= 0 ? 10 + s.textWidth(aqi) : 0;
+    int16_t x = (kColW - moonW - aqiW - (moonW && aqiW ? 8 : 0)) / 2;
+    if (moonW) {
+      drawMoon(s, x + 7, 196 - y0, 7.5f, a.moonAngle, moonColor(night_), C->bg);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(lit, x + 18, 197 - y0);
+      x += moonW + 8;
+    }
+    if (aqiW) {
+      uint16_t c = aqiColor(a.aqi);
+      if (night_) c = theme::mix(C->bg, c, 140);
+      s.fillSmoothCircle(x + 3, 196 - y0, 3, c, C->bg);
+      s.setTextColor(a.aqi > 100 ? c : C->dim, C->bg);
+      s.drawString(aqi, x + 10, 197 - y0);
+    }
   });
 }
 
@@ -1096,14 +1555,281 @@ void DisplayManager::drawMeridiem() {
 }
 
 void DisplayManager::drawScreenTitle(const char* title) {
+  title_ = title;
   drawLine(0, 28, font_small, [&](TFT_eSprite& s) {
     s.setTextDatum(ML_DATUM);
     s.setTextColor(pal_.top, C->bg);
     s.drawString(title, 10, 15);
     s.setTextDatum(MR_DATUM);
-    s.setTextColor(C->faint, C->bg);
-    s.drawString("swipe \xC2\xB7 30 s to clock", kScreenW - 10, 15);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(nowText_, kScreenW - 10, 15);
   });
+}
+
+// The time pill in a photo's bottom-right corner: the photo darkened in a
+// rounded rectangle, the time on it. The photo under it is kept (photoCorner_).
+constexpr int16_t kPillW = 96, kPillH = 28;
+constexpr int16_t kPillX = kScreenW - kPillW - 6, kPillY = kScreenH - kPillH - 6;
+
+void DisplayManager::drawPhotoTime() {
+  if (mode_ != Mode::Photo || !photoCorner_ || !nowText_[0]) return;
+  TFT_eSprite s(&tft);
+  s.setColorDepth(16);
+  if (!s.createSprite(kPillW, kPillH)) return;
+  s.loadFont(font_date);
+  const int16_t w = s.textWidth(nowText_) + 18;
+  const int16_t x0 = kPillW - w;
+  constexpr int16_t r = kPillH / 2;
+  for (int16_t y = 0; y < kPillH; ++y) {
+    for (int16_t x = 0; x < kPillW; ++x) {
+      uint16_t c = swap16(photoCorner_[y * kPillW + x]);  // readRect gives byte-swapped pixels
+      // Inside the pill (a rounded rectangle at the right): darkened.
+      const int16_t cx = constrain(x, x0 + r, kPillW - 1 - r);
+      const float d = sqrtf((x - cx) * (x - cx) + (y - r + 0.5f) * (y - r + 0.5f));
+      const float in = constrain(r - d, 0.0f, 1.0f);
+      if (x >= x0 && in > 0) c = theme::mix(c, TFT_BLACK, static_cast<uint8_t>(in * 150));
+      s.drawPixel(x, y, c);
+    }
+  }
+  s.setTextDatum(MC_DATUM);
+  s.setTextColor(TFT_WHITE);  // no background: blends with the pixels under it
+  s.drawString(nowText_, x0 + w / 2, kPillH / 2 + 1);
+  s.unloadFont();
+  s.pushSprite(kPillX, kPillY);
+  s.deleteSprite();
+}
+
+void DisplayManager::drawWeatherHeader() {
+  if (mode_ != Mode::Weather) return;
+  drawLine(0, 28, font_small, [&](TFT_eSprite& s) {
+    s.setTextDatum(ML_DATUM);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(wxPlace_, 10, 15);
+    const uint32_t ageS = (millis() - wxAnchorMs_) / 1000;
+    const bool stale = wxHasAge_ && ageS > config::kWeatherStaleS;
+    s.setTextDatum(MR_DATUM);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(nowText_, kScreenW - 10, 15);
+    int16_t right = s.textWidth(nowText_) + 10;
+    if (stale) {
+      char age[24];
+      snprintf(age, sizeof(age), "%lu h old \xC2\xB7 ", (unsigned long)(ageS / 3600));
+      s.setTextColor(C->warn, C->bg);
+      s.drawString(age, kScreenW - right, 15);
+      right += s.textWidth(age);
+    }
+    // Tonight's moon and how much of it is lit, after the place (if there's room).
+    const time_t now = time(nullptr);
+    const int16_t mx = 10 + s.textWidth(wxPlace_) + 16;
+    if (now > 1700000000 && mx + 48 < kScreenW - 6 - right) {
+      const moon::Phase mp = moon::at(now);
+      drawMoon(s, mx, 14, 7.5f, mp.angle, moonColor(night_), C->bg);
+      char lit[8];
+      snprintf(lit, sizeof(lit), "%d%%", static_cast<int>(lroundf(mp.lit * 100)));
+      s.setTextDatum(ML_DATUM);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString(lit, mx + 12, 15);
+    }
+  });
+}
+
+// Home screen tiles: 2 columns x 3 rows under the title bar.
+constexpr int16_t kTileW = 148, kTileH = 62, kTileTop = 34, kTileGapY = 6;
+constexpr int16_t kTileX[2] = {8, kScreenW - 8 - kTileW};
+
+void DisplayManager::showHomeScreen(const HomeView& v) {
+  const bool first = mode_ != Mode::Home;
+  if (first) {
+    enterMode(Mode::Home);
+    homeValid_ = false;
+    drawScreenTitle("Home");
+  }
+  if (v.count == 0) {
+    drawBlock(kTileTop, kScreenH - kTileTop, font_small, [&](TFT_eSprite& s, int16_t y0) {
+      s.setTextDatum(MC_DATUM);
+      s.setTextColor(C->dim, C->bg);
+      s.drawString("Choose devices on the web page", kScreenW / 2, 90 - y0);
+      s.drawString("(Home Assistant section)", kScreenW / 2, 112 - y0);
+    });
+    homeView_ = v;
+    homeValid_ = true;
+    return;
+  }
+  if (homeValid_ && homeView_.count == 0) {
+    drawBlock(kTileTop, kScreenH - kTileTop, font_small, [](TFT_eSprite&, int16_t) {});  // the message
+    homeValid_ = false;
+  }
+  for (int i = 0; i < HomeView::kMax; ++i) {
+    const bool has = i < v.count;
+    const bool had = homeValid_ && i < homeView_.count;
+    if (homeValid_ && has == had && (!has || memcmp(&v.tiles[i], &homeView_.tiles[i], sizeof(HomeTile)) == 0)) {
+      continue;
+    }
+    drawHomeTile(i, has ? &v.tiles[i] : nullptr);
+  }
+  homeView_ = v;
+  homeValid_ = true;
+}
+
+namespace {
+
+// `text` cut to `w` pixels with an ellipsis.
+String fitText(TFT_eSprite& s, const char* text, int w) {
+  String t = text;
+  if (s.textWidth(t) <= w) return t;
+  while (t.length() > 1 && s.textWidth(t + "\xE2\x80\xA6") > w) {
+    t.remove(t.length() - 1);
+    while (t.length() > 1 && (t[t.length() - 1] & 0xC0) == 0x80) t.remove(t.length() - 1);  // whole UTF-8
+    if ((t[t.length() - 1] & 0xC0) == 0xC0) t.remove(t.length() - 1);
+  }
+  t.trim();
+  return t + "\xE2\x80\xA6";
+}
+
+// A device icon of about 18 px around (cx, cy).
+void drawHomeIcon(TFT_eSprite& s, HomeTile::Icon icon, float cx, float cy, uint16_t ink, uint16_t bg) {
+  using Icon = HomeTile::Icon;
+  switch (icon) {
+    case Icon::Light:  // a bulb
+      s.fillSmoothCircle(cx, cy - 2, 6, ink, bg);
+      s.drawWideLine(cx - 3, cy + 5, cx + 3, cy + 5, 2, ink, bg);
+      s.drawWideLine(cx - 2, cy + 8, cx + 2, cy + 8, 1.6f, ink, bg);
+      break;
+    case Icon::Power:  // the power symbol (TFT_eSPI arcs: 0 degrees at the bottom)
+      s.drawSmoothArc(cx, cy + 1, 8, 6, 0, 145, ink, bg, true);
+      s.drawSmoothArc(cx, cy + 1, 8, 6, 215, 360, ink, bg, true);
+      s.drawWideLine(cx, cy - 8, cx, cy, 2, ink, bg);
+      break;
+    case Icon::Fan:  // three blades
+      for (int k = 0; k < 3; ++k) {
+        const float a = k * 2 * PI / 3 + 0.3f;
+        s.drawWedgeLine(cx, cy, cx + 8 * sinf(a), cy - 8 * cosf(a), 1.2f, 3.6f, ink, bg);
+      }
+      s.fillSmoothCircle(cx, cy, 2, bg, ink);
+      break;
+    case Icon::Climate:  // a snowflake
+      for (int k = 0; k < 3; ++k) {
+        const float a = k * PI / 3, dx = 8 * sinf(a), dy = 8 * cosf(a);
+        s.drawWideLine(cx - dx, cy - dy, cx + dx, cy + dy, 1.8f, ink, bg);
+      }
+      break;
+    case Icon::Tv:  // a screen on a stand
+      s.drawSmoothRoundRect(cx - 9, cy - 8, 3, 1, 18, 12, ink, bg);
+      s.drawWideLine(cx - 4, cy + 8, cx + 4, cy + 8, 1.8f, ink, bg);
+      break;
+    case Icon::Scene:  // a sparkle
+      for (int k = 0; k < 4; ++k) {
+        const float a = k * PI / 2;
+        s.drawWedgeLine(cx, cy, cx + 9 * sinf(a), cy - 9 * cosf(a), 2.6f, 0.6f, ink, bg);
+      }
+      break;
+  }
+}
+
+}  // namespace
+
+// One tile: the name at the top; the icon, state and a switch (or a run
+// button) along the bottom. On: tinted card, accent track, knob right. Off:
+// knob left on a dark track. Switching: the knob waits in the middle.
+void DisplayManager::drawHomeTile(int i, const HomeTile* t) {
+  const int16_t x = kTileX[i % 2];
+  const int16_t y = kTileTop + (i / 2) * (kTileH + kTileGapY);
+  drawBlockAt(x, y, kTileW, kTileH, font_small, [&](TFT_eSprite& s, int16_t y0) {
+    if (!t) return;
+    using Look = HomeTile::Look;
+    const bool run = t->icon == HomeTile::Icon::Scene;
+    const bool on = t->look == Look::On;
+    const bool unavailable = t->look == Look::Unavailable;
+    const uint16_t card = on ? theme::mix(C->faint, pal_.top, 56) : unavailable ? C->bg : C->faint;
+    s.fillSmoothRoundRect(0, -y0, kTileW, kTileH, 12, card, C->bg);
+    if (unavailable) s.drawSmoothRoundRect(0, -y0, 12, 11, kTileW - 1, kTileH - 1, C->faint, card);
+
+    // The name: one line, or two split at the space nearest the middle.
+    s.setTextDatum(ML_DATUM);
+    s.setTextColor(unavailable ? C->dim : C->text, card);
+    constexpr int kTextX = 12, kTextW = kTileW - 2 * kTextX;
+    if (s.textWidth(t->name) <= kTextW) {
+      s.drawString(t->name, kTextX, 18 - y0);
+    } else {
+      const int len = strlen(t->name);
+      int cut = -1;
+      for (int k = 0; k < len; ++k) {
+        if (t->name[k] == ' ' && (cut < 0 || abs(k - len / 2) < abs(cut - len / 2))) cut = k;
+      }
+      char first[32];
+      strlcpy(first, t->name, cut > 0 ? min<size_t>(sizeof(first), cut + 1) : sizeof(first));
+      s.drawString(fitText(s, first, kTextW), kTextX, 12 - y0);
+      if (cut > 0) s.drawString(fitText(s, t->name + cut + 1, kTextW), kTextX, 28 - y0);
+    }
+
+    // The bottom row.
+    constexpr float kRowY = 47;
+    const uint16_t ink = on ? pal_.top : C->dim;
+    drawHomeIcon(s, t->icon, 21, kRowY - y0, ink, card);
+    constexpr int16_t kTrackW = 40, kTrackH = 22, kTrackX = kTileW - 12 - kTrackW;
+    s.setTextColor(on ? pal_.top : C->dim, card);
+    const int16_t textEnd = unavailable ? kTileW - 12 : run ? kTileW - 12 - kTrackH - 4 : kTrackX - 6;
+    s.drawString(fitText(s, t->state, textEnd - 36), 36, kRowY - y0);
+    if (unavailable) return;
+    const int16_t ty = kRowY - kTrackH / 2 - y0;
+    if (run) {
+      // A round play button.
+      const float bx = kTrackX + kTrackW - kTrackH / 2, by = kRowY - y0;
+      const bool busy = t->look == Look::Pending;
+      s.fillSmoothCircle(bx, by, kTrackH / 2, busy ? theme::mix(card, pal_.top, 110) : pal_.top, card);
+      const uint16_t tri = busy ? pal_.top : card;
+      s.fillTriangle(bx - 3, by - 6, bx - 3, by + 6, bx + 6, by, tri);
+      return;
+    }
+    const uint16_t trackOff = theme::mix(C->bg, C->faint, 110);
+    const uint16_t track = on ? pal_.top : t->look == Look::Pending ? theme::mix(trackOff, pal_.top, 120) : trackOff;
+    s.fillSmoothRoundRect(kTrackX, ty, kTrackW, kTrackH, kTrackH / 2, track, card);
+    const float r = kTrackH / 2 - 3;
+    const float kx = on ? kTrackX + kTrackW - kTrackH / 2.0f
+                   : t->look == Look::Pending ? kTrackX + kTrackW / 2.0f
+                                              : kTrackX + kTrackH / 2.0f;
+    const uint16_t knob = on ? (night_ ? C->text : theme::rgb(255, 255, 255)) : theme::mix(C->dim, C->text, 140);
+    s.fillSmoothCircle(kx, kRowY + 1 - y0, r, theme::mix(track, 0, 90), track);  // a soft shadow
+    s.fillSmoothCircle(kx, kRowY - y0, r, knob, track);
+  });
+}
+
+int DisplayManager::homeHitTest(int16_t x, int16_t y) const {
+  if (mode_ != Mode::Home || y < kTileTop - 4) return -1;
+  const int row = (y - kTileTop + kTileGapY / 2) / (kTileH + kTileGapY);
+  const int col = x < kScreenW / 2 ? 0 : 1;
+  const int i = min(row, 2) * 2 + col;
+  return homeValid_ && i < homeView_.count ? i : -1;
+}
+
+void DisplayManager::setNow(const struct tm& local) {
+  const int key = local.tm_hour * 60 + local.tm_min + (hour12_ ? 10000 : 0);
+  if (key == nowKey_) return;
+  nowKey_ = key;
+  if (hour12_) {
+    const int h = local.tm_hour % 12 ? local.tm_hour % 12 : 12;
+    snprintf(nowText_, sizeof(nowText_), "%d:%02d %s", h, local.tm_min, local.tm_hour < 12 ? "AM" : "PM");
+  } else {
+    snprintf(nowText_, sizeof(nowText_), "%02d:%02d", local.tm_hour, local.tm_min);
+  }
+  switch (mode_) {
+    case Mode::Info:
+    case Mode::Settings:
+    case Mode::Storage:
+    case Mode::Update:
+    case Mode::Confirm:
+    case Mode::Home:
+      if (title_) drawScreenTitle(title_);
+      break;
+    case Mode::Weather:
+      drawWeatherHeader();
+      break;
+    case Mode::Photo:
+      drawPhotoTime();
+      break;
+    default:
+      break;
+  }
 }
 
 namespace {
@@ -1404,8 +2130,10 @@ void DisplayManager::showSettingsScreen(const SettingsView& v) {
     drawButton(s, kToggleX, kToggleW, v.nightOn ? "On" : "Off", v.nightOn, accent);
   });
   row(3, [&](TFT_eSprite& s) {
-    label(s, "Time format", nullptr);
-    drawButton(s, kToggleX, kToggleW, v.hour12 ? "12-hour" : "24-hour", true, accent);
+    label(s, "Clock face", nullptr);
+    drawButton(s, kToggleX, kToggleW,
+               v.face == 2 ? "Mix" : v.face == 1 ? "Analog" : v.hour12 ? "12-hour" : "24-hour", true,
+               accent);
   });
   row(4, [&](TFT_eSprite& s) {
     drawButton(s, 8, kArrowW, "<", false, accent);
@@ -1490,6 +2218,11 @@ bool DisplayManager::showPhoto(const char* path) {
   tft.endWrite();
   Serial.printf("[PHOTO] %s %ux%u 1/%u in %lu ms%s\n", path, w, h, scale,
                 (unsigned long)(millis() - t0), r == JDR_OK ? "" : " (decode error)");
+  if (!photoCorner_) photoCorner_ = static_cast<uint16_t*>(malloc(kPillW * kPillH * sizeof(uint16_t)));
+  if (photoCorner_) {
+    tft.readRect(kPillX, kPillY, kPillW, kPillH, photoCorner_);
+    drawPhotoTime();
+  }
   return r == JDR_OK;
 }
 
@@ -1511,20 +2244,11 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
   const uint16_t accent = pal_.top;
   auto deg = [](char* buf, size_t n, int t) { snprintf(buf, n, "%d\xC2\xB0", t); };
 
-  // Header: place and data age.
-  drawLine(0, 28, font_small, [&](TFT_eSprite& s) {
-    s.setTextDatum(ML_DATUM);
-    s.setTextColor(C->text, C->bg);
-    s.drawString(w.place, 10, 15);
-    char age[32];
-    if (ageS == UINT32_MAX) age[0] = '\0';
-    else if (ageS < 120) snprintf(age, sizeof(age), "Updated just now");
-    else if (ageS < 7200) snprintf(age, sizeof(age), "Updated %lu min ago", (unsigned long)(ageS / 60));
-    else snprintf(age, sizeof(age), "Updated %lu h ago", (unsigned long)(ageS / 3600));
-    s.setTextDatum(MR_DATUM);
-    s.setTextColor(ageS > config::kWeatherStaleS ? C->warn : C->dim, C->bg);
-    s.drawString(age, kScreenW - 10, 15);
-  });
+  // Header: place, moon, the time (and the data's age when it's old).
+  strlcpy(wxPlace_, w.place, sizeof(wxPlace_));
+  wxHasAge_ = ageS != UINT32_MAX;
+  wxAnchorMs_ = millis() - (wxHasAge_ ? ageS * 1000 : 0);
+  drawWeatherHeader();
 
   // Now: big icon, temperature, condition, details.
   drawBlock(28, 88, font_temp, [&](TFT_eSprite& s, int16_t y0) {

@@ -110,6 +110,30 @@ bool setPhotoEveryMinutes(uint8_t minutes);
 bool lunarDate();
 bool setLunarDate(bool enabled);
 
+// Holidays and festivals on the clock face's date line on the day.
+bool holidays();
+bool setHolidays(bool enabled);
+
+// Home Assistant: base URL (e.g. http://falcon.local:8123), long-lived access
+// token, and the devices on the Home screen (comma-separated entity ids, up
+// to 6). setHomeAssistant() keeps the token when `token` is nullptr.
+const char* haUrl();
+const char* haToken();
+const char* haEntities();
+bool setHomeAssistant(const char* url, const char* token, const char* entities);
+
+// The clock face: 0 digital, 1 analog, 2 mix (taking turns every N minutes,
+// 1-60, default 5).
+uint8_t faceMode();
+bool setFaceMode(uint8_t mode);
+uint8_t faceEveryMinutes();
+bool setFaceEveryMinutes(uint8_t minutes);
+
+// Phrases of the day above the digits: 0 Vietnamese, 1 English, 2 both
+// (taking turns), 3 off.
+uint8_t phraseLang();
+bool setPhraseLang(uint8_t lang);
+
 // Daily automatic check for a new GitHub release (the clock shows a note).
 bool autoUpdateCheck();
 bool setAutoUpdateCheck(bool enabled);

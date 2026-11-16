@@ -11,6 +11,8 @@
 #include "clock_sync.h"
 #include "config.h"
 #include "display_manager.h"
+#include "holidays.h"
+#include "home.h"
 #include "lunar.h"
 #include "net_manager.h"
 #include "ota.h"
@@ -602,14 +604,71 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
                   settings::lunarDate() ? "on" : "off");
     return false;
   }
+  if (strncasecmp(text, "HOLIDAYS", 8) == 0 && (text[8] == '\0' || text[8] == ' ')) {
+    const char* arg = text + 8;
+    while (*arg == ' ') ++arg;
+    if (strcasecmp(arg, "ON") == 0 || strcasecmp(arg, "OFF") == 0) {
+      settings::setHolidays(strcasecmp(arg, "ON") == 0);
+    } else if (*arg) {
+      Serial.println("[CONSOLE] Usage: HOLIDAYS [ON|OFF]");
+      return false;
+    }
+    int count;
+    const holidays::Holiday* list = holidays::all(count);
+    Serial.printf("[HOLIDAY] On the clock face: %s\n", settings::holidays() ? "on" : "off");
+    for (int i = 0; i < count; ++i) {
+      Serial.printf("[HOLIDAY]   %2u/%-2u %s %s\n", list[i].day, list[i].month,
+                    list[i].lunar ? "ÂL" : "  ", list[i].name);
+    }
+    return false;
+  }
+  if (strncasecmp(text, "PHRASE", 6) == 0 && (text[6] == '\0' || text[6] == ' ')) {
+    const char* arg = text + 6;
+    while (*arg == ' ') ++arg;
+    static const char* const kLangs[] = {"VI", "EN", "BOTH", "OFF"};
+    int lang = -1;
+    for (int i = 0; i < 4; ++i) {
+      if (strcasecmp(arg, kLangs[i]) == 0) lang = i;
+    }
+    if (lang >= 0) {
+      settings::setPhraseLang(lang);
+    } else if (*arg) {
+      Serial.println("[CONSOLE] Usage: PHRASE [VI|EN|BOTH|OFF]");
+      return false;
+    }
+    const time_t now = time(nullptr);
+    struct tm local;
+    localtime_r(&now, &local);
+    const char* list[2];
+    const int n = todaysPhrases(local, list);
+    Serial.printf("[PHRASE] Above the digits: %s\n", kLangs[settings::phraseLang() % 4]);
+    for (int i = 0; i < n; ++i) Serial.printf("[PHRASE]   %s\n", list[i]);
+    return true;
+  }
   if (strcasecmp(text, "GET") == 0) {
     printRtcTime(rtc);
   } else if (strncasecmp(text, "SCREEN ", 7) == 0) {
     if (!requestScreenByName(text + 7)) {
-      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|INFO|SETTINGS|STORAGE|UPDATE|WIFI-RESET");
+      Serial.println("[CONSOLE] Usage: SCREEN CLOCK|FORECAST|PHOTO|HOME|INFO|SETTINGS|STORAGE|UPDATE|WIFI-RESET");
     }
   } else if (strcasecmp(text, "TOUCH CAL") == 0) {
     calibrateTouch(display);
+    return true;
+  } else if (strncasecmp(text, "FACE", 4) == 0 && (text[4] == '\0' || text[4] == ' ')) {
+    const char* arg = text + 4;
+    while (*arg == ' ') ++arg;
+    int n = 0;
+    if (strcasecmp(arg, "DIGITAL") == 0 || strcasecmp(arg, "ANALOG") == 0 || strcasecmp(arg, "MIX") == 0) {
+      settings::setFaceMode(strcasecmp(arg, "DIGITAL") == 0 ? 0 : strcasecmp(arg, "ANALOG") == 0 ? 1 : 2);
+    } else if (strncasecmp(arg, "EVERY ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1 && n >= 1 && n <= 60) {
+      settings::setFaceEveryMinutes(n);
+    } else if (*arg) {
+      Serial.println("[CONSOLE] Usage: FACE [DIGITAL|ANALOG|MIX|EVERY 1-60]");
+      return false;
+    }
+    static const char* const kFaces[] = {"Digital", "Analog", "Mix"};
+    Serial.printf("[SETTINGS] Clock face: %s (mix every %u min)\n", kFaces[settings::faceMode() % 3],
+                  settings::faceEveryMinutes());
     return true;
   } else if (strcasecmp(text, "FORMAT 12") == 0 || strcasecmp(text, "FORMAT 24") == 0) {
     settings::setHour12(strcasecmp(text, "FORMAT 12") == 0);
@@ -629,6 +688,10 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
       }
       delay(10);
     }
+  } else if (strcasecmp(text, "HA") == 0) {
+    home::printStatus();
+  } else if (strcasecmp(text, "HA REFRESH") == 0) {
+    home::begin();  // re-reads the settings and polls the states now
   } else if (strcasecmp(text, "OTA") == 0) {
     ota::printStatus();
   } else if (strcasecmp(text, "OTA AUTO ON") == 0 || strcasecmp(text, "OTA AUTO OFF") == 0) {
@@ -685,8 +748,8 @@ void serialConsolePrintHelp() {
   Serial.println(
       "[CONSOLE] Commands: SET YYYY-MM-DD HH:MM:SS (local) | GET | TZ [posix] | INFO | "
       "WIFI [PORTAL|FORGET] | NTP [SYNC|SERVER host] | BRIGHT [DAY|NIGHT n] | "
-      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | LUNAR [ON|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
-      "SCREEN name | SETEPOCH n | REBOOT | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
+      "NIGHT [ON|OFF|HH:MM HH:MM] | FORMAT 12|24 | FACE [DIGITAL|ANALOG|MIX|EVERY n] | LUNAR [ON|OFF] | HOLIDAYS [ON|OFF] | PHRASE [VI|EN|BOTH|OFF] | WEATHER [...] | BANNER [...] | PHOTO [...] | TIMEOUT [...] | PREVIEW | COLOR [...] | EFFECT [...] | TRANSITION [...] | TOUCH [CAL] | "
+      "SCREEN name | SETEPOCH n | REBOOT | HA [REFRESH] | OTA [CHECK|AUTO ON|OFF|INSTALL tag] | SHOT | "
       "TEST [PALETTE] | HELP");
 }
 

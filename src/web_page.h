@@ -53,7 +53,10 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div class="row"><label>Night mode</label><select id="non"><option value="ON">On</option><option value="OFF">Off</option></select>
 <input type="time" id="nstart"> to <input type="time" id="nend"><button id="nsave">Save</button></div>
 <div class="row"><label>Time format</label><select id="fmt"><option value="24">24-hour</option><option value="12">12-hour</option></select></div>
+<div class="row"><label>Clock face</label><select id="face"><option value="DIGITAL">Digital</option><option value="ANALOG">Analog</option><option value="MIX">Mix (in turn)</option></select><select id="faceev"><option value="1">Every minute</option><option value="2">Every 2 min</option><option value="5">Every 5 min</option><option value="10">Every 10 min</option><option value="15">Every 15 min</option><option value="30">Every 30 min</option><option value="60">Every hour</option></select></div>
 <div class="row"><label>Lunar date (&Acirc;m l&#7883;ch) on the clock</label><select id="lunar"><option value="ON">On</option><option value="OFF">Off</option></select></div>
+<div class="row"><label>Holidays and festivals on the clock</label><select id="hol"><option value="ON">On</option><option value="OFF">Off</option></select></div>
+<div class="row"><label>Phrases of the day above the time</label><select id="phrlang"><option value="BOTH">Vietnamese &amp; English (in turn)</option><option value="VI">Vietnamese</option><option value="EN">English</option><option value="OFF">Off</option></select></div>
 <div class="row"><label>Forecast screen every 2 min</label><select id="cyc"><option value="ON">On</option><option value="OFF">Off</option></select></div>
 <div class="row"><label>Forecast stays up for</label><select id="tofc" data-cmd="TIMEOUT FORECAST"></select></div>
 <div class="row"><label>Each photo stays up for</label><select id="toph" data-cmd="TIMEOUT PHOTO"></select></div>
@@ -113,6 +116,15 @@ On the clock, swipe to the Photo screen and tap for the next one. Tap a thumbnai
 <div class="results" id="results"></div>
 <div class="row"><label>Or coordinates</label><input id="lat" placeholder="lat" size="8"><input id="lon" placeholder="lon" size="8"><input id="lname" placeholder="name (optional)" size="14"><button id="locsave">Save</button></div>
 <div class="muted">Recent</div><div class="recent" id="recent"></div>
+</section>
+
+<section><h2>Home Assistant</h2>
+<div class="row"><label>Address</label><input id="haurl" placeholder="http://homeassistant.local:8123" style="flex:2 1 220px"></div>
+<div class="row"><label>Access token</label><input id="hatok" type="password" autocomplete="off" style="flex:2 1 220px"></div>
+<div class="muted">A long-lived access token from Home Assistant: your profile &rarr; Security &rarr; Long-lived access tokens. It's kept only on the clock and never shown again.</div>
+<div class="row"><button class="primary" id="hasave">Save</button><button id="haload">Choose devices&hellip;</button></div>
+<div id="hapick" style="display:none"><div class="muted">Up to 6, shown on the clock's Home screen in the order you tick them.</div><input id="hafind" placeholder="Filter" style="width:100%;margin:6px 0"><div id="halist" class="recent"></div></div>
+<div class="muted" id="haerr" style="color:#e57373"></div><div id="hadev"></div>
 </section>
 
 <section><h2>Wi-Fi &amp; device</h2>
@@ -186,7 +198,7 @@ async function loadStatus(){try{const s=await(await fetch("/api/status")).json()
 $("time").textContent=s.local_time.slice(11);$("fwcur").textContent="Installed: v"+s.firmware+" ("+s.revision+")";$("sub").textContent="Firmware "+s.firmware+" ("+s.revision+") \u00b7 "+s.wifi.host;
 const w=s.weather?`${s.weather.temp_c}\u00b0C ${s.weather.condition}, ${s.weather.place} (${ago(s.weather.age_s)})`:"no data yet";
 const L=s.lunar,lun=L?`${L.day}/${L.month}${L.leap?" nhu\u1eadn":""} ${L.year_name}`+(L.tet_days?` \u00b7 T\u1ebft in ${L.tet_days} days`:" \u00b7 T\u1ebft today"):"-";
-const rows=[["Date",s.local_time.slice(0,10)],["Lunar date",lun],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
+const rows=[["Date",s.local_time.slice(0,10)+(s.holiday?" \u00b7 "+s.holiday:"")],["Lunar date",lun],["Phrases",(s.phrases||[]).join("  \u00b7  ")||"-"],["Moon",s.moon?`${s.moon.phase}, ${s.moon.lit_pct}% lit (${s.moon.phase_vi})`:"-"],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
 ["RTC",s.rtc.present?("DS3231"+(s.rtc.temp_c!==undefined?`, ${s.rtc.temp_c}\u00b0C`:"")+(s.rtc.lost_power?", LOST POWER":"")):"not detected"],
 ["Weather",w],["Air quality",s.weather&&s.weather.aqi!==undefined?`AQI ${s.weather.aqi} (${s.weather.aqi_category}), PM2.5 ${s.weather.pm25} \u00b5g/m\u00b3`:"-"],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)]];
 $("storage").innerHTML=flashList(s)+ramList(s);
@@ -218,7 +230,7 @@ function esc(t){return t.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;
 let S;
 async function loadSettings(){S=await(await fetch("/api/settings")).json();
 $("bday").value=S.brightness_day;$("bdayv").textContent=S.brightness_day+"%";$("bnight").value=S.brightness_night;$("bnightv").textContent=S.brightness_night+"%";
-$("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("lunar").value=S.lunar?"ON":"OFF";$("otaauto").value=S.update_check?"ON":"OFF";$("cyc").value=S.forecast_cycle?"ON":"OFF";
+$("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("face").value=S.face.toUpperCase();selVal("faceev",S.face_every_min,"Every "+S.face_every_min+" min");$("faceev").style.display=S.face==="mix"?"":"none";$("lunar").value=S.lunar?"ON":"OFF";$("hol").value=S.holidays?"ON":"OFF";$("phrlang").value=S.phrase_lang.toUpperCase();$("otaauto").value=S.update_check?"ON":"OFF";$("cyc").value=S.forecast_cycle?"ON":"OFF";
 clrRender(S.colors);selVal("tofc",S.timeouts.forecast_s,S.timeouts.forecast_s+" seconds");selVal("toph",S.timeouts.photo_s,S.timeouts.photo_s+" seconds");selVal("toidle",S.timeouts.idle_s,S.timeouts.idle_s+" seconds");
 const known=TZ.find(z=>z[1]===S.timezone);$("tz").value=known?known[0]:"custom";$("tzcustom").value=S.timezone;$("tzcustomrow").style.display=known?"none":"flex";
 $("ntp").value=S.ntp_server;
@@ -284,7 +296,11 @@ $("bday").oninput=e=>$("bdayv").textContent=e.target.value+"%";$("bnight").oninp
 $("bday").onchange=e=>cmd("BRIGHT DAY "+e.target.value);$("bnight").onchange=e=>cmd("BRIGHT NIGHT "+e.target.value);
 $("non").onchange=e=>cmd("NIGHT "+e.target.value);$("nsave").onclick=()=>cmd(`NIGHT ${$("nstart").value} ${$("nend").value}`);
 $("fmt").onchange=e=>cmd("FORMAT "+e.target.value);
+$("face").onchange=e=>cmd("FACE "+e.target.value);
+$("faceev").onchange=e=>cmd("FACE EVERY "+e.target.value);
 $("lunar").onchange=e=>cmd("LUNAR "+e.target.value);
+$("hol").onchange=e=>cmd("HOLIDAYS "+e.target.value);
+$("phrlang").onchange=e=>cmd("PHRASE "+e.target.value);
 $("otaauto").onchange=e=>cmd("OTA AUTO "+e.target.value);
 const secs=(id,list)=>{$(id).innerHTML=list.map(s=>`<option value="${s}">${s<60?s+" seconds":s/60+(s===60?" minute":" minutes")}</option>`).join("");
 $(id).onchange=e=>cmd($(id).dataset.cmd+" "+e.target.value)};
@@ -333,5 +349,30 @@ x.upload.onprogress=e=>{if(e.lengthComputable)p.value=Math.round(e.loaded*100/e.
 x.onload=()=>{let d={};try{d=JSON.parse(x.responseText)}catch(e){}
 if(x.status===200){toast("Installed. Rebooting...");setTimeout(()=>location.reload(),25000)}else{p.style.display="none";toast("Update failed: "+(d.error||x.status))}};
 x.onerror=()=>{p.style.display="none";toast("Upload interrupted")};x.open("POST","/api/ota?pin="+pin);x.send(fd)};
-loadSettings();loadStatus();setInterval(loadStatus,5000);
+let HA={picked:[],all:[],urlEdited:false};$("haurl").oninput=()=>{HA.urlEdited=true};
+async function loadHa(){try{const d=await(await fetch("/api/ha",{cache:"no-store"})).json();
+if(!HA.urlEdited)$("haurl").value=d.url;$("hatok").placeholder=d.token_set?"saved \u2014 leave empty to keep it":"paste the token";
+if($("hapick").style.display==="none")HA.picked=d.devices.map(x=>x.id);
+$("haerr").textContent=d.error?"Home Assistant: "+d.error:"";
+$("hadev").innerHTML=d.devices.map((x,i)=>{const run=/^(scene|script)\./.test(x.id);const lbl=x.pending?"\u2026":run?"Run":x.on?"On":"Off";
+return `<div class="row"><label>${esc(x.name)} <small>${esc(x.id)} \u00b7 ${esc(x.state||"?")}</small></label><button data-hs="${i}" class="${x.on&&!run?"primary":""}">${lbl}</button></div>`}).join("")}catch(e){}}
+function haList(){const f=$("hafind").value.toLowerCase();const items=HA.all.filter(x=>(x.name+" "+x.id).toLowerCase().includes(f));
+$("halist").innerHTML=items.map(x=>{const n=HA.picked.indexOf(x.id);const off=n<0&&HA.picked.length>=6;
+return `<label style="display:flex;gap:8px;align-items:center;margin:4px 0;opacity:${off?.5:1}"><input type="checkbox" data-ha="${esc(x.id)}" ${n>=0?"checked":""} ${off?"disabled":""}>${n>=0?`<b>${n+1}</b>`:""} ${esc(x.name)} <small>${esc(x.id)}</small></label>`}).join("")||"<div class=muted>Nothing matches.</div>"}
+async function haSave(entities){const body={url:$("haurl").value.trim(),token:$("hatok").value.trim(),entities};
+const r=await fetch("/api/ha/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+if(!r.ok){toast("Error: "+((await r.json().catch(()=>({}))).error||r.status));return false}$("hatok").value="";HA.urlEdited=false;return true}
+$("hasave").onclick=async()=>{if(await haSave(HA.picked)){toast("Saved");$("hapick").style.display="none";loadHa()}};
+$("haload").onclick=async()=>{if(($("haurl").value.trim()||$("hatok").value.trim())&&!(await haSave(HA.picked)))return;
+$("haload").disabled=true;$("haload").textContent="Asking Home Assistant\u2026";
+try{const r=await fetch("/api/ha/entities");const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);
+HA.all=d.sort((a,b)=>a.id.split(".")[0].localeCompare(b.id.split(".")[0])||a.name.localeCompare(b.name));$("hapick").style.display="";haList()}
+catch(e){toast("Couldn't get the devices: "+e.message)}finally{$("haload").disabled=false;$("haload").textContent="Choose devices\u2026"}};
+$("hafind").oninput=haList;
+document.addEventListener("change",e=>{const c=e.target.closest("input[data-ha]");if(!c)return;const id=c.dataset.ha;
+HA.picked=c.checked?[...HA.picked,id]:HA.picked.filter(x=>x!==id);haList()});
+document.addEventListener("click",async e=>{const b=e.target.closest("button[data-hs]");if(!b)return;
+const u="/api/ha/switch?i="+b.dataset.hs;
+try{await fetch(u,{method:"POST"})}catch(_){try{await fetch(u,{method:"POST"})}catch(_){toast("The clock didn't answer")}}setTimeout(loadHa,300);setTimeout(loadHa,1500)});
+loadSettings();loadStatus();loadHa();setInterval(loadStatus,5000);setInterval(loadHa,4000);
 </script></body></html>)HTML";

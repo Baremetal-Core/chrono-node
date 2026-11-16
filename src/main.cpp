@@ -14,7 +14,11 @@
 #include "clock_sync.h"
 #include "config.h"
 #include "display_manager.h"
+#include "holidays.h"
+#include "home.h"
 #include "lunar.h"
+#include "moon.h"
+#include "phrases.h"
 #include "net_manager.h"
 #include "ota.h"
 #include "photos.h"
@@ -88,10 +92,10 @@ bool nightActive = false;
 // Screens, in swipe order. The forecast is skipped while there is no data,
 // the photo screen while there are no photos. WifiReset (the confirmation
 // opened from Info) isn't in the swipe order.
-enum class Screen : uint8_t { Clock, Forecast, Photo, Info, Settings, WifiReset, Storage, Update };
-constexpr int kScreenCount = 5;  // in the swipe order; the rest open from Info
-const char* const kScreenNames[] = {"clock",      "forecast", "photo",  "info",
-                                    "settings",   "wifi-reset", "storage", "update"};
+enum class Screen : uint8_t { Clock, Home, Forecast, Photo, Info, Settings, WifiReset, Storage, Update };
+constexpr int kScreenCount = 6;  // in the swipe order; the rest open from Info
+const char* const kScreenNames[] = {"clock",    "home",       "forecast", "photo", "info",
+                                    "settings", "wifi-reset", "storage", "update"};
 Screen screenOn = Screen::Clock;
 Screen screenWanted = Screen::Clock;  // target of the current/next transition
 // Automatic screens (forecast/photo from a cycle, a SHOW command or the
@@ -114,6 +118,7 @@ int photoSlot = 0;
 int photoWanted = 0;
 uint32_t lastTouchMs = 0;
 uint32_t lastInfoMs = 0;
+uint32_t shownHomeVersion = 0;
 
 // Scrolling banner. Each message has its own period: messages that come due
 // together scroll one after another; continuous ones fill the time between.
@@ -163,6 +168,19 @@ void requestScreen(Screen s, bool again = false, int dir = 0) {
   transitionStyle = style;
   transitionDir = dir ? dir : screenOrder(s) >= screenOrder(screenOn) ? 1 : -1;
   if (s == Screen::Clock && screenOn != Screen::Clock && !dir) transitionDir = -1;
+}
+
+// Whether the clock face is analog now: always, never, or (Mix) every other
+// period of N minutes.
+bool wantAnalog(const struct tm& local) {
+  switch (settings::faceMode()) {
+    case 1:
+      return true;
+    case 2:
+      return (local.tm_hour * 60 + local.tm_min) / settings::faceEveryMinutes() % 2 == 1;
+    default:
+      return false;
+  }
 }
 
 // Called every second with the local time, before the frame is drawn.
@@ -263,6 +281,18 @@ void updateAutoScreens(const struct tm& local, bool hasData) {
 }
 
 // Called every second while the clock face is showing.
+}  // namespace
+
+int todaysPhrases(const struct tm& local, const char* out[2]) {
+  struct tm day = local;
+  day.tm_hour = 12;
+  day.tm_min = day.tm_sec = 0;
+  const int32_t days = static_cast<int32_t>(mktime(&day) / 86400);
+  return phrases::forDay(days, static_cast<phrases::Lang>(settings::phraseLang()), out);
+}
+
+namespace {
+
 void updateBanner(const struct tm& local) {
   const bool active = display.bannerActive();
   if (bannerWasActive && !active) bannerNextMs = millis() + config::kBannerGapMs;
@@ -369,35 +399,69 @@ void applyColors() {
   display.setColors(c);
 }
 
-// The lunar date for the clock's date line, rebuilt once a day (or when the
-// setting changes): on the 1st and 15th, at Tết and in the month before it,
-// it gets as much time as the solar date.
-void updateLunar(const struct tm& local) {
+// The other texts of the clock's date line, rebuilt once a day (or when a
+// setting changes): the lunar date and today's holiday. On the 1st and 15th,
+// on holidays, at Tết and in the month before it, they get as much time as
+// the solar date.
+// The phrases of the day for the line above the digits, once a day (or when
+// the setting changes).
+void updatePhrases(const struct tm& local) {
   static int builtFor = -1;
-  static bool builtOn = false;
+  static uint8_t builtLang = 0xFF;
   const int key = local.tm_year * 400 + local.tm_yday;
-  if (key == builtFor && builtOn == settings::lunarDate()) return;
+  if (key == builtFor && builtLang == settings::phraseLang()) return;
   builtFor = key;
-  builtOn = settings::lunarDate();
-  if (!builtOn) {
-    display.setDateAlts(nullptr, 0, false);
-    return;
-  }
+  builtLang = settings::phraseLang();
+  const char* list[2];
+  const int n = todaysPhrases(local, list);
+  display.setPhrases(list, n);
+  for (int i = 0; i < n; ++i) Serial.printf("[PHRASE] Today: %s\n", list[i]);
+}
+
+void updateDateLine(const struct tm& local) {
+  static int builtFor = -1;
+  static uint8_t builtWith = 0xFF;
+  const int key = local.tm_year * 400 + local.tm_yday;
+  const uint8_t with = (settings::lunarDate() ? 1 : 0) | (settings::holidays() ? 2 : 0);
+  if (key == builtFor && with == builtWith) return;
+  builtFor = key;
+  builtWith = with;
   const int d = local.tm_mday, m = local.tm_mon + 1, y = local.tm_year + 1900;
   const lunar::Date l = lunar::fromSolar(d, m, y);
   const int tet = lunar::daysToTet(d, m, y);
+  const holidays::Holiday* h = settings::holidays() ? holidays::today(d, m, l) : nullptr;
+  DateAlt alts[DisplayManager::kMaxDateAlts] = {};
+  int n = 0;
+  bool special = h != nullptr;
+  if (h) {
+    DateAlt& a = alts[n++];
+    strlcpy(a.head, h->name, sizeof(a.head));
+    if (h->lunar) {
+      snprintf(a.rest, sizeof(a.rest), " · %d/%d ÂL", h->day, h->month);
+    } else if (h->day == 1 && h->month == 1) {
+      snprintf(a.rest, sizeof(a.rest), " · %d", y);
+    } else {
+      snprintf(a.rest, sizeof(a.rest), " · %d/%d", h->day, h->month);
+    }
+    Serial.printf("[HOLIDAY] Today: %s\n", h->name);
+  }
+  if (!settings::lunarDate()) {
+    display.setDateAlts(alts, n, special);
+    return;
+  }
   char year[24];
   lunar::yearName(l.year, year, sizeof(year));
   const char* leap = l.leap ? " nhuận" : "";
-  DateAlt alts[DisplayManager::kMaxDateAlts] = {};
-  int n = 1;
-  bool special = true;
-  DateAlt& a = alts[0];
+  DateAlt& a = alts[n];
+  // A lunar holiday already shows the lunar date.
+  if (!(h && h->lunar)) ++n;
   if (l.month == 1 && !l.leap && l.day <= 3) {
+    special = true;
     snprintf(a.head, sizeof(a.head), "MÙNG %d TẾT", l.day);
     snprintf(a.rest, sizeof(a.rest), " · %s", year);
     strlcpy(a.shortRest, a.rest, sizeof(a.shortRest));
   } else if (l.day == 1 || l.day == 15) {
+    special = true;
     strlcpy(a.head, l.day == 1 ? "MÙNG 1" : "RẰM", sizeof(a.head));
     snprintf(a.rest, sizeof(a.rest), " · tháng %d%s %s", l.month, leap, year);
     snprintf(a.shortRest, sizeof(a.shortRest), " · tháng %d%s", l.month, leap);
@@ -405,7 +469,6 @@ void updateLunar(const struct tm& local) {
     strlcpy(a.head, "ÂM LỊCH", sizeof(a.head));
     snprintf(a.rest, sizeof(a.rest), " · %d/%d%s %s", l.day, l.month, leap, year);
     snprintf(a.shortRest, sizeof(a.shortRest), " · %d/%d%s", l.day, l.month, leap);
-    special = false;
   }
   if (tet >= 1 && tet <= config::kTetCountdownDays) {
     DateAlt& t = alts[n++];
@@ -430,6 +493,7 @@ void buildSettingsView(SettingsView& v) {
            settings::nightStart() / 60, settings::nightStart() % 60, settings::nightEnd() / 60,
            settings::nightEnd() % 60);
   v.hour12 = settings::hour12();
+  v.face = settings::faceMode();
   strlcpy(v.colorName, theme::styleName(colorSettings().style), sizeof(v.colorName));
   strlcpy(v.place, settings::place(), sizeof(v.place));
   v.recentCount = settings::recentLocationCount();
@@ -502,6 +566,51 @@ void showUpdate() {
     strlcpy(v.action, "Try again", sizeof(v.action));
   }
   display.showUpdateScreen(v);
+}
+
+// The Home screen from the Home Assistant devices' states.
+void showHome() {
+  shownHomeVersion = home::version();
+  HomeView v = {};
+  home::Device d[config::kHaMaxDevices];
+  v.count = min(home::devices(d), HomeView::kMax);
+  for (int i = 0; i < v.count; ++i) {
+    HomeTile& t = v.tiles[i];
+    strlcpy(t.name, d[i].name, sizeof(t.name));
+    using Icon = HomeTile::Icon;
+    const char* e = d[i].entity;
+    t.icon = d[i].kind == home::Kind::Run        ? Icon::Scene
+             : !strncmp(e, "light.", 6)          ? Icon::Light
+             : !strncmp(e, "fan.", 4)            ? Icon::Fan
+             : !strncmp(e, "climate.", 8)        ? Icon::Climate
+             : !strncmp(e, "media_player.", 13)  ? Icon::Tv
+                                                 : Icon::Power;
+    using Look = HomeTile::Look;
+    const bool unavailable = !strcmp(d[i].state, "unavailable") || !strcmp(d[i].state, "unknown");
+    if (d[i].pending) {
+      t.look = Look::Pending;
+    } else if (d[i].kind == home::Kind::Run) {
+      t.look = unavailable ? Look::Unavailable : Look::Run;
+    } else if (unavailable || !d[i].state[0]) {
+      t.look = Look::Unavailable;
+    } else {
+      t.look = home::isOn(d[i]) ? Look::On : Look::Off;
+    }
+    if (d[i].kind == home::Kind::Run) {
+      strlcpy(t.state, unavailable ? "Unavailable" : !strncmp(e, "script.", 7) ? "Script" : "Scene", sizeof(t.state));
+    } else if (!d[i].state[0]) {
+      strlcpy(t.state, "\xE2\x80\xA6", sizeof(t.state));
+    } else {
+      // Home Assistant's state, capitalised: "On", "Off", "Cool", "Unavailable".
+      strlcpy(t.state, d[i].state, sizeof(t.state));
+      t.state[0] = toupper(static_cast<unsigned char>(t.state[0]));
+      for (char* c = t.state; *c; ++c) {
+        if (*c == '_') *c = ' ';
+      }
+    }
+    if (t.look == Look::Off) strlcpy(t.state, "Off", sizeof(t.state));  // a TV's "Standby" too
+  }
+  display.showHomeScreen(v);
 }
 
 void buildInfoView(InfoView& v) {
@@ -579,8 +688,19 @@ void applySettingsAction(SettingsAction a) {
       settings::setNightEnabled(!settings::nightEnabled());
       break;
     case SettingsAction::FormatToggle:
-      settings::setHour12(!settings::hour12());
+      // Cycles 24-hour -> 12-hour -> analog -> mix -> 24-hour.
+      if (settings::faceMode() == 2) {
+        settings::setFaceMode(0);
+        settings::setHour12(false);
+      } else if (settings::faceMode() == 1) {
+        settings::setFaceMode(2);
+      } else if (settings::hour12()) {
+        settings::setFaceMode(1);
+      } else {
+        settings::setHour12(true);
+      }
       display.setHour12(settings::hour12());
+      display.setAnalog(wantAnalog(lastLocalTm));
       break;
     case SettingsAction::ColorPrev:
     case SettingsAction::ColorNext: {
@@ -625,7 +745,10 @@ Screen neighbour(Screen from, int dir) {
   for (int n = 0; n < kScreenCount; ++n) {
     i = (i + dir + kScreenCount) % kScreenCount;
     const Screen s = static_cast<Screen>(i);
-    if ((s != Screen::Forecast || hasForecast) && (s != Screen::Photo || hasPhotos)) break;
+    if ((s != Screen::Forecast || hasForecast) && (s != Screen::Photo || hasPhotos) &&
+        (s != Screen::Home || home::configured())) {
+      break;
+    }
   }
   return static_cast<Screen>(i);
 }
@@ -673,6 +796,9 @@ void handleTouch() {
         requestScreen(Screen::Photo, true);
       }
       if (screenOn == Screen::Settings) applySettingsAction(display.settingsHitTest(ev.at.x, ev.at.y));
+      if (screenOn == Screen::Home && home::requestSwitch(display.homeHitTest(ev.at.x, ev.at.y))) {
+        showHome();  // the tile shows it's switching
+      }
       if (screenOn == Screen::Info) {
         switch (display.infoButtonHit(ev.at.x, ev.at.y)) {
           case DisplayManager::InfoButton::Wifi:
@@ -745,6 +871,7 @@ void finishTransition() {
   }
   display.setNightMode(nightActive);
   display.setHour12(settings::hour12());
+  display.setAnalog(wantAnalog(lastLocalTm));
   weather::Data wx;
   Screen next = screenWanted;
   if (next == Screen::Forecast && !weather::get(wx)) next = Screen::Clock;
@@ -770,6 +897,9 @@ void finishTransition() {
     case Screen::Settings:
       showSettings();
       break;
+    case Screen::Home:
+      showHome();
+      break;
     case Screen::Storage: {
       StorageView v;
       buildStorageView(v);
@@ -790,6 +920,7 @@ void finishTransition() {
       autoScreen = false;
       break;
   }
+  home::setActive(next == Screen::Home);  // poll the devices only while they show
   if (next != screenOn || next == Screen::Photo) {
     Serial.printf("[SCREEN] %s%s\n", kScreenNames[static_cast<int>(next)],
                   autoScreen && next != Screen::Clock ? " (automatic)" : "");
@@ -852,11 +983,36 @@ void updateStatus() {
   st.hasTemp = hasTemp && !hasWeather;
   st.tempC = static_cast<int8_t>(lroundf(tempC));
   const uint32_t nowUtc = static_cast<uint32_t>(time(nullptr));
+  moon::Phase mp = {};
+  if (nowUtc > 1700000000) {
+    mp = moon::at(nowUtc);
+    st.moonAngle = static_cast<int16_t>(lroundf(mp.angle)) % 360;
+  }
   // Signed: a clock set back a little mustn't make a fresh reading look stale.
   if (hasWeather && wx.aqi >= 0 && static_cast<int32_t>(nowUtc - wx.aqiUtc) < (int32_t)config::kAirStaleS) {
     st.aqi = wx.aqi;
   }
   display.setStatus(st);
+  if (display.analog()) {
+    AnalogInfo a;
+    memset(&a, 0, sizeof(a));  // compared with memcmp: padding too
+    const struct tm& lt = lastLocalTm;
+    strftime(a.weekday, sizeof(a.weekday), "%A", &lt);
+    snprintf(a.day, sizeof(a.day), "%d", lt.tm_mday);
+    strftime(a.month, sizeof(a.month), "%b %Y", &lt);
+    const int d = lt.tm_mday, m = lt.tm_mon + 1, y = lt.tm_year + 1900;
+    const lunar::Date l = lunar::fromSolar(d, m, y);
+    if (settings::lunarDate()) {
+      snprintf(a.lunar, sizeof(a.lunar), "ÂL %d/%d%s", l.day, l.month, l.leap ? " nhuận" : "");
+      lunar::yearName(l.year, a.lunarYear, sizeof(a.lunarYear));
+    }
+    const holidays::Holiday* h = settings::holidays() ? holidays::today(d, m, l) : nullptr;
+    if (h) strlcpy(a.holiday, h->name, sizeof(a.holiday));
+    a.moonAngle = st.moonAngle;
+    a.moonLit = static_cast<uint8_t>(lroundf(mp.lit * 100));
+    a.aqi = st.aqi;
+    display.setAnalogInfo(a);
+  }
   const uint32_t age = weather::ageSeconds();
   display.setWeather(hasWeather ? &wx : nullptr, age != UINT32_MAX && age > config::kWeatherStaleS);
 
@@ -938,9 +1094,16 @@ void pollRtc(bool forceLog) {
   time_utils::utcToLocal(utc, local);
   lastLocalTm = local;
   applyColors();  // Mix changes style on the minute
-  updateLunar(local);
+  updateDateLine(local);
+  updatePhrases(local);
   updateNight(local);
+  // Mix: change face with the screen transition when its turn comes.
+  if (screenOn == Screen::Clock && !transitioning && wantAnalog(local) != display.analog()) {
+    Serial.printf("[FACE] %s\n", wantAnalog(local) ? "Analog" : "Digital");
+    requestScreen(Screen::Clock, true);
+  }
   updateAutoScreens(local, weather::version() != 0);
+  if (!transitioning) display.setNow(local);  // the time on the other screens
   if (screenOn == Screen::Clock && !transitioning) {
     display.showTime(local);
     updateStatus();
@@ -965,6 +1128,7 @@ bool requestScreenByName(const char* name) {
   if (strcasecmp(name, "clock") == 0) s = Screen::Clock;
   else if (strcasecmp(name, "forecast") == 0) s = Screen::Forecast;
   else if (strcasecmp(name, "photo") == 0) s = Screen::Photo;
+  else if (strcasecmp(name, "home") == 0) s = Screen::Home;
   else if (strcasecmp(name, "info") == 0) s = Screen::Info;
   else if (strcasecmp(name, "settings") == 0) s = Screen::Settings;
   else if (strcasecmp(name, "wifi-reset") == 0) s = Screen::WifiReset;
@@ -1007,6 +1171,7 @@ void requestBannerNow() {
   if (screenOn != Screen::Clock) requestScreenByName("clock");
 }
 
+
 void setup() {
   esp_task_wdt_init(config::kTaskWatchdogS, true);  // reconfigures the running watchdog
 
@@ -1022,6 +1187,7 @@ void setup() {
                 config::kFirmwareVersion, config::kGitRevision);
 
   settings::begin();
+  home::begin();
   checkCrashLoop();
 
   if (display.begin()) {
@@ -1047,6 +1213,7 @@ void setup() {
   }
 
   display.setHour12(settings::hour12());
+  display.setAnalog(wantAnalog(lastLocalTm));
   applyColors();
   if (!nightKnown) backlight::fadeTo(settings::brightnessDay(), config::kNightFadeInMs);
 
@@ -1071,6 +1238,7 @@ void loop() {
     nightBoost = false;
     if (!transitioning) backlight::fadeTo(brightnessFor(nightActive), config::kNightFadeInMs);
   }
+  if (screenOn == Screen::Home && !transitioning && home::version() != shownHomeVersion) showHome();
   if (screenOn == Screen::Info && !transitioning && nowMsTouch - lastInfoMs >= 2000) {
     lastInfoMs = nowMsTouch;
     InfoView v;
@@ -1103,6 +1271,7 @@ void loop() {
     rtcLostPower = rtc.lostPower();
     lastSecond = -1;
     display.setHour12(settings::hour12());
+    display.setAnalog(wantAnalog(lastLocalTm));
     applyColors();
     if (screenOn == Screen::Settings && !transitioning) showSettings();
     if (!transitioning && nightKnown) {

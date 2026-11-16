@@ -12,6 +12,7 @@
 
 #include "clock_sync.h"
 #include "config.h"
+#include "home.h"
 #include "ota.h"
 #include "settings.h"
 #include "weather.h"
@@ -350,6 +351,7 @@ void step() {
         web::loop();
         ota::serviceNet();  // a requested release install (restarts on success)
         weather::service();
+        home::service();
       }
       if (evtDisconnected) {
         Serial.printf("[WIFI] Disconnected (reason %u)\n", evtReason);

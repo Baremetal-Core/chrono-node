@@ -30,9 +30,37 @@ struct StorageView {
 // turn with the solar date: `head` like the weekday, then `rest` (or
 // `shortRest` when that doesn't fit). UTF-8.
 struct DateAlt {
-  char head[24];
+  char head[32];
   char rest[48];
   char shortRest[48];
+};
+
+// The analog face's right column (UTF-8; empty strings are left out).
+struct AnalogInfo {
+  char weekday[12];
+  char day[4];
+  char month[16];      // "Nov 2026"
+  char lunar[24];      // "ÂL 8/10"
+  char lunarYear[24];  // "Bính Ngọ"
+  char holiday[32];
+  int16_t moonAngle;   // -1 to hide
+  uint8_t moonLit;     // %
+  int16_t aqi;         // -1 to hide
+};
+
+// The Home screen: Home Assistant devices as tiles (2 x 3).
+struct HomeTile {
+  enum class Look : uint8_t { Off, On, Unavailable, Run, Pending };
+  enum class Icon : uint8_t { Light, Power, Fan, Climate, Tv, Scene };  // Scene: a run button, no switch
+  char name[32];
+  char state[16];  // next to the icon ("On", "Off", "Cool", ...)
+  Look look;
+  Icon icon;
+};
+struct HomeView {
+  static constexpr int kMax = 6;
+  HomeTile tiles[kMax];
+  int count;
 };
 
 // The software update screen.
@@ -58,6 +86,7 @@ struct SettingsView {
   bool nightOn;
   char nightWindow[16];  // e.g. "22:00-06:30"
   bool hour12;
+  uint8_t face;  // 0 digital, 1 analog, 2 mix
   char colorName[24];  // current colour style
   char place[32];
   int recentIndex;  // position of the current place in the recent list (-1 if not in it)
@@ -87,6 +116,7 @@ struct StatusInfo {
   bool hasTemp = false;
   int8_t tempC = 0;
   int16_t aqi = -1;  // US AQI, -1 to hide
+  int16_t moonAngle = -1;  // moon phase (elongation, degrees), -1 to hide
 };
 
 class DisplayManager {
@@ -114,8 +144,25 @@ class DisplayManager {
 
   // Up to kMaxDateAlts texts the date line takes turns with: the solar date
   // for 10 s, then each one for 5 s (10 s each with `even`). 0 to stop.
-  static constexpr int kMaxDateAlts = 2;
+  static constexpr int kMaxDateAlts = 3;
   void setDateAlts(const DateAlt* alts, int count, bool even);
+
+  // The time on the other screens (title bar, forecast header, a pill in a
+  // photo's corner), updated when the minute changes. Call every second.
+  void setNow(const struct tm& local);
+
+  // Phrases shown in turn on the line above the digits (static strings, up to
+  // 2); a long one is shown in parts. 0 clears the line.
+  void setPhrases(const char* const* texts, int count);
+
+  // The Home screen; calling again redraws only the tiles that changed.
+  void showHomeScreen(const HomeView& v);
+  int homeHitTest(int16_t x, int16_t y) const;  // tile index, or -1
+
+  // Analog face instead of the digits; its right column's content.
+  void setAnalog(bool analog);
+  bool analog() const { return analog_; }
+  void setAnalogInfo(const AnalogInfo& info);
 
   // Weather shown on the clock face's bottom line when there is no notice.
   // Pass nullptr to clear. `stale` dims it and marks it as old.
@@ -182,7 +229,7 @@ class DisplayManager {
 
  private:
   enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo, Confirm,
-                    Storage, Update };
+                    Storage, Update, Home };
   struct Roll {
     char from = ' ';
     char to = ' ';
@@ -225,6 +272,42 @@ class DisplayManager {
 
   theme::Palette pal_{0, 0};
   bool palValid_ = false;
+  HomeView homeView_ = {};
+  bool homeValid_ = false;
+  void drawHomeTile(int i, const HomeTile* t);
+  // The time overlay on the other screens.
+  char nowText_[12] = "";
+  int nowKey_ = -1;
+  const char* title_ = nullptr;  // the title bar's text (a static string)
+  char wxPlace_[32] = "";        // the forecast header: place and data age
+  uint32_t wxAnchorMs_ = 0;      // millis() when the data was fetched
+  bool wxHasAge_ = false;
+  uint16_t* photoCorner_ = nullptr;  // the photo under the time pill
+  void drawWeatherHeader();
+  void drawPhotoTime();
+  // The phrase line: which phrase and part shows, and until when.
+  const char* phrases_[2] = {};
+  int phraseCount_ = 0;
+  int phraseIdx_ = 0;
+  int phrasePart_ = 0;
+  int phraseParts_ = 1;
+  uint32_t phraseNextMs_ = 0;
+  void drawPhraseLine();
+  // Analog face: a dial on the left, the date column on the right.
+  bool analog_ = false;
+  bool analogFull_ = true;  // redraw the whole dial on the next frame
+  AnalogInfo analogInfo_ = {};
+  bool analogInfoValid_ = false;
+  uint32_t lastAnalogMs_ = 0;
+  struct Hand {
+    float ax, ay, bx, by;  // tail and tip, dial coordinates
+    float ar, br;          // half widths at the tail and the tip
+  };
+  Hand hands_[3] = {};  // as drawn: hour, minute, second
+  bool handsValid_ = false;
+  void analogFrame();
+  void drawDialRect(int16_t x0, int16_t y0, int16_t w, int16_t h, const Hand* hands);
+  void drawAnalogColumn();
   struct tm lastLocal_ = {};
   int lastYday_ = -1;
   DateAlt dateAlts_[kMaxDateAlts] = {};

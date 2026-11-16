@@ -26,6 +26,13 @@ constexpr const char* kKeyWxCycle = "wx_cycle";
 constexpr const char* kKeyRecent = "wx_recent";
 constexpr const char* kKeyHour12 = "hour12";
 constexpr const char* kKeyLunar = "lunar";
+constexpr const char* kKeyHolidays = "holidays";
+constexpr const char* kKeyFace = "face";
+constexpr const char* kKeyHaUrl = "ha_url";
+constexpr const char* kKeyHaToken = "ha_token";
+constexpr const char* kKeyHaEntities = "ha_ents";
+constexpr const char* kKeyFaceEvery = "face_every";
+constexpr const char* kKeyPhraseLang = "phr_lang";
 constexpr const char* kKeyOtaAuto = "ota_auto";
 constexpr const char* kKeyBannerOn = "bn_on";
 constexpr const char* kKeyBannerEvery = "bn_every";  // default for new messages
@@ -87,6 +94,13 @@ RecentLocation recents[settings::kMaxRecentLocations] = {};
 int recentCount = 0;
 bool use12h = false;
 bool lunarOn = true;
+bool holidaysOn = true;
+uint8_t faceSet = 0;  // 0 digital, 1 analog, 2 mix
+char haUrlSet[config::kHaUrlMaxLen + 1] = "";
+char haTokenSet[config::kHaTokenMaxLen + 1] = "";
+char haEntitiesSet[config::kHaEntitiesMaxLen + 1] = "";
+uint8_t faceEverySet = 5;
+uint8_t phraseLangSet = 2;   // phrases::Lang::Both
 bool otaAuto = true;
 
 float lat = config::kDefaultLatitude;
@@ -152,8 +166,16 @@ void begin() {
       lon = prefs.getFloat(kKeyLon, lon);
     }
     if (prefs.isKey(kKeyPlace)) prefs.getString(kKeyPlace, placeName, sizeof(placeName));
+    if (prefs.isKey(kKeyHaUrl)) prefs.getString(kKeyHaUrl, haUrlSet, sizeof(haUrlSet));
+    if (prefs.isKey(kKeyHaToken)) prefs.getString(kKeyHaToken, haTokenSet, sizeof(haTokenSet));
+    if (prefs.isKey(kKeyHaEntities)) prefs.getString(kKeyHaEntities, haEntitiesSet, sizeof(haEntitiesSet));
     wxCycle = prefs.getBool(kKeyWxCycle, wxCycle);
     lunarOn = prefs.getBool(kKeyLunar, lunarOn);
+    holidaysOn = prefs.getBool(kKeyHolidays, holidaysOn);
+    faceSet = prefs.getUChar(kKeyFace, faceSet);
+    if (faceSet > 2) faceSet = 0;
+    faceEverySet = prefs.getUChar(kKeyFaceEvery, faceEverySet);
+    phraseLangSet = prefs.getUChar(kKeyPhraseLang, phraseLangSet);
     otaAuto = prefs.getBool(kKeyOtaAuto, otaAuto);
     use12h = prefs.getBool(kKeyHour12, use12h);
     bannerOn = prefs.getBool(kKeyBannerOn, bannerOn);
@@ -520,6 +542,64 @@ bool setBannerSpeed(uint8_t pxPerSecond) {
 }
 
 bool lunarDate() { return lunarOn; }
+
+bool holidays() { return holidaysOn; }
+
+const char* haUrl() { return haUrlSet; }
+const char* haToken() { return haTokenSet; }
+const char* haEntities() { return haEntitiesSet; }
+
+bool setHomeAssistant(const char* url, const char* token, const char* entities) {
+  if (strlen(url) > config::kHaUrlMaxLen || (token && strlen(token) > config::kHaTokenMaxLen) ||
+      strlen(entities) > config::kHaEntitiesMaxLen) {
+    return false;
+  }
+  bool ok = save([&](Preferences& p) {
+    bool w = p.putString(kKeyHaUrl, url) == strlen(url) && p.putString(kKeyHaEntities, entities) == strlen(entities);
+    if (token) w = w && p.putString(kKeyHaToken, token) == strlen(token);
+    return w;
+  });
+  if (ok) {
+    strlcpy(haUrlSet, url, sizeof(haUrlSet));
+    if (token) strlcpy(haTokenSet, token, sizeof(haTokenSet));
+    strlcpy(haEntitiesSet, entities, sizeof(haEntitiesSet));
+  }
+  return ok;
+}
+
+uint8_t faceMode() { return faceSet; }
+
+bool setFaceMode(uint8_t mode) {
+  if (mode > 2) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyFace, mode) > 0; });
+  if (ok) faceSet = mode;
+  return ok;
+}
+
+uint8_t faceEveryMinutes() { return faceEverySet; }
+
+bool setFaceEveryMinutes(uint8_t minutes) {
+  if (minutes < 1 || minutes > 60) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyFaceEvery, minutes) > 0; });
+  if (ok) faceEverySet = minutes;
+  return ok;
+}
+
+uint8_t phraseLang() { return phraseLangSet; }
+
+bool setPhraseLang(uint8_t lang) {
+  if (lang > 3) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyPhraseLang, lang) > 0; });
+  if (ok) phraseLangSet = lang;
+  return ok;
+}
+
+
+bool setHolidays(bool enabled) {
+  bool ok = save([&](Preferences& p) { return p.putBool(kKeyHolidays, enabled) > 0; });
+  if (ok) holidaysOn = enabled;
+  return ok;
+}
 
 bool setLunarDate(bool enabled) {
   bool ok = save([&](Preferences& p) { return p.putBool(kKeyLunar, enabled) > 0; });
