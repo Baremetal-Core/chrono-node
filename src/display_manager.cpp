@@ -15,6 +15,7 @@
 #include "fonts/font_face.h"
 #include "fonts/font_seconds.h"
 #include "fonts/font_small.h"
+#include "fonts/font_tiny.h"
 #include "fonts/font_temp.h"
 #include "fonts/font_time.h"
 #include "weather_icons.h"
@@ -1634,6 +1635,117 @@ void DisplayManager::drawWeatherHeader() {
   });
 }
 
+// The calendar: weekday names under the title bar, then the weeks.
+constexpr int16_t kCalHeadTop = 30, kCalHeadH = 20, kCalGridTop = kCalHeadTop + kCalHeadH;
+constexpr int16_t kCalGridH = kScreenH - kCalGridTop - 2;
+constexpr int16_t kCalCellW = 45, kCalX0 = (kScreenW - 7 * kCalCellW) / 2;
+constexpr int16_t kCalCardX = 8, kCalCardW = kScreenW - 2 * kCalCardX;
+
+void DisplayManager::showCalendarScreen(const CalendarView& v) {
+  if (mode_ != Mode::Calendar) {
+    enterMode(Mode::Calendar);
+    drawBlock(kCalHeadTop, kCalHeadH, font_small, [&](TFT_eSprite& s, int16_t y0) {
+      static const char* const kDays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+      s.setTextDatum(MC_DATUM);
+      for (int c = 0; c < 7; ++c) {
+        s.setTextColor(c == 6 ? C->error : C->dim, C->bg);
+        s.drawString(kDays[c], kCalX0 + c * kCalCellW + kCalCellW / 2, 10 - y0);
+      }
+    });
+  }
+  calView_ = v;
+  strlcpy(calTitle_, v.title, sizeof(calTitle_));
+  drawScreenTitle(calTitle_);
+  const int rows = constrain(v.rows, 4, 6);
+  const int16_t rowH = kCalGridH / rows;
+  // The card, if open: in the half of the grid away from the chosen day. The
+  // weeks under it aren't drawn, so it sits on a clear background.
+  calCardY_ = -1;
+  const bool lines3 = v.card[2][0] != '\0';
+  if (v.selected >= 0) {
+    calCardH_ = lines3 ? 74 : 54;
+    calCardY_ = v.selected / 7 < rows / 2 ? kScreenH - calCardH_ - 6 : kCalGridTop + 2;
+  }
+  auto underCard = [&](int row) {
+    const int16_t y = kCalGridTop + row * rowH;
+    return calCardY_ >= 0 && y < calCardY_ + calCardH_ + 2 && y + rowH > calCardY_ - 2;
+  };
+  drawBlock(kCalGridTop, kCalGridH, font_date, [&](TFT_eSprite& s, int16_t y0) {
+    s.setTextDatum(MC_DATUM);
+    for (int pass = 0; pass < 2; ++pass) {  // the days in font_date, then the lunar dates in font_tiny
+      if (pass == 1) {
+        s.unloadFont();
+        s.loadFont(font_tiny);
+      }
+      for (int i = 0; i < rows * 7; ++i) {
+        const int16_t top = (i / 7) * rowH - y0;
+        if (top >= kBandH || top + rowH <= 0 || underCard(i / 7)) continue;  // not in this band
+        const CalendarCell& c = v.cells[i];
+        const int16_t cx = kCalX0 + (i % 7) * kCalCellW + kCalCellW / 2;
+        const bool in = c.flags & CalendarCell::kInMonth;
+        const bool today = c.flags & CalendarCell::kToday;
+        const uint16_t bg = today ? pal_.top : C->bg;
+        if (pass == 0) {
+          if (today) {
+            s.fillSmoothRoundRect(cx - 19, top + 2, 38, rowH - 4, 9, pal_.top, C->bg);
+          } else if (i == v.selected) {
+            s.drawSmoothRoundRect(cx - 19, top + 2, 9, 8, 38, rowH - 4, pal_.top, C->bg);
+          }
+          if (in && (c.flags & CalendarCell::kHoliday)) {
+            s.fillSmoothCircle(cx + 14, top + 8, 2, today ? C->bg : C->warn, bg);
+          }
+          char n[4];
+          snprintf(n, sizeof(n), "%u", c.day);
+          const uint16_t ink = today                                                   ? C->bg
+                               : !in                                                   ? C->faint
+                               : (c.flags & CalendarCell::kHoliday) || i % 7 == 6      ? C->error
+                                                                                       : C->text;
+          s.setTextColor(ink, bg);
+          s.drawString(n, cx, top + rowH * 2 / 5);
+        } else {
+          char n[8];
+          const bool first = c.flags & CalendarCell::kLunarFirst;
+          if (first) {
+            snprintf(n, sizeof(n), "%u/%u", c.lunarDay, c.lunarMonth);
+          } else {
+            snprintf(n, sizeof(n), "%u", c.lunarDay);
+          }
+          const uint16_t ink = today ? theme::mix(pal_.top, C->bg, 150)
+                               : !in ? C->faint
+                               : first ? pal_.top
+                                       : C->dim;
+          s.setTextColor(ink, bg);
+          s.drawString(n, cx, top + rowH * 4 / 5);
+        }
+      }
+    }
+  });
+  if (calCardY_ < 0) return;
+  drawBlockAt(kCalCardX, calCardY_, kCalCardW, calCardH_, font_small, [&](TFT_eSprite& s, int16_t y0) {
+    s.fillSmoothRoundRect(0, -y0, kCalCardW, calCardH_, 12, C->faint, C->bg);
+    s.drawSmoothRoundRect(0, -y0, 12, 11, kCalCardW - 1, calCardH_ - 1, pal_.top, C->faint);
+    s.setTextDatum(ML_DATUM);
+    const uint16_t inks[3] = {C->text, C->dim, C->warn};
+    for (int k = 0; k < (lines3 ? 3 : 2); ++k) {
+      s.setTextColor(inks[k], C->faint);
+      s.drawString(v.card[k], 14, 17 + k * 20 - y0);
+    }
+  });
+}
+
+int DisplayManager::calendarHitTest(int16_t x, int16_t y) const {
+  if (mode_ != Mode::Calendar) return 0;
+  if (y < kCalHeadTop) return kCalendarTitle;
+  if (calCardY_ >= 0 && y >= calCardY_ && y < calCardY_ + calCardH_) return 0;
+  const int rows = constrain(calView_.rows, 4, 6);
+  const int16_t rowH = kCalGridH / rows;
+  if (y < kCalGridTop || x < kCalX0 || x >= kCalX0 + 7 * kCalCellW) return 0;
+  const int row = (y - kCalGridTop) / rowH, col = (x - kCalX0) / kCalCellW;
+  if (row >= rows) return 0;
+  const CalendarCell& c = calView_.cells[row * 7 + col];
+  return c.flags & CalendarCell::kInMonth ? c.day : 0;
+}
+
 // Home screen tiles: 2 columns x 3 rows under the title bar.
 constexpr int16_t kTileW = 148, kTileH = 62, kTileTop = 34, kTileGapY = 6;
 constexpr int16_t kTileX[2] = {8, kScreenW - 8 - kTileW};
@@ -1884,6 +1996,7 @@ void DisplayManager::setNow(const struct tm& local) {
     case Mode::Update:
     case Mode::Confirm:
     case Mode::Home:
+    case Mode::Calendar:
       if (title_) drawScreenTitle(title_);
       break;
     case Mode::Weather:

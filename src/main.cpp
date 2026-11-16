@@ -92,10 +92,10 @@ bool nightActive = false;
 // Screens, in swipe order. The forecast is skipped while there is no data,
 // the photo screen while there are no photos. WifiReset (the confirmation
 // opened from Info) isn't in the swipe order.
-enum class Screen : uint8_t { Clock, Home, Forecast, Photo, Info, Settings, WifiReset, Storage, Update };
-constexpr int kScreenCount = 6;  // in the swipe order; the rest open from Info
-const char* const kScreenNames[] = {"clock",    "home",       "forecast", "photo", "info",
-                                    "settings", "wifi-reset", "storage", "update"};
+enum class Screen : uint8_t { Clock, Home, Calendar, Forecast, Photo, Info, Settings, WifiReset, Storage, Update };
+constexpr int kScreenCount = 7;  // in the swipe order; the rest open from Info
+const char* const kScreenNames[] = {"clock",    "home",       "calendar", "forecast", "photo",
+                                    "info",     "settings",   "wifi-reset", "storage", "update"};
 Screen screenOn = Screen::Clock;
 Screen screenWanted = Screen::Clock;  // target of the current/next transition
 // Automatic screens (forecast/photo from a cycle, a SHOW command or the
@@ -569,6 +569,100 @@ void showUpdate() {
 }
 
 // The Home screen from the Home Assistant devices' states.
+// The calendar screen: the month shown (0: this month) and the day whose card
+// is open (0: none).
+int calYear = 0, calMonth = 0, calSelected = 0;
+int calShownYday = -1;
+bool calKeep = false;  // the next time it opens, keep the month asked for (CALENDAR)
+
+int daysInMonth(int y, int m) {
+  static const uint8_t kDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  const bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+  return m == 2 && leap ? 29 : kDays[m - 1];
+}
+
+int weekday(int y, int m, int d) {  // 0 Sunday (Sakamoto)
+  static const uint8_t t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+  if (m < 3) --y;
+  return (y + y / 4 - y / 100 + y / 400 + t[m - 1] + d) % 7;
+}
+
+void showCalendar() {
+  static const char* const kMonths[] = {"January", "February", "March",     "April",   "May",      "June",
+                                        "July",    "August",   "September", "October", "November", "December"};
+  static const char* const kWeekdays[] = {"Sunday",   "Monday", "Tuesday", "Wednesday",
+                                          "Thursday", "Friday", "Saturday"};
+  const struct tm& now = lastLocalTm;
+  const int ty = now.tm_year + 1900, tmon = now.tm_mon + 1, td = now.tm_mday;
+  if (!calYear) {
+    calYear = ty;
+    calMonth = tmon;
+  }
+  calShownYday = now.tm_yday;
+  CalendarView v = {};
+  snprintf(v.title, sizeof(v.title), "%s %d", kMonths[calMonth - 1], calYear);
+  const int first = (weekday(calYear, calMonth, 1) + 6) % 7;  // Monday first
+  const int days = daysInMonth(calYear, calMonth);
+  v.rows = (first + days + 6) / 7;
+  const int py = calMonth == 1 ? calYear - 1 : calYear, pm = calMonth == 1 ? 12 : calMonth - 1;
+  const int prevDays = daysInMonth(py, pm);
+  v.selected = -1;
+  for (int i = 0; i < v.rows * 7; ++i) {
+    int y = calYear, m = calMonth, d = i - first + 1;
+    const bool in = d >= 1 && d <= days;
+    if (d < 1) {
+      y = py;
+      m = pm;
+      d += prevDays;
+    } else if (d > days) {
+      d -= days;
+      m = calMonth == 12 ? 1 : calMonth + 1;
+      if (calMonth == 12) ++y;
+    }
+    const lunar::Date l = lunar::fromSolar(d, m, y);
+    const bool tet = l.month == 1 && !l.leap && l.day <= 3;
+    CalendarCell& c = v.cells[i];
+    c.day = d;
+    c.lunarDay = l.day;
+    c.lunarMonth = l.month;
+    c.flags = (in ? CalendarCell::kInMonth : 0) | (y == ty && m == tmon && d == td ? CalendarCell::kToday : 0) |
+              (tet || holidays::today(d, m, l) ? CalendarCell::kHoliday : 0) |
+              (l.day == 1 ? CalendarCell::kLunarFirst : 0);
+    if (!in || d != calSelected) continue;
+    // The card: the date in full, the lunar date and the holiday.
+    v.selected = i;
+    snprintf(v.card[0], sizeof(v.card[0]), "%s, %d %s %d", kWeekdays[weekday(y, m, d)], d, kMonths[m - 1], y);
+    char yearName[24];
+    lunar::yearName(l.year, yearName, sizeof(yearName));
+    snprintf(v.card[1], sizeof(v.card[1]), "\u00c2m l\u1ecbch: %d th\u00e1ng %d%s, n\u0103m %s", l.day, l.month,
+             l.leap ? " nhu\u1eadn" : "", yearName);
+    const holidays::Holiday* h = holidays::today(d, m, l);
+    if (tet) {
+      snprintf(v.card[2], sizeof(v.card[2]), "M\u00d9NG %d T\u1ebeT", l.day);
+    } else if (h) {
+      strlcpy(v.card[2], h->name, sizeof(v.card[2]));
+    }
+  }
+  display.showCalendarScreen(v);
+}
+
+bool openCalendar(int y, int m, int d) {
+  if (y < 1900 || y > 2199 || m < 1 || m > 12 || d < 0 || d > daysInMonth(y, m)) return false;
+  calYear = y;
+  calMonth = m;
+  calSelected = d;
+  lastTouchMs = millis();  // stays up as if touched
+  previewCount = 0;
+  if (screenOn == Screen::Calendar && !transitioning) {
+    showCalendar();
+  } else {
+    calKeep = true;
+    autoScreen = false;
+    requestScreen(Screen::Calendar);
+  }
+  return true;
+}
+
 void showHome() {
   shownHomeVersion = home::version();
   HomeView v = {};
@@ -772,8 +866,8 @@ void handleTouch() {
     return;
   }
   if (transitioning) return;
-  static const char* const kGestureNames[] = {"none",        "down",        "tap",
-                                              "swipe left",  "swipe right", "hold"};
+  static const char* const kGestureNames[] = {"none", "down",     "tap",       "swipe left",
+                                              "swipe right", "hold", "swipe up", "swipe down"};
   Serial.printf("[TOUCH] %s at %d,%d\n", kGestureNames[static_cast<int>(ev.gesture)], ev.at.x,
                 ev.at.y);
   switch (ev.gesture) {
@@ -783,6 +877,21 @@ void handleTouch() {
       previewCount = 0;
       requestScreen(neighbour(screenOn, ev.gesture == touch::Gesture::SwipeLeft ? 1 : -1), false,
                     ev.gesture == touch::Gesture::SwipeLeft ? 1 : -1);
+      break;
+    case touch::Gesture::SwipeUp:
+    case touch::Gesture::SwipeDown:
+      if (screenOn == Screen::Calendar) {  // up: the next month, down: the previous one
+        calMonth += ev.gesture == touch::Gesture::SwipeUp ? 1 : -1;
+        if (calMonth > 12) {
+          calMonth = 1;
+          ++calYear;
+        } else if (calMonth < 1) {
+          calMonth = 12;
+          --calYear;
+        }
+        calSelected = 0;
+        showCalendar();
+      }
       break;
     case touch::Gesture::Hold:
       // Touch and hold anywhere: straight back to the clock.
@@ -800,6 +909,16 @@ void handleTouch() {
         requestScreen(Screen::Photo, true);
       }
       if (screenOn == Screen::Settings) applySettingsAction(display.settingsHitTest(ev.at.x, ev.at.y));
+      if (screenOn == Screen::Calendar) {
+        const int hit = display.calendarHitTest(ev.at.x, ev.at.y);
+        if (hit == DisplayManager::kCalendarTitle) {
+          calYear = calMonth = 0;  // back to this month
+          calSelected = 0;
+        } else {
+          calSelected = hit > 0 && hit != calSelected ? hit : 0;  // tap again (or elsewhere): close
+        }
+        showCalendar();
+      }
       if (screenOn == Screen::Home && home::requestSwitch(display.homeHitTest(ev.at.x, ev.at.y))) {
         showHome();  // the tile shows it's switching
       }
@@ -903,6 +1022,11 @@ void finishTransition() {
       break;
     case Screen::Home:
       showHome();
+      break;
+    case Screen::Calendar:
+      if (screenOn != Screen::Calendar && !calKeep) calYear = calMonth = calSelected = 0;  // this month
+      calKeep = false;
+      showCalendar();
       break;
     case Screen::Storage: {
       StorageView v;
@@ -1127,12 +1251,15 @@ void pollRtc(bool forceLog) {
 
 }  // namespace
 
+bool requestCalendar(int y, int m, int d) { return openCalendar(y, m, d); }
+
 bool requestScreenByName(const char* name) {
   Screen s;
   if (strcasecmp(name, "clock") == 0) s = Screen::Clock;
   else if (strcasecmp(name, "forecast") == 0) s = Screen::Forecast;
   else if (strcasecmp(name, "photo") == 0) s = Screen::Photo;
   else if (strcasecmp(name, "home") == 0) s = Screen::Home;
+  else if (strcasecmp(name, "calendar") == 0) s = Screen::Calendar;
   else if (strcasecmp(name, "info") == 0) s = Screen::Info;
   else if (strcasecmp(name, "settings") == 0) s = Screen::Settings;
   else if (strcasecmp(name, "wifi-reset") == 0) s = Screen::WifiReset;
@@ -1243,6 +1370,7 @@ void loop() {
     if (!transitioning) backlight::fadeTo(brightnessFor(nightActive), config::kNightFadeInMs);
   }
   if (screenOn == Screen::Home && !transitioning && home::version() != shownHomeVersion) showHome();
+  if (screenOn == Screen::Calendar && !transitioning && lastLocalTm.tm_yday != calShownYday) showCalendar();
   if (screenOn == Screen::Info && !transitioning && nowMsTouch - lastInfoMs >= 2000) {
     lastInfoMs = nowMsTouch;
     InfoView v;

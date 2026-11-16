@@ -28,7 +28,7 @@ struct Calibration {
 bool fitCalibration(const Point* screen, const uint16_t* rx, const uint16_t* ry, int n,
                     Calibration& out);
 
-enum class Gesture : uint8_t { None, Down, Tap, SwipeLeft, SwipeRight, Hold };
+enum class Gesture : uint8_t { None, Down, Tap, SwipeLeft, SwipeRight, Hold, SwipeUp, SwipeDown };
 
 struct Event {
   Gesture gesture = Gesture::None;

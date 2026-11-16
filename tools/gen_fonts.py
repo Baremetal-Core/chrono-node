@@ -47,6 +47,7 @@ FONTS = [
     ("font_temp", 54, 700, 32, DIGITS + "-\u00b0"),
     ("font_face", 24, 700, 24, ASCII + "\u00b0\u00b7" + LUNAR),  # clock face: date, weather temperature
     ("font_small", 15, 500, 14, ASCII + "\u00b0\u00b7" + PUNCT + VIETNAMESE),
+    ("font_tiny", 11, 500, 14, DIGITS + "/"),  # lunar dates under the calendar's days
 ]
 
 

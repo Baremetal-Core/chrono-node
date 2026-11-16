@@ -48,7 +48,7 @@ const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BR
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
                                 "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT",
-                                "TRANSITION",   "TOUCH CAL",    "OTA AUTO ",  "HA"};
+                                "TRANSITION",   "TOUCH CAL",    "OTA AUTO ",  "HA",         "CALENDAR"};
 
 bool allowed(const String& cmd) {
   if (cmd.length() == 0 || cmd.length() >= kCommandLen || cmd.indexOf('\n') >= 0 ||

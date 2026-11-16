@@ -183,6 +183,8 @@ Event poll() {
   ev.at = start;
   if (abs(dx) >= kSwipeMinPx && abs(dx) > 2 * abs(dy)) {
     ev.gesture = dx < 0 ? Gesture::SwipeLeft : Gesture::SwipeRight;
+  } else if (abs(dy) >= kSwipeMinPx && abs(dy) > 2 * abs(dx)) {
+    ev.gesture = dy < 0 ? Gesture::SwipeUp : Gesture::SwipeDown;
   } else if (abs(dx) <= kTapMaxMovePx && abs(dy) <= kTapMaxMovePx && now - downMs <= kTapMaxMs) {
     ev.gesture = Gesture::Tap;
   }

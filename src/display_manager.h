@@ -65,6 +65,19 @@ struct HomeView {
   int count;
 };
 
+// The month calendar: 4-6 weeks from Monday, with the lunar date under each day.
+struct CalendarCell {
+  static constexpr uint8_t kInMonth = 1, kToday = 2, kHoliday = 4, kLunarFirst = 8;
+  uint8_t day, lunarDay, lunarMonth, flags;
+};
+struct CalendarView {
+  char title[24];  // "November 2026"
+  uint8_t rows;    // weeks shown
+  CalendarCell cells[42];
+  int8_t selected;   // the cell whose card is open, -1: none
+  char card[3][64];  // the card: date, lunar date, holiday ("" when none)
+};
+
 // The software update screen.
 struct UpdateView {
   char installed[24];  // "v0.13.0"
@@ -160,6 +173,11 @@ class DisplayManager {
   // The Home screen; calling again redraws only the tiles that changed.
   void showHomeScreen(const HomeView& v);
   int homeHitTest(int16_t x, int16_t y) const;  // tile index, or -1
+  void showCalendarScreen(const CalendarView& v);
+  // A day of the shown month (1-31), 0 elsewhere (other months' days, the card),
+  // kCalendarTitle for the title bar.
+  static constexpr int kCalendarTitle = -2;
+  int calendarHitTest(int16_t x, int16_t y) const;
 
   // Analog face instead of the digits; its right column's content.
   void setAnalog(bool analog);
@@ -231,7 +249,7 @@ class DisplayManager {
 
  private:
   enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo, Confirm,
-                    Storage, Update, Home };
+                    Storage, Update, Home, Calendar };
   struct Roll {
     char from = ' ';
     char to = ' ';
@@ -274,6 +292,9 @@ class DisplayManager {
 
   theme::Palette pal_{0, 0};
   bool palValid_ = false;
+  CalendarView calView_ = {};
+  char calTitle_[24] = "";
+  int16_t calCardY_ = -1, calCardH_ = 0;  // the open card's place
   HomeView homeView_ = {};
   bool homeValid_ = false;
   // Switch knobs: 0 left (off) to 1 right (on), sliding to their new place.
