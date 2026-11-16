@@ -157,6 +157,8 @@ constexpr uint32_t kPortalSaveConnectTimeoutS = 15;
 constexpr const char* kDefaultNtpServer = "pool.ntp.org";
 constexpr size_t kNtpServerMaxLen = 63;
 constexpr uint32_t kNtpSyncIntervalMs = 6UL * 60 * 60 * 1000;
+// Tried after the configured server when it doesn't answer.
+constexpr const char* kNtpFallbackServers[] = {"time.google.com", "time.cloudflare.com"};
 // After an NTP sync the DS3231 is rewritten if it is off by more than this.
 // Must stay below kSystemClockMaxDriftMs so a tolerated DS3231 offset never
 // pulls the NTP-set system clock away.

@@ -483,6 +483,8 @@ inversion. Use `TEST` to check the real panel; see Troubleshooting.
 - The display always reads the DS3231, so the clock works without any network.
 - Between NTP syncs the DS3231 (±2 ppm) is the reference. The ESP32 system clock (used by
   TLS/SNTP) is seeded from it on a second edge, and corrected when it drifts more than 200 ms.
+- NTP asks the configured server (default `pool.ntp.org`) and falls back to `time.google.com`
+  and `time.cloudflare.com` when it doesn't answer (pool servers can stay silent for minutes).
 - When NTP time arrives (on every Wi-Fi connect, then every 6 h), the DS3231 offset is measured
   on its next second edge. If it is off by more than 100 ms, or the DS3231 lost power, it is
   rewritten exactly on the system second boundary. Writing the seconds register restarts the
