@@ -104,10 +104,13 @@ and the moon and air quality. The bottom line keeps the weather, banners and not
 Choose it on the clock (Settings → *Clock face*), the web page (*Display* → *Clock face*) or
 with `FACE ANALOG` / `FACE DIGITAL`. **Mix** takes turns: digital, then analog, each for N
 minutes (`FACE MIX`, `FACE EVERY 5`; 1–60, default 5), changing with the screen transition. How it works: the dial's ticks, numerals and ring are
-rendered once into a 43 KB mask (coverage and ink per pixel). Each frame (20 fps) rebuilds
-only the rectangle the hands moved through from the mask and draws anti-aliased hands over
-it: ~10 ms a frame. Like the colour effects' buffers, the mask is freed off the clock screen
-and while an HTTPS request needs the memory (the face holds still for those seconds).
+rendered once into a 43 KB mask (coverage and ink per pixel, in eight row chunks). Each
+frame (20 fps) rebuilds only the rectangle the hands moved through from the mask and draws
+anti-aliased hands over it: ~10 ms a frame. Like the colour effects' buffers, the mask is
+freed off the clock screen and while an HTTPS request needs the memory: the face holds still
+for those seconds, and if the screen was redrawn meanwhile or a minute passes (a firmware
+download takes a minute or two), the dial is drawn straight to the screen with the hour and
+minute hands, each minute, until the memory is back.
 
 ### Moon phase
 
