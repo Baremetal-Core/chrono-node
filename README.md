@@ -27,13 +27,14 @@ forecast, info and settings screens, plus a settings page in the browser at
 ## Display
 
 - **Status bar:** Wi-Fi signal and network name, NTP sync age (`NTP 5m`, amber when stale),
-  and the DS3231 temperature (±3 °C; it's the RTC chip's own sensor). The DS3231
+  the air quality (`● AQI 94`, see Weather), and the DS3231 temperature (±3 °C; it's the RTC chip's own sensor). The DS3231
   temperature is shown only when there's no weather data.
 - **Time:** HH:MM in 104 px Inter Bold with a vertical colour gradient. Changed digits roll
   upwards over 300 ms. Every digit uses a fixed-width cell, so the time never shifts sideways.
 - **Minute bar:** fills over the minute with a horizontal gradient. The seconds sit at its
   right end.
-- **Date:** the weekday in the accent colour, then the date.
+- **Date:** the weekday in the accent colour, then the date. It takes turns with the
+  **lunar date** (see below).
 - **Bottom line:** current weather (icon, temperature, condition, today's high/low). A notice
   replaces it when needed: RTC lost-power warning (red) or Wi-Fi setup instructions (cyan).
 - **Colours by time of day** (on a deep navy background), blended minute by minute in HSV
@@ -45,6 +46,40 @@ forecast, info and settings screens, plus a settings page in the browser at
 - Glyphs are rendered white-on-black into sprites, then tinted per pixel, so the gradients
   keep their anti-aliasing. Nothing flickers. An animation frame takes a few ms.
 - The CYD's RGB LED is switched off at boot.
+
+### Lunar calendar (Âm lịch)
+
+The date line takes turns with the Vietnamese lunar date: the solar date for 10 s, then
+`ÂM LỊCH · 7/10 Bính Ngọ` (day/month, then the year's name) for 5 s. On special days it gets
+as much time as the solar date:
+
+| Day | Shown |
+|-----|-------|
+| 1st of a lunar month | `MÙNG 1 · tháng 11 Bính Ngọ` |
+| 15th | `RẰM · tháng 10 Bính Ngọ` |
+| The 30 days before Tết | an extra `TẾT · còn 17 ngày` (`TẾT · ngày mai` the day before) |
+| Tết, days 1–3 | `MÙNG 1 TẾT · Đinh Mùi` |
+
+A leap month shows as `nhuận`; the year's name is left out when a line doesn't fit. Turn it
+off on the web page (*Display*) or with `LUNAR OFF`. The web page's status shows the lunar
+date and the days to Tết.
+
+How it works (`src/lunar.*`): the Vietnamese calendar's rules, in UTC+7. Months start on
+the day of the new moon, month 11 contains the winter solstice, and in a 13-month year the
+first month without a major solar term is the leap month. For lunar years 1900–2100 the
+month starts and leap months come from a table (`src/lunar_table.h`, 804 bytes) generated
+from NASA JPL's DE440s ephemeris, so every day matches the exact astronomy. A short formula
+(Meeus' new-moon series) would be a day off in 4 months whose new moon falls within a minute
+of midnight (1944, 1967, 2072, 2085) and on 2 single days (2054, 2062); it's only used
+outside the table. Regenerate the table with:
+
+```bash
+uv run --with skyfield tools/gen_lunar_table.py   # downloads de440s.bsp (32 MB) once
+```
+
+Dates far ahead can still change: the Earth's rotation varies unpredictably, so a new moon
+within about a minute of midnight decades from now (the next is in December 2072) can't be
+placed on a day with certainty by anyone; official calendars are published a few years ahead.
 
 ## Touch and screens
 
@@ -115,8 +150,10 @@ Open `http://chrono-node.local` (or the clock's IP, shown on the Info screen) fr
 on the same network. The page shows live status and changes every setting while the clock
 stays online:
 
-- **Status:** time, Wi-Fi, IP, NTP sync, RTC, weather, current screen, uptime, memory.
-- **Display:** day/night brightness, night mode and its hours, 12/24-hour time, forecast cycle.
+- **Status:** time, lunar date and days to Tết, Wi-Fi, IP, NTP sync, RTC, weather, air
+  quality, current screen, uptime, memory.
+- **Display:** day/night brightness, night mode and its hours, 12/24-hour time, the lunar
+  date, forecast cycle.
 - **Time:** time zone by name (common zones are mapped to POSIX strings, **Detect** uses the
   browser's zone, or enter a custom POSIX string), NTP server, **Sync now**, and **Set clock
   from this device** for networks without NTP (accurate to about a second).
@@ -151,7 +188,8 @@ stays in one task.
 
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
-`PHOTO`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`.
+`PHOTO`, `LUNAR`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
+`OTA AUTO`.
 Diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
 ```bash
@@ -159,6 +197,13 @@ curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-
 ```
 
 ## Firmware updates (OTA) and releases
+
+**Update notice:** the clock checks GitHub once a day (first 2 minutes after it starts,
+hourly after a failed check) with the same redirect check as the Update screen. When a newer
+release exists, *Software update vX.Y.Z is available – Info – Update* scrolls across the
+bottom line at :30 every hour, and the **Update** button on the Info screen is highlighted.
+Turn it off on the web page (*Firmware* → *Check for updates every day*) or with
+`OTA AUTO OFF`.
 
 **On the clock** (Info → **Update**): the clock asks GitHub for the newest release (it reads
 where `github.com/<repo>/releases/latest` redirects to, which isn't rate limited). If it's
@@ -259,6 +304,12 @@ A USB upload (`pio run -t upload`) always resets the boot slot to `app0`.
   2 minutes at second 45 for 10 s (settable), behind a quick backlight dip. It's never shown
   at night or while a notice is shown. Turn it off with `WEATHER CYCLE OFF`. `WEATHER SHOW`
   shows it now.
+- **Air quality:** after each weather update the clock fetches the US AQI and PM2.5 for the
+  same place from Open-Meteo's air-quality API (CAMS data). The status bar shows `● AQI 94`:
+  the dot in the EPA category colour (green good, yellow moderate, orange unhealthy for
+  sensitive groups, red unhealthy, purple very unhealthy, dark red hazardous), and the number
+  in that colour too once it's above 100. The forecast screen adds an AQI row, and the web
+  status shows the category and PM2.5. Readings older than 3 h are hidden.
 - **Offline:** the last data stays on screen. After 2 h it's dimmed and marked "old". The
   data is kept in RAM only, so a reboot without network shows no weather.
 - Icons are drawn from anti-aliased circles, lines and rounded rectangles (sun, moon, clouds,
@@ -591,6 +642,7 @@ TIMEOUT PHOTO 12            # each photo stays up 12 s (3-120)
 TIMEOUT IDLE 30             # other screens go back to the clock after 30 s without touch (5-600)
 PREVIEW                     # show the forecast and each photo once now, even at night
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
+LUNAR                       # today's lunar date and days to Tết (LUNAR ON|OFF on the clock)
 SCREEN SETTINGS             # CLOCK, FORECAST, PHOTO, INFO, SETTINGS, STORAGE, UPDATE, WIFI-RESET
 TOUCH                       # print raw/mapped touch readings for 10 s
 TOUCH CAL                   # on-screen touch calibration (4 crosshairs, saved)
@@ -598,6 +650,7 @@ SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web 
 REBOOT                      # restart the clock
 OTA                         # running slot, OTA state (pending/valid), next slot
 OTA CHECK                   # ask GitHub for the newest release (shown on the Update screen)
+OTA AUTO OFF                # stop the daily update check and notice (OTA AUTO ON to resume)
 OTA INSTALL v0.14.0         # download and install a release (or: OTA INSTALL latest)
 HELP
 ```
@@ -693,6 +746,9 @@ tools/stress_test.py            long-run stress test over USB serial + the web A
 src/mem_lease.*                 lends the animation buffers to HTTPS connections
 tools/fonts/                    Inter variable font + OFL licence
 src/photos.*                    photo storage in LittleFS: slots, uploads, JPEG header check
+src/lunar.*                     Vietnamese lunar calendar: table for 1900-2100, astronomical formula outside
+src/lunar_table.h               generated lunar month table (do not edit)
+tools/gen_lunar_table.py        lunar table generator (Skyfield + JPL DE440s)
 src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)
 ```
 

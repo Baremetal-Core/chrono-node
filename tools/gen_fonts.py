@@ -30,6 +30,12 @@ VIETNAMESE = ("ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõùúý�
 # Punctuation that phones and editors insert automatically: – — ‘ ’ “ ” • …
 PUNCT = "\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u2026"
 DIGITS = "0123456789"
+# The lunar date on the clock face (src/main.cpp: lunar texts): only the
+# Vietnamese letters these words use, to keep font_face small.
+LUNAR_WORDS = ("ÂM LỊCH MÙNG RẰM TẾT tháng nhuận còn ngày mai "
+               "Giáp Ất Bính Đinh Mậu Kỷ Canh Tân Nhâm Quý "
+               "Tý Sửu Dần Mão Thìn Tỵ Ngọ Mùi Thân Dậu Tuất Hợi")
+LUNAR = "".join(sorted(set(c for c in LUNAR_WORDS if ord(c) > 0x7F)))
 
 # name, pixel size, weight (100-900), optical size (14-32), characters
 FONTS = [
@@ -37,7 +43,7 @@ FONTS = [
     ("font_seconds", 26, 700, 24, DIGITS),
     ("font_date", 20, 500, 20, ASCII + "\u00b0\u00b7" + PUNCT + VIETNAMESE),
     ("font_temp", 54, 700, 32, DIGITS + "-\u00b0"),
-    ("font_face", 24, 700, 24, ASCII + "\u00b0\u00b7"),  # clock face: date, weather temperature
+    ("font_face", 24, 700, 24, ASCII + "\u00b0\u00b7" + LUNAR),  # clock face: date, weather temperature
     ("font_small", 15, 500, 14, ASCII + "\u00b0\u00b7" + PUNCT + VIETNAMESE),
 ]
 

@@ -123,7 +123,40 @@ bool fetch() {
   strlcpy(d.place, settings::place(), sizeof(d.place));
 
   xSemaphoreTake(mutex, portMAX_DELAY);
+  if (strcmp(latest.place, d.place) == 0) {  // keep the air quality until it's refreshed
+    d.aqi = latest.aqi;
+    d.pm25 = latest.pm25;
+    d.aqiUtc = latest.aqiUtc;
+  }
   latest = d;
+  xSemaphoreGive(mutex);
+  ver++;
+  return true;
+}
+
+// Air quality for the weather location; kept in `latest` with the weather.
+bool fetchAir() {
+  char url[200];
+  snprintf(url, sizeof(url),
+           "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%.4f&longitude=%.4f"
+           "&current=us_aqi,pm2_5&timezone=auto",
+           settings::latitude(), settings::longitude());
+  mem_lease::Scope lease;  // room for TLS
+  WiFiClientSecure client;
+  HTTPClient http;
+  if (!httpsGet(client, http, url)) return false;
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, http.getStream());
+  http.end();
+  JsonObject cur = doc["current"];
+  if (err || cur.isNull() || cur["us_aqi"].isNull()) {
+    snprintf(lastError, sizeof(lastError), "air quality: %s", err ? err.c_str() : "no data");
+    return false;
+  }
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  latest.aqi = cur["us_aqi"] | -1;
+  latest.pm25 = cur["pm2_5"] | 0.0f;
+  latest.aqiUtc = nowUtc();
   xSemaphoreGive(mutex);
   ver++;
   return true;
@@ -204,6 +237,13 @@ void service() {
     Serial.printf("[WEATHER] %s: %.1f C, %s, humidity %u%%, today %d-%d C, rain %u%%\n", d.place,
                   d.temp, describe(d.code), d.humidity, d.dayCount ? d.days[0].tmin : 0,
                   d.dayCount ? d.days[0].tmax : 0, d.dayCount ? d.days[0].pop : 0);
+    if (fetchAir()) {
+      get(d);
+      Serial.printf("[AIR] AQI %d (%s), PM2.5 %.1f ug/m3\n", d.aqi, aqiCategory(d.aqi), d.pm25);
+    } else {
+      Serial.printf("[AIR] Update failed: %s\n", lastError);
+      lastError[0] = '\0';  // the weather itself is fine
+    }
   } else {
     ++failures;
     Serial.printf("[WEATHER] Update failed: %s\n", lastError);
@@ -277,6 +317,16 @@ Icon iconFor(uint8_t code) {
   return Icon::Cloudy;
 }
 
+const char* aqiCategory(int aqi) {
+  if (aqi < 0) return "unknown";
+  if (aqi <= 50) return "Good";
+  if (aqi <= 100) return "Moderate";
+  if (aqi <= 150) return "Unhealthy for sensitive groups";
+  if (aqi <= 200) return "Unhealthy";
+  if (aqi <= 300) return "Very unhealthy";
+  return "Hazardous";
+}
+
 void printStatus() {
   Serial.printf("[WEATHER] Location %s (%.3f, %.3f), forecast screen %s\n", settings::place(),
                 settings::latitude(), settings::longitude(), settings::weatherCycle() ? "on" : "off");
@@ -289,6 +339,9 @@ void printStatus() {
   Serial.printf("[WEATHER] Now %.1f C (feels %.1f), %s, humidity %u%%, updated %lus ago%s%s\n",
                 d.temp, d.feels, describe(d.code), d.humidity, (unsigned long)age,
                 lastError[0] ? ", last error: " : "", lastError);
+  if (d.aqi >= 0) {
+    Serial.printf("[AIR] AQI %d (%s), PM2.5 %.1f ug/m3\n", d.aqi, aqiCategory(d.aqi), d.pm25);
+  }
   for (int i = 0; i < d.dayCount; ++i) {
     struct tm t;
     time_t tt = d.days[i].time;

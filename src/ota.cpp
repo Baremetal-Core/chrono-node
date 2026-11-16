@@ -12,6 +12,7 @@
 #include "certs/ca_bundle.h"
 #include "config.h"
 #include "mem_lease.h"
+#include "settings.h"
 
 // Tell the Arduino core not to confirm a new image at startup; ota::loop()
 // does it once the firmware has proven to run.
@@ -32,6 +33,9 @@ portMUX_TYPE requestLock = portMUX_INITIALIZER_UNLOCKED;
 bool releaseRequested = false;
 char releaseTag[32] = "";
 bool checkRequested = false;
+uint32_t lastCheckMs = 0;  // network task only
+bool everChecked = false;
+bool lastCheckFailed = false;
 CheckState checkResult = CheckState::Idle;
 char checkText[64] = "";  // tag or error
 
@@ -56,6 +60,9 @@ bool newerVersion(const char* tag, const char* current) {
 // github.com/<repo>/releases/latest redirects to .../releases/tag/<tag>; the
 // redirect names the newest release without using the (rate limited) API.
 void runCheck() {
+  everChecked = true;
+  lastCheckMs = millis();
+  lastCheckFailed = true;  // until a tag is read
   setCheck(CheckState::Checking, "");
   char url[128];
   snprintf(url, sizeof(url), "https://github.com/%s/releases/latest", config::kReleaseRepo);
@@ -81,6 +88,7 @@ void runCheck() {
   }
   const String tag = location.substring(at + 14);
   Serial.printf("[OTA] Newest release: %s (running v%s)\n", tag.c_str(), config::kFirmwareVersion);
+  lastCheckFailed = false;
   char running[24];
   snprintf(running, sizeof(running), "v%s", config::kFirmwareVersion);
   setCheck(newerVersion(tag.c_str(), config::kFirmwareVersion) ? CheckState::Available
@@ -292,11 +300,24 @@ CheckState checkState(char* tagOrError, size_t len) {
   return s;
 }
 
+// The daily check (needs a set clock for TLS).
+bool autoCheckDue() {
+  if (!settings::autoUpdateCheck() || time(nullptr) < 1700000000) return false;
+  const uint32_t now = millis();
+  if (!everChecked) return now >= config::kOtaAutoFirstMs;
+  return now - lastCheckMs >= (lastCheckFailed ? config::kOtaAutoRetryMs : config::kOtaAutoEveryMs);
+}
+
 void serviceNet() {
   portENTER_CRITICAL(&requestLock);
-  const bool install = releaseRequested, check = checkRequested;
+  const bool install = releaseRequested;
+  bool check = checkRequested;
   releaseRequested = checkRequested = false;
   portEXIT_CRITICAL(&requestLock);
+  if (!check && !install && autoCheckDue()) {
+    Serial.println("[OTA] Daily update check");
+    check = true;
+  }
   if (check) runCheck();
   if (install) installRelease();
 }
@@ -325,6 +346,11 @@ void printStatus() {
                 next ? (unsigned long)(next->size / 1024) : 0UL);
   Serial.printf("[OTA] Firmware %s v%s (%s), size %u KB\n", config::kFirmwareName,
                 config::kFirmwareVersion, config::kGitRevision, ESP.getSketchSize() / 1024);
+  char tag[64];
+  const CheckState st = checkState(tag, sizeof(tag));
+  Serial.printf("[OTA] Daily update check %s; %s%s\n", settings::autoUpdateCheck() ? "on" : "off",
+                st == CheckState::Available ? "update available: " : "last result: ",
+                st == CheckState::Idle ? "not checked yet" : tag);
 }
 
 }  // namespace ota

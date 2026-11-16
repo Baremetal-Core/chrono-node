@@ -114,7 +114,7 @@ struct FxCache {
 };
 FxCache* fxCache = nullptr;
 char digitCovChar[4] = {};
-int32_t dateCovKey = -1;  // year * 400 + day of year
+int32_t dateCovKey = -1;  // (year * 400 + day of year) * 4 + date view
 constexpr int16_t kDateStripH = 10;  // the date is tinted and pushed in strips
 
 void saveCoverage(const uint16_t* px, uint8_t* cov, int n) {
@@ -304,6 +304,16 @@ void drawWifiIcon(TFT_eSprite& s, int16_t cx, int16_t baseY, uint8_t bars, uint1
     s.drawSmoothArc(cx, baseY, radii[i], radii[i] - 2, 135, 225, c, C->bg, true);
   }
   s.fillSmoothCircle(cx, baseY - 1, 1, bars > 0 ? on : off, C->bg);
+}
+
+// US AQI category colours (EPA), the dark ones lifted to read on the background.
+uint16_t aqiColor(int aqi) {
+  if (aqi <= 50) return theme::rgb(0, 228, 0);
+  if (aqi <= 100) return theme::rgb(255, 230, 0);
+  if (aqi <= 150) return theme::rgb(255, 126, 0);
+  if (aqi <= 200) return theme::rgb(255, 40, 40);
+  if (aqi <= 300) return theme::rgb(190, 110, 255);
+  return theme::rgb(220, 40, 90);
 }
 
 void drawGlyphString(TFT_eSprite& s, const char* text, int16_t cellX, int16_t cellW, int16_t y) {
@@ -533,7 +543,9 @@ void DisplayManager::showTime(const struct tm& local) {
 
   drawBar(firstFrame, false);
 
-  if (local.tm_yday != lastYday_) {
+  const int view = dateViewAt(local);
+  if (local.tm_yday != lastYday_ || view != dateView_) {
+    dateView_ = view;
     drawDate(local);
     lastYday_ = local.tm_yday;
   }
@@ -721,18 +733,47 @@ uint16_t DisplayManager::barColor(int x) const {
 }
 
 
-// The date line in the clock's colours: the weekday at full strength and the
-// rest a little dimmer (drawn in grey, so the tint gives it less coverage).
-// Night mode keeps the quiet night look. Animated styles repaint it every
-// colour frame from its kept shape (see syncFxBuffers).
+void DisplayManager::setDateAlts(const DateAlt* alts, int count, bool even) {
+  count = constrain(count, 0, kMaxDateAlts);
+  if (count == dateAltCount_ && even == dateAltEven_ &&
+      memcmp(alts, dateAlts_, sizeof(DateAlt) * count) == 0) {
+    return;
+  }
+  memcpy(dateAlts_, alts, sizeof(DateAlt) * count);
+  dateAltCount_ = count;
+  dateAltEven_ = even;
+  dateView_ = -1;  // redraw on the next showTime()
+  dateCovKey = -1;
+}
+
+// Which text the date line shows now, in 5 s slots: solar, solar, alt 1,
+// alt 2..., or two slots each when even.
+int DisplayManager::dateViewAt(const struct tm& local) const {
+  if (dateAltCount_ == 0) return 0;
+  const int slot = (local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec) / 5;
+  if (dateAltEven_) return slot % (2 * (dateAltCount_ + 1)) / 2;
+  const int i = slot % (dateAltCount_ + 2);
+  return i < 2 ? 0 : i - 1;
+}
+
+// The date line in the clock's colours, or one of its alternative texts (the
+// lunar date). Night mode keeps the quiet night look. Animated styles repaint
+// it every colour frame from its kept shape (see syncFxBuffers).
 void DisplayManager::drawDate(const struct tm& local) {
   auto layout = [&](TFT_eSprite& s, uint16_t weekdayColor, uint16_t restColor, uint16_t bg) {
     // Long weekday/month combinations (e.g. WEDNESDAY, September) don't fit:
     // shorten the month first, then the weekday.
-    char weekday[12];
-    char rest[40];
+    char weekday[24];
+    char rest[48];
     int16_t w1 = 0;
-    for (int level = 0; level < 3; ++level) {
+    if (dateView_ > 0) {
+      const DateAlt& a = dateAlts_[dateView_ - 1];
+      strlcpy(weekday, a.head, sizeof(weekday));
+      w1 = s.textWidth(weekday);
+      const bool fits = w1 + s.textWidth(a.rest) <= kScreenW - 16;
+      strlcpy(rest, fits ? a.rest : a.shortRest, sizeof(rest));
+    }
+    for (int level = 0; level < 3 && dateView_ <= 0; ++level) {
       strlcpy(weekday, kWeekdays[local.tm_wday % 7], level == 2 ? 4 : sizeof(weekday));
       snprintf(rest, sizeof(rest), " \xC2\xB7 %d %.*s %d", local.tm_mday, level >= 1 ? 3 : 12,
                kMonths[local.tm_mon % 12], local.tm_year + 1900);
@@ -752,7 +793,7 @@ void DisplayManager::drawDate(const struct tm& local) {
     return;
   }
   const int16_t y0 = kDateH / 2 - 10, y1 = kDateH / 2 + 9;  // gradient rows
-  const int32_t key = local.tm_year * 400 + local.tm_yday;
+  const int32_t key = (local.tm_year * 400 + local.tm_yday) * 4 + max(dateView_, 0);
   if (!fxCache || !dateOk || key != dateCovKey) {
     // Lay the text out in a temporary full-height sprite.
     TFT_eSprite s(&tft);
@@ -871,6 +912,18 @@ void DisplayManager::drawStatusBar() {
       s.setTextColor(C->dim, C->bg);
       s.drawString(temp, x, kStatusBaseline);
       x -= s.textWidth(temp) + 14;
+    }
+    if (st.aqi >= 0) {
+      // A dot in the category colour; the number too once it's unhealthy for some.
+      char aqi[12];
+      snprintf(aqi, sizeof(aqi), "AQI %d", st.aqi);
+      uint16_t c = aqiColor(st.aqi);
+      if (night_) c = theme::mix(C->bg, c, 140);
+      s.setTextColor(st.aqi > 100 ? c : C->dim, C->bg);
+      s.drawString(aqi, x, kStatusBaseline);
+      x -= s.textWidth(aqi) + 9;
+      s.fillSmoothCircle(x, kStatusBaseline - 5, 4, c, C->bg);
+      x -= 4 + 14;
     }
     s.setTextColor(st.ntpWarn ? C->warn : C->dim, C->bg);
     s.drawString(st.ntpText, x, kStatusBaseline);
@@ -1105,9 +1158,11 @@ void DisplayManager::showInfoScreen(const InfoView& v) {
       const char* labels[] = {"Wi-Fi", "Storage", "Update"};
       for (int b = 0; b < 3; ++b) {
         const int16_t x = 10 + b * 102;
-        s.fillSmoothRoundRect(x, 0, 96, kInfoBtnH, 8, C->faint, C->bg);
+        const bool lit = b == 2 && v.updateAvailable;
+        const uint16_t fill = lit ? pal_.top : C->faint;
+        s.fillSmoothRoundRect(x, 0, 96, kInfoBtnH, 8, fill, C->bg);
         s.setTextDatum(MC_DATUM);
-        s.setTextColor(C->text, C->faint);
+        s.setTextColor(lit ? theme::rgb(0, 0, 0) : C->text, fill);
         s.drawString(labels[b], x + 48, kInfoBtnH / 2 + 1);
       }
     });
@@ -1494,6 +1549,11 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
     if (w.dayCount) {
       snprintf(line, sizeof(line), "Rain %u%%", w.days[0].pop);
       s.drawString(line, 216, 60 - y0);
+    }
+    if (w.aqi >= 0) {
+      snprintf(line, sizeof(line), "AQI %d", w.aqi);
+      s.setTextColor(aqiColor(w.aqi), C->bg);
+      s.drawString(line, 216, 79 - y0);
     }
   });
 

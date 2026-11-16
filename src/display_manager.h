@@ -26,6 +26,15 @@ struct StorageView {
   uint32_t heapTotal, heapUsed, heapPeak;
 };
 
+// Another text for the clock's date line (e.g. the lunar date), shown in
+// turn with the solar date: `head` like the weekday, then `rest` (or
+// `shortRest` when that doesn't fit). UTF-8.
+struct DateAlt {
+  char head[24];
+  char rest[48];
+  char shortRest[48];
+};
+
 // The software update screen.
 struct UpdateView {
   char installed[24];  // "v0.13.0"
@@ -40,6 +49,7 @@ struct InfoView {
   char rows[kMaxRows][2][40];  // label, value
   InfoBar bars[kMaxRows];
   int count = 0;
+  bool updateAvailable = false;  // highlights the Update button
 };
 
 struct SettingsView {
@@ -76,6 +86,7 @@ struct StatusInfo {
   bool ntpWarn = false;      // stale sync
   bool hasTemp = false;
   int8_t tempC = 0;
+  int16_t aqi = -1;  // US AQI, -1 to hide
 };
 
 class DisplayManager {
@@ -100,6 +111,11 @@ class DisplayManager {
   // or a notice is showing). Animated by tick().
   bool startBanner(const char* text, uint8_t pxPerSecond);
   bool bannerActive() const { return bannerActive_; }
+
+  // Up to kMaxDateAlts texts the date line takes turns with: the solar date
+  // for 10 s, then each one for 5 s (10 s each with `even`). 0 to stop.
+  static constexpr int kMaxDateAlts = 2;
+  void setDateAlts(const DateAlt* alts, int count, bool even);
 
   // Weather shown on the clock face's bottom line when there is no notice.
   // Pass nullptr to clear. `stale` dims it and marks it as old.
@@ -211,6 +227,11 @@ class DisplayManager {
   bool palValid_ = false;
   struct tm lastLocal_ = {};
   int lastYday_ = -1;
+  DateAlt dateAlts_[kMaxDateAlts] = {};
+  int dateAltCount_ = 0;
+  bool dateAltEven_ = false;
+  int dateView_ = 0;  // 0: the solar date, else dateAlts_[dateView_ - 1]
+  int dateViewAt(const struct tm& local) const;
   uint32_t lastFrameMs_ = 0;
 
   StatusInfo status_;

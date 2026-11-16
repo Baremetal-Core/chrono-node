@@ -106,6 +106,14 @@ bool setTransition(uint8_t t);
 uint8_t photoEveryMinutes();
 bool setPhotoEveryMinutes(uint8_t minutes);
 
+// The lunar date (Âm lịch) taking turns with the date on the clock face.
+bool lunarDate();
+bool setLunarDate(bool enabled);
+
+// Daily automatic check for a new GitHub release (the clock shows a note).
+bool autoUpdateCheck();
+bool setAutoUpdateCheck(bool enabled);
+
 // Periodic forecast screen on/off.
 bool weatherCycle();
 bool setWeatherCycle(bool enabled);

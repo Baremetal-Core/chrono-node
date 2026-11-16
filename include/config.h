@@ -84,6 +84,10 @@ constexpr uint32_t kScreenFadeInMs = 300;
 // ---- Firmware updates ----
 constexpr uint32_t kOtaConfirmAfterMs = 60000;  // run this long before confirming a new image
 constexpr uint32_t kOtaPinValidMs = 120000;
+// Automatic update check: first after this uptime, then daily (hourly after a failure).
+constexpr uint32_t kOtaAutoFirstMs = 2 * 60 * 1000;
+constexpr uint32_t kOtaAutoEveryMs = 24 * 3600 * 1000UL;
+constexpr uint32_t kOtaAutoRetryMs = 3600 * 1000UL;
 // Releases the web page offers to install; the clock downloads the asset from
 // https://github.com/<repo>/releases/download/<tag>/<asset>.
 constexpr const char* kReleaseRepo = "Baremetal-Core/chrono-node";
@@ -97,6 +101,7 @@ constexpr uint8_t kDefaultBannerEveryMin = 1;   // 0 = continuous
 constexpr uint8_t kDefaultBannerSpeed = 70;     // pixels per second
 constexpr int kBannerStartSecond = 15;          // periodic banners start at this second
 constexpr uint32_t kBannerGapMs = 2000;         // pause between messages when continuous
+constexpr int kUpdateNoticeMinute = 30;          // a found update scrolls by at :30 every hour
 
 // ---- Photos (LittleFS) ----
 constexpr int kPhotoSlots = 5;
@@ -108,6 +113,10 @@ constexpr int kPhotoShowAtSecond = 28;          // between the banner (15) and f
 // uninterruptible CPU-bound step (software ECDSA P-384 certificate checks), which
 // starves core 0's idle task beyond the 5 s default and resets the clock.
 constexpr uint32_t kTaskWatchdogS = 15;
+// Air quality older than this is hidden.
+constexpr uint32_t kAirStaleS = 3 * 3600;
+// The clock face counts down to Tết in the last days before it.
+constexpr int kTetCountdownDays = 30;
 // After this many crashes in a row the clock starts in safe mode (plain
 // colours, no effects) until the colours are changed; a crash counts as "in a
 // row" when the previous boot ran less than kSafeModeStableMs.

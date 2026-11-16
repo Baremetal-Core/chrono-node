@@ -25,6 +25,8 @@ constexpr const char* kKeyPlace = "wx_place";
 constexpr const char* kKeyWxCycle = "wx_cycle";
 constexpr const char* kKeyRecent = "wx_recent";
 constexpr const char* kKeyHour12 = "hour12";
+constexpr const char* kKeyLunar = "lunar";
+constexpr const char* kKeyOtaAuto = "ota_auto";
 constexpr const char* kKeyBannerOn = "bn_on";
 constexpr const char* kKeyBannerEvery = "bn_every";  // default for new messages
 constexpr const char* kKeyBannerEvs = "bn_evs";      // per-message period, one byte each
@@ -84,6 +86,8 @@ struct RecentLocation {
 RecentLocation recents[settings::kMaxRecentLocations] = {};
 int recentCount = 0;
 bool use12h = false;
+bool lunarOn = true;
+bool otaAuto = true;
 
 float lat = config::kDefaultLatitude;
 float lon = config::kDefaultLongitude;
@@ -149,6 +153,8 @@ void begin() {
     }
     if (prefs.isKey(kKeyPlace)) prefs.getString(kKeyPlace, placeName, sizeof(placeName));
     wxCycle = prefs.getBool(kKeyWxCycle, wxCycle);
+    lunarOn = prefs.getBool(kKeyLunar, lunarOn);
+    otaAuto = prefs.getBool(kKeyOtaAuto, otaAuto);
     use12h = prefs.getBool(kKeyHour12, use12h);
     bannerOn = prefs.getBool(kKeyBannerOn, bannerOn);
     bannerEvery = prefs.getUChar(kKeyBannerEvery, bannerEvery);
@@ -510,6 +516,22 @@ bool setBannerSpeed(uint8_t pxPerSecond) {
   if (pxPerSecond < 20 || pxPerSecond > 200) return false;
   bool ok = save([&](Preferences& p) { return p.putUChar(kKeyBannerSpeed, pxPerSecond) > 0; });
   if (ok) bannerPxPerS = pxPerSecond;
+  return ok;
+}
+
+bool lunarDate() { return lunarOn; }
+
+bool setLunarDate(bool enabled) {
+  bool ok = save([&](Preferences& p) { return p.putBool(kKeyLunar, enabled) > 0; });
+  if (ok) lunarOn = enabled;
+  return ok;
+}
+
+bool autoUpdateCheck() { return otaAuto; }
+
+bool setAutoUpdateCheck(bool enabled) {
+  bool ok = save([&](Preferences& p) { return p.putBool(kKeyOtaAuto, enabled) > 0; });
+  if (ok) otaAuto = enabled;
   return ok;
 }
 

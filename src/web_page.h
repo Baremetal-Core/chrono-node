@@ -53,6 +53,7 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div class="row"><label>Night mode</label><select id="non"><option value="ON">On</option><option value="OFF">Off</option></select>
 <input type="time" id="nstart"> to <input type="time" id="nend"><button id="nsave">Save</button></div>
 <div class="row"><label>Time format</label><select id="fmt"><option value="24">24-hour</option><option value="12">12-hour</option></select></div>
+<div class="row"><label>Lunar date (&Acirc;m l&#7883;ch) on the clock</label><select id="lunar"><option value="ON">On</option><option value="OFF">Off</option></select></div>
 <div class="row"><label>Forecast screen every 2 min</label><select id="cyc"><option value="ON">On</option><option value="OFF">Off</option></select></div>
 <div class="row"><label>Forecast stays up for</label><select id="tofc" data-cmd="TIMEOUT FORECAST"></select></div>
 <div class="row"><label>Each photo stays up for</label><select id="toph" data-cmd="TIMEOUT PHOTO"></select></div>
@@ -120,6 +121,7 @@ On the clock, swipe to the Photo screen and tap for the next one. Tap a thumbnai
 </section>
 <section><h2>Firmware</h2><div class="muted" id="fwcur"></div>
 <div id="rel" class="muted" style="margin:8px 0">Checking GitHub for updates...</div>
+<div class="row"><label>Check for updates every day (the clock shows a note)</label><select id="otaauto"><option value="ON">On</option><option value="OFF">Off</option></select></div>
 <div id="relpin" class="row" style="display:none"><label>Code shown on the clock</label><input id="relpinv" placeholder="0000" size="5" maxlength="4" inputmode="numeric">
 <button class="primary" id="relgo">Install</button><button id="relcancel">Cancel</button></div>
 <div id="relstate" class="muted"></div>
@@ -183,9 +185,10 @@ setTimeout(poll,3000)};setTimeout(poll,5000)}
 async function loadStatus(){try{const s=await(await fetch("/api/status")).json();if(!relChecked){relChecked=true;checkRelease(s)}
 $("time").textContent=s.local_time.slice(11);$("fwcur").textContent="Installed: v"+s.firmware+" ("+s.revision+")";$("sub").textContent="Firmware "+s.firmware+" ("+s.revision+") \u00b7 "+s.wifi.host;
 const w=s.weather?`${s.weather.temp_c}\u00b0C ${s.weather.condition}, ${s.weather.place} (${ago(s.weather.age_s)})`:"no data yet";
-const rows=[["Date",s.local_time.slice(0,10)],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
+const L=s.lunar,lun=L?`${L.day}/${L.month}${L.leap?" nhu\u1eadn":""} ${L.year_name}`+(L.tet_days?` \u00b7 T\u1ebft in ${L.tet_days} days`:" \u00b7 T\u1ebft today"):"-";
+const rows=[["Date",s.local_time.slice(0,10)],["Lunar date",lun],["Wi-Fi",`${s.wifi.ssid} (${s.wifi.rssi} dBm)`],["IP",s.wifi.ip],["Time sync",s.ntp],
 ["RTC",s.rtc.present?("DS3231"+(s.rtc.temp_c!==undefined?`, ${s.rtc.temp_c}\u00b0C`:"")+(s.rtc.lost_power?", LOST POWER":"")):"not detected"],
-["Weather",w],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)]];
+["Weather",w],["Air quality",s.weather&&s.weather.aqi!==undefined?`AQI ${s.weather.aqi} (${s.weather.aqi_category}), PM2.5 ${s.weather.pm25} \u00b5g/m\u00b3`:"-"],["Screen",s.screen+(s.night?" (night mode)":"")],["Uptime",up(s.uptime_s)]];
 $("storage").innerHTML=flashList(s)+ramList(s);
 $("status").innerHTML=rows.map(r=>`<div>${r[0]}</div><div>${r[1].html||esc(String(r[1]))}</div>`).join("")}catch(e){$("sub").textContent="Clock not reachable"}}
 const kb=b=>(b<10240?(b/1024).toFixed(1):Math.round(b/1024))+" KB";
@@ -215,7 +218,7 @@ function esc(t){return t.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;
 let S;
 async function loadSettings(){S=await(await fetch("/api/settings")).json();
 $("bday").value=S.brightness_day;$("bdayv").textContent=S.brightness_day+"%";$("bnight").value=S.brightness_night;$("bnightv").textContent=S.brightness_night+"%";
-$("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("cyc").value=S.forecast_cycle?"ON":"OFF";
+$("non").value=S.night.enabled?"ON":"OFF";$("nstart").value=S.night.start;$("nend").value=S.night.end;$("fmt").value=S.hour12?"12":"24";$("lunar").value=S.lunar?"ON":"OFF";$("otaauto").value=S.update_check?"ON":"OFF";$("cyc").value=S.forecast_cycle?"ON":"OFF";
 clrRender(S.colors);selVal("tofc",S.timeouts.forecast_s,S.timeouts.forecast_s+" seconds");selVal("toph",S.timeouts.photo_s,S.timeouts.photo_s+" seconds");selVal("toidle",S.timeouts.idle_s,S.timeouts.idle_s+" seconds");
 const known=TZ.find(z=>z[1]===S.timezone);$("tz").value=known?known[0]:"custom";$("tzcustom").value=S.timezone;$("tzcustomrow").style.display=known?"none":"flex";
 $("ntp").value=S.ntp_server;
@@ -281,6 +284,8 @@ $("bday").oninput=e=>$("bdayv").textContent=e.target.value+"%";$("bnight").oninp
 $("bday").onchange=e=>cmd("BRIGHT DAY "+e.target.value);$("bnight").onchange=e=>cmd("BRIGHT NIGHT "+e.target.value);
 $("non").onchange=e=>cmd("NIGHT "+e.target.value);$("nsave").onclick=()=>cmd(`NIGHT ${$("nstart").value} ${$("nend").value}`);
 $("fmt").onchange=e=>cmd("FORMAT "+e.target.value);
+$("lunar").onchange=e=>cmd("LUNAR "+e.target.value);
+$("otaauto").onchange=e=>cmd("OTA AUTO "+e.target.value);
 const secs=(id,list)=>{$(id).innerHTML=list.map(s=>`<option value="${s}">${s<60?s+" seconds":s/60+(s===60?" minute":" minutes")}</option>`).join("");
 $(id).onchange=e=>cmd($(id).dataset.cmd+" "+e.target.value)};
 secs("tofc",[5,10,15,20,30,60]);secs("toph",[5,8,12,20,30,60]);secs("toidle",[10,15,30,60,120,300]);
