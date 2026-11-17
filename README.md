@@ -272,7 +272,7 @@ curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-
 
 ## Firmware updates (OTA) and releases
 
-**Update notice:** the clock checks GitHub once a day (first 2 minutes after it starts,
+**Update notice:** the clock checks GitHub once a day (first 30 seconds after it starts,
 hourly after a failed check) with the same redirect check as the Update screen. When a newer
 release exists, a popup opens on the clock (by day, on the clock screen, not during a setup
 or an update): *vX.Y.Z is available*, with three buttons:
@@ -281,7 +281,8 @@ or an update): *vX.Y.Z is available*, with three buttons:
 - **Later:** asks again in 24 hours (remembered across restarts).
 - **Skip this version:** never asks about this release again; a newer one asks again.
 
-Unanswered, it closes after the idle time and asks again an hour later. The **Update** button on
+It stays up until you answer (a swipe or touch-and-hold puts it away until an hour later;
+night mode closes it until the morning). The **Update** button on
 the Info screen stays highlighted either way. Turn the check off on the web page (*Firmware* →
 *Check for updates every day*) or with `OTA AUTO OFF`; `OTA PROMPT` opens the popup now and
 `OTA ASK RESET` forgets the Later/Skip answers.

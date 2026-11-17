@@ -263,7 +263,9 @@ void updateAutoScreens(const struct tm& local, bool hasData) {
     return;
   }
   if (screenOn != Screen::Clock) {
-    if (now - lastTouchMs >= 1000UL * settings::screenIdleSeconds()) requestScreen(Screen::Clock);
+    // The update popup waits for an answer (closed at night: asks again later).
+    const bool waits = screenOn == Screen::UpdatePrompt && autoScreensAllowed();
+    if (!waits && now - lastTouchMs >= 1000UL * settings::screenIdleSeconds()) requestScreen(Screen::Clock);
     return;
   }
   if (!autoScreensAllowed()) return;

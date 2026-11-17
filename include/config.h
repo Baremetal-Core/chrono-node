@@ -85,7 +85,7 @@ constexpr uint32_t kScreenFadeInMs = 300;
 constexpr uint32_t kOtaConfirmAfterMs = 60000;  // run this long before confirming a new image
 constexpr uint32_t kOtaPinValidMs = 120000;
 // Automatic update check: first after this uptime, then daily (hourly after a failure).
-constexpr uint32_t kOtaAutoFirstMs = 2 * 60 * 1000;
+constexpr uint32_t kOtaAutoFirstMs = 30 * 1000;
 constexpr uint32_t kOtaAutoEveryMs = 24 * 3600 * 1000UL;
 constexpr uint32_t kOtaAutoRetryMs = 3600 * 1000UL;
 // Releases the web page offers to install; the clock downloads the asset from
