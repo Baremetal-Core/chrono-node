@@ -1289,13 +1289,14 @@ void pollRtc(bool forceLog) {
     Serial.printf("[FACE] %s\n", wantAnalog(local) ? "Analog" : "Digital");
     requestScreen(Screen::Clock, true);
   }
+  // The update popup before the photo and forecast cycles: it comes first.
+  if (screenOn == Screen::Clock && !transitioning) maybePromptUpdate();
   updateAutoScreens(local, weather::version() != 0);
   if (!transitioning) display.setNow(local);  // the time on the other screens
   if (screenOn == Screen::Clock && !transitioning) {
     display.showTime(local);
     updateStatus();
     updateBanner(local);
-    maybePromptUpdate();
   }
   if (forceLog || config::kLogEverySecond) logTime(utc);
 
@@ -1316,6 +1317,7 @@ bool requestCalendar(int y, int m, int d) { return openCalendar(y, m, d); }
 bool requestUpdatePrompt() {
   char tag[32];
   if (ota::checkState(tag, sizeof(tag)) != ota::CheckState::Available) return false;
+  if (screenOn == Screen::UpdatePrompt) return true;  // already up
   promptForced = true;  // on the clock screen's next frame
   if (screenOn != Screen::Clock) requestScreen(Screen::Clock);
   return true;
