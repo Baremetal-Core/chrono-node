@@ -203,6 +203,10 @@ class DisplayManager {
   void showStorageScreen(const StorageView& view);
   // Redraws in place when called again.
   void showUpdateScreen(const UpdateView& view);
+  // The popup when a new release is found: Update now / Later / Skip this version.
+  enum class PromptHit : uint8_t { None, Now, Later, Skip };
+  void showUpdatePrompt(const char* tag, const char* installed);
+  PromptHit promptHitTest(int16_t x, int16_t y) const;
 
   // Confirmation before forgetting the Wi-Fi network: Cancel / Forget. The
   // update screen uses the same two buttons (Back / action).
@@ -252,7 +256,7 @@ class DisplayManager {
 
  private:
   enum class Mode { None, Clock, Error, Test, Weather, Info, Settings, Calibrate, Photo, Confirm,
-                    Storage, Update, Home, Calendar };
+                    Storage, Update, Home, Calendar, Prompt };
   struct Roll {
     char from = ' ';
     char to = ' ';

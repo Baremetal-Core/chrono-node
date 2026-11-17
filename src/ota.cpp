@@ -351,6 +351,10 @@ void printStatus() {
   Serial.printf("[OTA] Daily update check %s; %s%s\n", settings::autoUpdateCheck() ? "on" : "off",
                 st == CheckState::Available ? "update available: " : "last result: ",
                 st == CheckState::Idle ? "not checked yet" : tag);
+  const uint32_t later = settings::otaRemindAfter(), now = time(nullptr);
+  Serial.printf("[OTA] Popup: skipped %s; Later %s\n",
+                settings::otaSkippedTag()[0] ? settings::otaSkippedTag() : "none",
+                later > now ? "set (asks again within 24 h)" : "not set");
 }
 
 }  // namespace ota

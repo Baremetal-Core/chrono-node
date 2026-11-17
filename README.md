@@ -274,10 +274,19 @@ curl -X POST -H 'Content-Type: text/plain' --data 'BRIGHT DAY 80' http://chrono-
 
 **Update notice:** the clock checks GitHub once a day (first 2 minutes after it starts,
 hourly after a failed check) with the same redirect check as the Update screen. When a newer
-release exists, *Software update vX.Y.Z is available – Info – Update* scrolls across the
-bottom line at :30 every hour, and the **Update** button on the Info screen is highlighted.
-Turn it off on the web page (*Firmware* → *Check for updates every day*) or with
-`OTA AUTO OFF`.
+release exists, a popup opens on the clock (by day, on the clock screen, not during a setup
+or an update): *vX.Y.Z is available*, with three buttons:
+
+- **Update now:** installs it (as Info → Update → Install; touching the clock is enough, no PIN).
+- **Later:** asks again in 24 hours (remembered across restarts).
+- **Skip this version:** never asks about this release again; a newer one asks again.
+
+Unanswered, it closes after the idle time and asks again an hour later. The **Update** button on
+the Info screen stays highlighted either way. Turn the check off on the web page (*Firmware* →
+*Check for updates every day*) or with `OTA AUTO OFF`; `OTA PROMPT` opens the popup now and
+`OTA ASK RESET` forgets the Later/Skip answers.
+
+![Update popup](docs/images/update-prompt.png)
 
 **On the clock** (Info → **Update**): the clock asks GitHub for the newest release (it reads
 where `github.com/<repo>/releases/latest` redirects to, which isn't rate limited). If it's
@@ -781,7 +790,9 @@ SETEPOCH 1794395975         # set the RTC from a UTC Unix time (used by the web 
 REBOOT                      # restart the clock
 OTA                         # running slot, OTA state (pending/valid), next slot
 OTA CHECK                   # ask GitHub for the newest release (shown on the Update screen)
-OTA AUTO OFF                # stop the daily update check and notice (OTA AUTO ON to resume)
+OTA AUTO OFF                # stop the daily update check and popup (OTA AUTO ON to resume)
+OTA PROMPT                  # open the update popup now (after a check found a newer release)
+OTA ASK RESET               # forget the popup's Later / Skip this version answers
 OTA INSTALL v0.14.0         # download and install a release (or: OTA INSTALL latest)
 HELP
 ```

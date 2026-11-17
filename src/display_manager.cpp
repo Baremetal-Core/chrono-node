@@ -2069,6 +2069,7 @@ void DisplayManager::setNow(const struct tm& local) {
     case Mode::Settings:
     case Mode::Storage:
     case Mode::Update:
+    case Mode::Prompt:
     case Mode::Confirm:
     case Mode::Home:
     case Mode::Calendar:
@@ -2314,6 +2315,54 @@ void DisplayManager::showWifiResetScreen(const char* savedSsid, const char* port
     s.setTextColor(theme::rgb(0, 0, 0), C->error);
     s.drawString("Forget", 240, kConfirmBtnH / 2 + 1 - y0);
   });
+}
+
+// The update popup: what's new and three buttons, the first one big.
+constexpr int16_t kPromptNowY = 122, kPromptNowH = 46, kPromptRowY = 178, kPromptRowH = 46;
+
+void DisplayManager::showUpdatePrompt(const char* tag, const char* installed) {
+  enterMode(Mode::Prompt);
+  drawScreenTitle("Software update");
+  drawLine(38, 32, font_date, [&](TFT_eSprite& s) {
+    char t[48];
+    snprintf(t, sizeof(t), "%s is available", tag);
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(pal_.top, C->bg);
+    s.drawString(t, kScreenW / 2, 17);
+  });
+  drawLine(72, 46, font_small, [&](TFT_eSprite& s) {
+    char t[48];
+    snprintf(t, sizeof(t), "You have %s.", installed);
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->dim, C->bg);
+    s.drawString(t, kScreenW / 2, 11);
+    s.drawString("Your settings and photos are kept.", kScreenW / 2, 32);
+  });
+  drawBlock(kPromptNowY, kPromptNowH, font_date, [&](TFT_eSprite& s, int16_t y0) {
+    s.fillSmoothRoundRect(10, -y0, kScreenW - 20, kPromptNowH, 12, pal_.top, C->bg);
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(theme::rgb(0, 0, 0), pal_.top);
+    s.drawString("Update now", kScreenW / 2, kPromptNowH / 2 + 1 - y0);
+  });
+  drawBlock(kPromptRowY, kPromptRowH, font_small, [&](TFT_eSprite& s, int16_t y0) {
+    s.setTextDatum(MC_DATUM);
+    s.fillSmoothRoundRect(10, -y0, 145, kPromptRowH, 12, C->faint, C->bg);
+    s.setTextColor(C->text, C->faint);
+    s.drawString("Later", 82, kPromptRowH / 2 + 1 - y0);
+    s.fillSmoothRoundRect(165, -y0, 145, kPromptRowH, 12, C->faint, C->bg);
+    s.setTextColor(C->dim, C->faint);
+    s.drawString("Skip this version", 237, kPromptRowH / 2 + 1 - y0);
+  });
+}
+
+DisplayManager::PromptHit DisplayManager::promptHitTest(int16_t x, int16_t y) const {
+  if (mode_ != Mode::Prompt) return PromptHit::None;
+  if (y >= kPromptNowY - 4 && y < kPromptNowY + kPromptNowH + 4) return PromptHit::Now;
+  if (y >= kPromptRowY - 4) {
+    if (x < 157) return PromptHit::Later;
+    if (x >= 163) return PromptHit::Skip;  // (a gap between them)
+  }
+  return PromptHit::None;
 }
 
 DisplayManager::ConfirmHit DisplayManager::confirmHitTest(int16_t x, int16_t y) const {

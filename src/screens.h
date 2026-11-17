@@ -9,6 +9,10 @@ bool requestScreenByName(const char* name);
 // Returns false for an invalid date.
 bool requestCalendar(int y, int m, int d);
 
+// Opens the update popup now (OTA PROMPT), ignoring Later/Skip. False when the
+// last check found no newer release.
+bool requestUpdatePrompt();
+
 // Shows photo `slot` (0 = the next one in rotation) or the forecast for their
 // set time, as if the slideshow/forecast cycle had brought it up.
 void requestPhotoNow(int slot);
