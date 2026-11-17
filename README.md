@@ -31,8 +31,9 @@ forecast, info and settings screens, plus a settings page in the browser at
   temperature is shown only when there's no weather data.
 - **Time:** HH:MM in 104 px Inter Bold with a vertical colour gradient. Changed digits roll
   upwards over 300 ms. Every digit uses a fixed-width cell, so the time never shifts sideways.
-- **Minute bar:** fills over the minute with a horizontal gradient. The seconds sit at its
-  right end.
+- **Minute bar:** fills over the minute with a horizontal gradient, flowing like the analog
+  face's second hand: its end pixel is filled in part (1/16 px steps, ~55 updates a second)
+  instead of growing a whole pixel every 1/4 s. The seconds sit at its right end.
 - **Date:** the weekday in the accent colour, then the date. It takes turns with the
   **lunar date** (see below).
 - **Bottom line:** current weather (icon, temperature, condition, today's high/low). A notice

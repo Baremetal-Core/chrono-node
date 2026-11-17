@@ -742,7 +742,7 @@ void DisplayManager::tick() {
       drawDate(lastLocal_);
     }
   }
-  drawBar(false, false);  // the bar fills smoothly: redrawn whenever it grows a pixel
+  drawBar(false, false);  // the bar flows: redrawn whenever it grows 1/16 px
 
   if (bannerActive_) drawBanner(now);
 
@@ -855,18 +855,25 @@ void DisplayManager::drawBar(bool full, bool recolor) {
   if (mode_ != Mode::Clock || !barOk) return;
   const int w = barW();
   const uint32_t intoSecond = min<uint32_t>(999, millis() - secondStartMs_);
-  const int px = static_cast<int>(static_cast<int64_t>(lastLocal_.tm_sec * 1000 + intoSecond) * w / 60000);
+  // The length in 1/16 px: the end pixel is filled in part, so the bar flows
+  // (~64 updates a second) instead of growing a pixel every 1/4 s.
+  const int len = static_cast<int>(static_cast<int64_t>(lastLocal_.tm_sec * 1000 + intoSecond) * w * 16 / 60000);
+  const int px = len >> 4;
+  const uint8_t part = (len & 15) * 17;  // 0..255
   if (barPx_ < 0) full = true;
-  if (!full && !recolor && px == barPx_) return;
+  if (!full && !recolor && len == barPx_) return;
   if (full) {
     // Only the strip the bar doesn't cover: AM/PM in 12-hour mode.
     if (barX() > kBarX) tft.fillRect(kBarX, kBarY, barX() - kBarX, kBarH, C->bg);
     drawMeridiem();
   }
-  barPx_ = px;
-  const uint16_t track = swap16(theme::mix(C->bg, pal_.bottom, 48));
+  barPx_ = len;
+  const uint16_t trackRaw = theme::mix(C->bg, pal_.bottom, 48);
+  const uint16_t track = swap16(trackRaw);
   uint16_t* buf = static_cast<uint16_t*>(barSprite.getPointer());
-  for (int x = 0; x < w; ++x) buf[x] = x < px ? swap16(barColor(x)) : track;  // sprites are byte-swapped
+  for (int x = 0; x < w; ++x) {  // sprites are byte-swapped
+    buf[x] = x < px ? swap16(barColor(x)) : x == px && part ? swap16(theme::mix(trackRaw, barColor(x), part)) : track;
+  }
   for (int y = 1; y < kBarH; ++y) memcpy(buf + y * kBarW, buf, w * sizeof(uint16_t));
   barSprite.pushSprite(barX(), kBarY, 0, 0, w, kBarH);
 }

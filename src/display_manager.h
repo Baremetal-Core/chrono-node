@@ -294,7 +294,7 @@ class DisplayManager {
   Roll secRoll_[2];
   bool secAnimating_ = false;
 
-  int barPx_ = -1;              // drawn bar length (-1: redraw everything)
+  int barPx_ = -1;              // drawn bar length in 1/16 px (-1: redraw everything)
   uint32_t secondStartMs_ = 0;  // millis() when the shown second began (smooth bar)
 
   theme::Palette pal_{0, 0};
