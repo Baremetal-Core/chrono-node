@@ -92,10 +92,12 @@ bool nightActive = false;
 // Screens, in swipe order. The forecast is skipped while there is no data,
 // the photo screen while there are no photos. WifiReset (the confirmation
 // opened from Info) isn't in the swipe order.
-enum class Screen : uint8_t { Clock, Home, Calendar, Forecast, Photo, Info, Settings, WifiReset, Storage, Update };
+enum class Screen : uint8_t { Clock, Home, Calendar, Forecast, Photo, Info, Settings, WifiReset, Storage, Update,
+                              UpdatePrompt };
 constexpr int kScreenCount = 7;  // in the swipe order; the rest open from Info
-const char* const kScreenNames[] = {"clock",    "home",       "calendar", "forecast", "photo",
-                                    "info",     "settings",   "wifi-reset", "storage", "update"};
+const char* const kScreenNames[] = {"clock",    "home",       "calendar",   "forecast", "photo",
+                                    "info",     "settings",   "wifi-reset", "storage",  "update",
+                                    "update-prompt"};
 Screen screenOn = Screen::Clock;
 Screen screenWanted = Screen::Clock;  // target of the current/next transition
 // Automatic screens (forecast/photo from a cycle, a SHOW command or the
@@ -126,7 +128,11 @@ int bannerIndex = 0;          // next message for SHOW and the continuous rotati
 uint32_t bannerDue = 0;       // bit i: message i is due
 uint32_t bannerSeenVer = 0;   // settings::bannerVersion() the due bits refer to
 bool bannerRequested = false;
-bool updateNoticeDue = false;
+// The update popup: the release it asks about, and not again before this
+// (an hour after it showed; a "Later" or "Skip" answer is saved instead).
+char promptTag[32] = "";
+uint32_t promptQuietUntilMs = 0;
+bool promptForced = false;  // OTA PROMPT: show it now
 bool bannerWasActive = false;
 uint32_t bannerNextMs = 0;
 
@@ -257,7 +263,9 @@ void updateAutoScreens(const struct tm& local, bool hasData) {
     return;
   }
   if (screenOn != Screen::Clock) {
-    if (now - lastTouchMs >= 1000UL * settings::screenIdleSeconds()) requestScreen(Screen::Clock);
+    // The update popup waits for an answer (closed at night: asks again later).
+    const bool waits = screenOn == Screen::UpdatePrompt && autoScreensAllowed();
+    if (!waits && now - lastTouchMs >= 1000UL * settings::screenIdleSeconds()) requestScreen(Screen::Clock);
     return;
   }
   if (!autoScreensAllowed()) return;
@@ -301,25 +309,6 @@ void updateBanner(const struct tm& local) {
   if (settings::bannerVersion() != bannerSeenVer) {
     bannerSeenVer = settings::bannerVersion();
     bannerDue = 0;  // indices may have moved
-  }
-  // A new release (found by the daily check) scrolls by once an hour.
-  char tag[32];
-  const bool updateAvailable = ota::checkState(tag, sizeof(tag)) == ota::CheckState::Available;
-  if (!updateAvailable) {
-    updateNoticeDue = false;
-  } else if (local.tm_min == config::kUpdateNoticeMinute &&
-             local.tm_sec == config::kBannerStartSecond) {
-    updateNoticeDue = true;
-  }
-  if (updateNoticeDue && !active && (int32_t)(millis() - bannerNextMs) >= 0) {
-    char text[96];
-    snprintf(text, sizeof(text), "Software update %s is available \xE2\x80\x93 Info \xE2\x80\x93 Update", tag);
-    if (display.startBanner(text, settings::bannerSpeed())) {
-      Serial.printf("[BANNER] Update notice (%s)\n", tag);
-      updateNoticeDue = false;
-      bannerWasActive = true;
-    }
-    return;
   }
   const bool enabled = settings::bannerEnabled();
   if (enabled && local.tm_sec == config::kBannerStartSecond) {
@@ -600,6 +589,27 @@ int isoWeek(int y, int m, int d) {
   return w > weeksIn(y) ? 1 : w;
 }
 
+// Opens the update popup on the clock screen when the daily check found a
+// release that wasn't skipped or put off, by day (not at night, nor during a
+// setup, an update or a PIN).
+void maybePromptUpdate() {
+  char tag[32];
+  if (ota::checkState(tag, sizeof(tag)) != ota::CheckState::Available) return;
+  if (!promptForced) {
+    if (!autoScreensAllowed() || autoScreen || previewCount) return;
+    if (!strcmp(tag, settings::otaSkippedTag())) return;
+    if (static_cast<uint32_t>(time(nullptr)) < settings::otaRemindAfter()) return;
+    if (promptQuietUntilMs && (int32_t)(millis() - promptQuietUntilMs) < 0) return;
+  }
+  promptForced = false;
+  strlcpy(promptTag, tag, sizeof(promptTag));
+  promptQuietUntilMs = millis() + 3600 * 1000UL;  // unanswered: again in an hour
+  if (!promptQuietUntilMs) promptQuietUntilMs = 1;
+  lastTouchMs = millis();  // up for the idle time, like a screen opened by touch
+  Serial.printf("[OTA] Asking to install %s\n", tag);
+  requestScreen(Screen::UpdatePrompt);
+}
+
 void showCalendar() {
   static const char* const kMonths[] = {"January", "February", "March",     "April",   "May",      "June",
                                         "July",    "August",   "September", "October", "November", "December"};
@@ -854,6 +864,7 @@ Screen neighbour(Screen from, int dir) {
   if (from == Screen::WifiReset || from == Screen::Storage || from == Screen::Update) {
     return Screen::Info;
   }
+  if (from == Screen::UpdatePrompt) return Screen::Clock;  // swiped away: asks again in an hour
   const bool hasForecast = weather::version() != 0;
   const bool hasPhotos = photos::count() > 0;
   int i = static_cast<int>(from);
@@ -926,6 +937,31 @@ void handleTouch() {
         requestScreen(Screen::Photo, true);
       }
       if (screenOn == Screen::Settings) applySettingsAction(display.settingsHitTest(ev.at.x, ev.at.y));
+      if (screenOn == Screen::UpdatePrompt) {
+        switch (display.promptHitTest(ev.at.x, ev.at.y)) {
+          case DisplayManager::PromptHit::Now:
+            // Touching the clock proves presence: no code needed here.
+            if (ota::requestRelease(promptTag)) {
+              Serial.printf("[OTA] Install of %s requested from the popup\n", promptTag);
+            }
+            requestScreen(Screen::Clock);  // shows "Updating firmware... N%"
+            break;
+          case DisplayManager::PromptHit::Later: {
+            const uint32_t now = time(nullptr);
+            settings::setOtaRemindAfter(now + config::kOtaPromptLaterS);
+            Serial.printf("[OTA] %s: asking again in %lu h\n", promptTag, static_cast<unsigned long>(config::kOtaPromptLaterS / 3600));
+            requestScreen(Screen::Clock);
+            break;
+          }
+          case DisplayManager::PromptHit::Skip:
+            settings::setOtaSkippedTag(promptTag);
+            Serial.printf("[OTA] %s skipped: not asking about it again\n", promptTag);
+            requestScreen(Screen::Clock);
+            break;
+          case DisplayManager::PromptHit::None:
+            break;
+        }
+      }
       if (screenOn == Screen::Calendar) {
         const int hit = display.calendarHitTest(ev.at.x, ev.at.y);
         if (hit == DisplayManager::kCalendarToday) {
@@ -1054,6 +1090,12 @@ void finishTransition() {
     case Screen::Update:
       showUpdate();
       break;
+    case Screen::UpdatePrompt: {
+      char installed[24];
+      snprintf(installed, sizeof(installed), "v%s", config::kFirmwareVersion);
+      display.showUpdatePrompt(promptTag, installed);
+      break;
+    }
     case Screen::WifiReset: {
       char saved[33];
       net::savedSsid(saved, sizeof(saved));
@@ -1247,6 +1289,8 @@ void pollRtc(bool forceLog) {
     Serial.printf("[FACE] %s\n", wantAnalog(local) ? "Analog" : "Digital");
     requestScreen(Screen::Clock, true);
   }
+  // The update popup before the photo and forecast cycles: it comes first.
+  if (screenOn == Screen::Clock && !transitioning) maybePromptUpdate();
   updateAutoScreens(local, weather::version() != 0);
   if (!transitioning) display.setNow(local);  // the time on the other screens
   if (screenOn == Screen::Clock && !transitioning) {
@@ -1269,6 +1313,15 @@ void pollRtc(bool forceLog) {
 }  // namespace
 
 bool requestCalendar(int y, int m, int d) { return openCalendar(y, m, d); }
+
+bool requestUpdatePrompt() {
+  char tag[32];
+  if (ota::checkState(tag, sizeof(tag)) != ota::CheckState::Available) return false;
+  if (screenOn == Screen::UpdatePrompt) return true;  // already up
+  promptForced = true;  // on the clock screen's next frame
+  if (screenOn != Screen::Clock) requestScreen(Screen::Clock);
+  return true;
+}
 
 bool requestScreenByName(const char* name) {
   Screen s;

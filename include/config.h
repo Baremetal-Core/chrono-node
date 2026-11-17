@@ -85,7 +85,7 @@ constexpr uint32_t kScreenFadeInMs = 300;
 constexpr uint32_t kOtaConfirmAfterMs = 60000;  // run this long before confirming a new image
 constexpr uint32_t kOtaPinValidMs = 120000;
 // Automatic update check: first after this uptime, then daily (hourly after a failure).
-constexpr uint32_t kOtaAutoFirstMs = 2 * 60 * 1000;
+constexpr uint32_t kOtaAutoFirstMs = 30 * 1000;
 constexpr uint32_t kOtaAutoEveryMs = 24 * 3600 * 1000UL;
 constexpr uint32_t kOtaAutoRetryMs = 3600 * 1000UL;
 // Releases the web page offers to install; the clock downloads the asset from
@@ -101,7 +101,7 @@ constexpr uint8_t kDefaultBannerEveryMin = 1;   // 0 = continuous
 constexpr uint8_t kDefaultBannerSpeed = 70;     // pixels per second
 constexpr int kBannerStartSecond = 15;          // periodic banners start at this second
 constexpr uint32_t kBannerGapMs = 2000;         // pause between messages when continuous
-constexpr int kUpdateNoticeMinute = 30;          // a found update scrolls by at :30 every hour
+constexpr uint32_t kOtaPromptLaterS = 24 * 3600;  // the update popup's "Later"
 
 // ---- Photos (LittleFS) ----
 constexpr int kPhotoSlots = 5;

@@ -34,6 +34,8 @@ constexpr const char* kKeyHaEntities = "ha_ents";
 constexpr const char* kKeyFaceEvery = "face_every";
 constexpr const char* kKeyPhraseLang = "phr_lang";
 constexpr const char* kKeyOtaAuto = "ota_auto";
+constexpr const char* kKeyOtaSkip = "ota_skip";
+constexpr const char* kKeyOtaLater = "ota_later";
 constexpr const char* kKeyBannerOn = "bn_on";
 constexpr const char* kKeyBannerEvery = "bn_every";  // default for new messages
 constexpr const char* kKeyBannerEvs = "bn_evs";      // per-message period, one byte each
@@ -102,6 +104,8 @@ char haEntitiesSet[config::kHaEntitiesMaxLen + 1] = "";
 uint8_t faceEverySet = 5;
 uint8_t phraseLangSet = 2;   // phrases::Lang::Both
 bool otaAuto = true;
+char otaSkip[32] = "";
+uint32_t otaLater = 0;
 
 float lat = config::kDefaultLatitude;
 float lon = config::kDefaultLongitude;
@@ -177,6 +181,8 @@ void begin() {
     faceEverySet = prefs.getUChar(kKeyFaceEvery, faceEverySet);
     phraseLangSet = prefs.getUChar(kKeyPhraseLang, phraseLangSet);
     otaAuto = prefs.getBool(kKeyOtaAuto, otaAuto);
+    prefs.getString(kKeyOtaSkip, otaSkip, sizeof(otaSkip));
+    otaLater = prefs.getUInt(kKeyOtaLater, 0);
     use12h = prefs.getBool(kKeyHour12, use12h);
     bannerOn = prefs.getBool(kKeyBannerOn, bannerOn);
     bannerEvery = prefs.getUChar(kKeyBannerEvery, bannerEvery);
@@ -612,6 +618,23 @@ bool autoUpdateCheck() { return otaAuto; }
 bool setAutoUpdateCheck(bool enabled) {
   bool ok = save([&](Preferences& p) { return p.putBool(kKeyOtaAuto, enabled) > 0; });
   if (ok) otaAuto = enabled;
+  return ok;
+}
+
+const char* otaSkippedTag() { return otaSkip; }
+
+bool setOtaSkippedTag(const char* tag) {
+  if (!tag || strlen(tag) >= sizeof(otaSkip)) return false;
+  bool ok = save([&](Preferences& p) { return p.putString(kKeyOtaSkip, tag) == strlen(tag); });
+  if (ok) strlcpy(otaSkip, tag, sizeof(otaSkip));
+  return ok;
+}
+
+uint32_t otaRemindAfter() { return otaLater; }
+
+bool setOtaRemindAfter(uint32_t utc) {
+  bool ok = save([&](Preferences& p) { return p.putUInt(kKeyOtaLater, utc) > 0; });
+  if (ok) otaLater = utc;
   return ok;
 }
 

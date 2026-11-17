@@ -134,9 +134,15 @@ bool setFaceEveryMinutes(uint8_t minutes);
 uint8_t phraseLang();
 bool setPhraseLang(uint8_t lang);
 
-// Daily automatic check for a new GitHub release (the clock shows a note).
+// Daily automatic check for a new GitHub release (the clock asks to install it).
 bool autoUpdateCheck();
 bool setAutoUpdateCheck(bool enabled);
+// The update popup's answers: a release not to ask about again ("Skip this
+// version"), and not before this UTC time ("Later").
+const char* otaSkippedTag();
+bool setOtaSkippedTag(const char* tag);
+uint32_t otaRemindAfter();
+bool setOtaRemindAfter(uint32_t utc);
 
 // Periodic forecast screen on/off.
 bool weatherCycle();
