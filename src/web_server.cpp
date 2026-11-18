@@ -14,6 +14,7 @@
 
 #include "certs/ca_bundle.h"
 #include "clock_sync.h"
+#include "backdrop.h"
 #include "config.h"
 #include "holidays.h"
 #include "home.h"
@@ -48,7 +49,7 @@ const char* const kAllowed[] = {"TZ ",          "NTP SERVER ", "NTP SYNC",   "BR
                                 "WEATHER UPDATE", "SETEPOCH ", "WIFI PORTAL", "WIFI FORGET",
                                 "REBOOT",       "SCREEN ",     "BANNER",     "PHOTO",
                                 "TIMEOUT",      "PREVIEW",     "COLOR",      "EFFECT",
-                                "TRANSITION",   "TOUCH CAL",    "OTA AUTO ",  "HA",         "CALENDAR"};
+                                "TRANSITION",   "TOUCH CAL",    "OTA AUTO ",  "HA",         "CALENDAR",   "THEME "};
 
 bool allowed(const String& cmd) {
   if (cmd.length() == 0 || cmd.length() >= kCommandLen || cmd.indexOf('\n') >= 0 ||
@@ -199,6 +200,9 @@ void handleSettings() {
   static const char* const kFaces[] = {"digital", "analog", "mix"};
   doc["face"] = kFaces[settings::faceMode() % 3];
   doc["face_every_min"] = settings::faceEveryMinutes();
+  doc["theme"] = backdrop::name(static_cast<backdrop::Theme>(settings::faceTheme()));
+  doc["theme_rotate"] = settings::themeRotate();
+  doc["theme_every_min"] = settings::themeEveryMinutes();
   static const char* const kPhraseLangs[] = {"vi", "en", "both", "off"};
   doc["phrase_lang"] = kPhraseLangs[settings::phraseLang() % 4];
   doc["update_check"] = settings::autoUpdateCheck();

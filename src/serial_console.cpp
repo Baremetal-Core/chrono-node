@@ -10,6 +10,7 @@
 
 #include "clock_sync.h"
 #include "config.h"
+#include "backdrop.h"
 #include "display_manager.h"
 #include "holidays.h"
 #include "home.h"
@@ -676,6 +677,29 @@ bool handleLine(RtcManager& rtc, DisplayManager& display, char* text) {
     static const char* const kFaces[] = {"Digital", "Analog", "Mix"};
     Serial.printf("[SETTINGS] Clock face: %s (mix every %u min)\n", kFaces[settings::faceMode() % 3],
                   settings::faceEveryMinutes());
+    return true;
+  } else if (strncasecmp(text, "THEME", 5) == 0 && (text[5] == '\0' || text[5] == ' ')) {
+    const char* arg = text + 5;
+    while (*arg == ' ') ++arg;
+    int n = 0;
+    backdrop::Theme t;
+    if (strncasecmp(arg, "PREVIEW ", 8) == 0) {  // full screen for 15 s, not saved
+      if (!display.previewBackdrop(arg + 8, 15000, "/photos/1.jpg")) Serial.println("[CONSOLE] Unknown theme");
+      return false;
+    } else if (strcasecmp(arg, "ROTATE ON") == 0 || strcasecmp(arg, "ROTATE OFF") == 0) {
+      settings::setThemeRotate(strcasecmp(arg, "ROTATE ON") == 0);
+    } else if (strncasecmp(arg, "EVERY ", 6) == 0 && sscanf(arg + 6, "%d", &n) == 1 && n >= 1 && n <= 240) {
+      settings::setThemeEveryMinutes(n);
+    } else if (*arg && backdrop::fromName(arg, t)) {
+      settings::setFaceTheme(static_cast<uint8_t>(t));
+    } else if (*arg) {
+      Serial.println("[CONSOLE] Usage: THEME [NONE|GLOW|SKY|AURORA|BOKEH|WAVES|SYNTHWAVE|PHOTO|ROTATE ON|OFF|"
+                     "EVERY 1-240|PREVIEW name]");
+      return false;
+    }
+    Serial.printf("[SETTINGS] Theme: %s%s (every %u min)\n",
+                  backdrop::title(static_cast<backdrop::Theme>(settings::faceTheme())),
+                  settings::themeRotate() ? ", changing by itself" : "", settings::themeEveryMinutes());
     return true;
   } else if (strcasecmp(text, "FORMAT 12") == 0 || strcasecmp(text, "FORMAT 24") == 0) {
     settings::setHour12(strcasecmp(text, "FORMAT 12") == 0);

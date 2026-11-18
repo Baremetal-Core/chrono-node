@@ -106,6 +106,7 @@ struct SettingsView {
   bool hour12;
   uint8_t face;  // 0 digital, 1 analog, 2 mix
   char colorName[24];  // current colour style
+  char themeName[32];  // background theme, e.g. "Night sky" or "Changes by itself"
   char place[32];
   int recentIndex;  // position of the current place in the recent list (-1 if not in it)
   int recentCount;
@@ -113,7 +114,7 @@ struct SettingsView {
 
 enum class SettingsAction : uint8_t {
   None, DayMinus, DayPlus, NightMinus, NightPlus, NightToggle, FormatToggle, ColorPrev,
-  ColorNext, LocationPrev, LocationNext
+  ColorNext, ThemePrev, ThemeNext, LocationPrev, LocationNext
 };
 
 // How the clock face is coloured (see theme::Style and the kFx flags).
@@ -239,6 +240,12 @@ class DisplayManager {
   // Full-screen error. Redrawn only when the message changes.
   void showError(const char* title, const char* detail);
 
+  // The clock face's background theme (backdrop::Theme; 0: none), its seed
+  // (where the stars, ribbons and lights go) and Photo's JPEG. Takes effect
+  // when the face is next drawn whole (now, when it's showing).
+  void setBackdrop(uint8_t theme, uint32_t seed, const char* photoPath);
+  // Paints a background theme full screen for `durationMs` (THEME PREVIEW).
+  bool previewBackdrop(const char* name, uint32_t durationMs, const char* photoPath);
   // Colour test pattern (labelled bars) shown for `durationMs`; the clock resumes afterwards.
   void showTestPattern(uint32_t durationMs);
 
@@ -294,6 +301,12 @@ class DisplayManager {
   Roll secRoll_[2];
   bool secAnimating_ = false;
 
+  uint8_t backdrop_ = 0;
+  uint32_t backdropSeed_ = 1;
+  char backdropPhoto_[40] = "";
+  int16_t barBgKey_ = -1;  // barX() the theme under the bar was read for
+  uint32_t lastSparkMs_ = 0;
+  void tickBackdrop(uint32_t now);
   int barPx_ = -1;              // drawn bar length in 1/16 px (-1: redraw everything)
   uint32_t secondStartMs_ = 0;  // millis() when the shown second began (smooth bar)
 

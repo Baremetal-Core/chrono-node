@@ -10,6 +10,7 @@
 #include <TJpg_Decoder.h>
 #include <string.h>
 
+#include "backdrop.h"
 #include "config.h"
 #include "fonts/font_date.h"
 #include "fonts/font_face.h"
@@ -30,6 +31,7 @@ TFT_eSprite bannerSprite(&tft);  // scrolling banner on the bottom line
 TFT_eSprite barSprite(&tft);     // the minute bar, pushed in one go (no tearing)
 TFT_eSprite dateSprite(&tft);    // a strip of the date line; kept only while the colours animate
 bool barOk = false;
+uint16_t barBg[4 * 320];  // the theme under the minute bar (kBarH rows), swapped
 bool dateOk = false;
 
 constexpr int16_t kScreenW = 320;
@@ -99,6 +101,10 @@ float progressOf(uint32_t startMs, uint32_t durationMs, uint32_t nowMs) {
 }
 
 inline uint16_t swap16(uint16_t c) { return (c >> 8) | (c << 8); }
+
+void faceRow(int16_t y, int16_t x0, int16_t w, uint16_t* out);  // below
+void fillBackdrop(TFT_eSprite& s, int16_t sx, int16_t sy);
+extern uint16_t faceRowBuf[320];
 
 // The colour field: a top and a bottom colour for every screen column. Static
 // styles fill it with one palette; rainbow and per-digit styles vary it across
@@ -277,17 +283,20 @@ void tintSprite(TFT_eSprite& s, int16_t w, int16_t h, int16_t y0, int16_t y1, co
     for (int d = 0; d < kShineW; ++d) shineT[d] = (kShineW - d) * 190 * 256 / (kShineW * 255);
   }
   const int cov = p.coverage + (p.coverage >> 7);  // 0..256
+  const bool themedBg = backdrop::active();
   for (int16_t y = 0; y < h; ++y) {
     const int t = y <= y0 ? 0 : y >= y1 ? 256 : (y - y0) * 256 / (y1 - y0);
     const uint16_t rowFg = uniform ? blend256(pal.top, pal.bottom, t) : 0;
+    if (themedBg) faceRow(p.screenY + y, p.screenX, min<int16_t>(w, kScreenW), faceRowBuf);
     const int16_t shineAt = shineX - (p.screenY + y - kTimeTop) * 2 / 5;  // leans right going up
     uint16_t* row = px + y * w;
     const uint8_t* glowRow = glowA + y * w;
     for (int16_t x = 0; x < w; ++x) {
       const uint16_t c = row[x];
       const int g = glow ? glowRow[x] : 0;
+      const uint16_t under = themedBg ? swap16(faceRowBuf[x]) : bg;
       if (c == 0 && g == 0) {
-        row[x] = bgSwapped;
+        row[x] = themedBg ? faceRowBuf[x] : bgSwapped;
         continue;
       }
       int16_t sx = p.screenX + x;
@@ -298,13 +307,45 @@ void tintSprite(TFT_eSprite& s, int16_t w, int16_t h, int16_t y0, int16_t y1, co
         const int d = abs(sx - shineAt);
         if (d < kShineW) fg = blend256(fg, TFT_WHITE, shineT[d]);
       }
-      const uint16_t base = g ? blend256(bg, fg, (g * kGlowStrength) >> 8) : bg;
+      const uint16_t base = g ? blend256(under, fg, (g * kGlowStrength) >> 8) : under;
       int a = c ? (swap16(c) >> 5) & 0x3F : 0;  // glyph coverage 0..63
       a = ((a + (a >> 5)) * cov) >> 8;           // 0..64, scaled by the pulse
       row[x] = swap16(blend256(base, fg, a << 2));
     }
   }
 }
+
+// ---- Background themes on the clock face (see backdrop.h) ----
+
+// The analog face darkens the theme inside its dial, for the ticks and hands.
+bool dimDial = false;
+constexpr int16_t kDialAreaX = 2, kDialAreaC = 104, kDialAreaR = 99;  // = kDialX, kDialC, kDialR - 1
+
+// A row of the clock face's background (byte-swapped, sprite order).
+void faceRow(int16_t y, int16_t x0, int16_t w, uint16_t* out) {
+  backdrop::row(y, x0, w, out);
+  if (!dimDial) return;
+  const int dy = y - kDialAreaC;
+  if (dy <= -kDialAreaR || dy >= kDialAreaR) return;
+  const int hw = static_cast<int>(sqrtf(static_cast<float>(kDialAreaR * kDialAreaR - dy * dy)));
+  const int xa = max<int>(x0, kDialAreaX + kDialAreaC - hw), xb = min<int>(x0 + w, kDialAreaX + kDialAreaC + hw);
+  for (int x = xa; x < xb; ++x) {
+    out[x - x0] = swap16(blend256(swap16(out[x - x0]), C->bg, 150));
+  }
+}
+
+// Text and anti-aliased shapes on the clock face: over a theme they blend with
+// what's under them (TFT_eSPI reads the pixel), else with the plain background.
+inline bool themed() { return backdrop::active(); }
+inline uint32_t aaBg() { return themed() ? 0x00FFFFFFu : C->bg; }
+inline void ink(TFT_eSprite& s, uint16_t fg) {
+  if (themed()) {
+    s.setTextColor(fg, fg);  // fg == bg: a sprite blends glyph edges with its own pixels
+  } else {
+    s.setTextColor(fg, C->bg);
+  }
+}
+uint16_t faceRowBuf[320];  // scratch: one row of the background
 
 // Room loadFont() needs for its glyph tables; TFT_eSPI doesn't check its mallocs.
 constexpr uint32_t kFontHeapBytes = 6 * 1024;
@@ -320,7 +361,7 @@ bool drawLine(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
     line.deleteSprite();
     return false;
   }
-  line.fillSprite(C->bg);
+  fillBackdrop(line, 0, top);
   line.loadFont(font);
   draw(line);
   line.unloadFont();
@@ -343,7 +384,7 @@ bool drawBlockAt(int16_t x, int16_t top, int16_t width, int16_t height, const ui
   if (!band.createSprite(width, bandH)) return false;
   for (int16_t y0 = 0; y0 < height; y0 += bandH) {
     if (ESP.getMaxAllocHeap() < kFontHeapBytes) return false;  // the sprite frees itself
-    band.fillSprite(C->bg);
+    fillBackdrop(band, x, top + y0);
     band.loadFont(font);
     draw(band, y0);
     band.unloadFont();
@@ -358,15 +399,47 @@ bool drawBlock(int16_t top, int16_t height, const uint8_t* font, Fn&& draw) {
   return drawBlockAt(0, top, kScreenW, height, font, draw);
 }
 
+// Fills a sprite whose top-left is at screen (sx, sy) with the background
+// theme (or the plain background when there's none).
+void fillBackdrop(TFT_eSprite& s, int16_t sx, int16_t sy) {
+  if (!backdrop::active()) {
+    s.fillSprite(C->bg);
+    return;
+  }
+  uint16_t* px = static_cast<uint16_t*>(s.getPointer());
+  const int16_t w = s.width(), h = s.height();
+  for (int16_t y = 0; y < h; ++y) faceRow(sy + y, sx, w, px + y * w);
+}
+
+// Paints the background theme straight to a screen rectangle, in bands.
+void paintBackdrop(int16_t x, int16_t y, int16_t w, int16_t h) {
+  if (!backdrop::active()) {
+    tft.fillRect(x, y, w, h, C->bg);
+    return;
+  }
+  const int16_t bandH = min<int16_t>(h, kBandH);
+  TFT_eSprite band(&tft);
+  band.setColorDepth(16);
+  if (!band.createSprite(w, bandH)) {
+    tft.fillRect(x, y, w, h, C->bg);
+    return;
+  }
+  for (int16_t y0 = 0; y0 < h; y0 += bandH) {
+    fillBackdrop(band, x, y + y0);
+    band.pushSprite(x, y + y0, 0, 0, w, min<int16_t>(bandH, h - y0));
+  }
+  band.deleteSprite();
+}
+
 void drawWifiIcon(TFT_eSprite& s, int16_t cx, int16_t baseY, uint8_t bars, uint16_t on,
                   uint16_t off) {
   // Three arcs and a dot fanning upwards; TFT_eSPI arc angles start at 6 o'clock.
   const uint8_t radii[] = {13, 9, 5};
   for (int i = 0; i < 3; ++i) {
     uint16_t c = (3 - i) <= bars ? on : off;
-    s.drawSmoothArc(cx, baseY, radii[i], radii[i] - 2, 135, 225, c, C->bg, true);
+    s.drawSmoothArc(cx, baseY, radii[i], radii[i] - 2, 135, 225, c, aaBg(), true);
   }
-  s.fillSmoothCircle(cx, baseY - 1, 1, bars > 0 ? on : off, C->bg);
+  s.fillSmoothCircle(cx, baseY - 1, 1, bars > 0 ? on : off, aaBg());
 }
 
 // US AQI category colours (EPA), the dark ones lifted to read on the background.
@@ -383,7 +456,7 @@ uint16_t aqiColor(int aqi) {
 // quarter), lit from the right while waxing, with smooth edges. The dark part
 // keeps a faint "earthshine" so the disc stays visible.
 void drawMoon(TFT_eSprite& s, int16_t cx, int16_t cy, float r, float angle, uint16_t lit,
-              uint16_t bg) {
+              uint16_t bg, bool over = false) {  // over: blend with the sprite's pixels
   const uint16_t dark = theme::mix(bg, lit, 50);
   const float t = cosf(angle * DEG_TO_RAD);
   const bool waxing = angle < 180;
@@ -396,7 +469,8 @@ void drawMoon(TFT_eSprite& s, int16_t cx, int16_t cy, float r, float angle, uint
       if (disc <= 0) continue;
       const float side = waxing ? dx - term : -dx - term;
       const uint16_t c = theme::mix(dark, lit, static_cast<uint8_t>(constrain(side + 0.5f, 0.0f, 1.0f) * 255));
-      s.drawPixel(cx + dx, cy + dy, theme::mix(bg, c, static_cast<uint8_t>(disc * 255)));
+      const uint16_t under = over ? s.readPixel(cx + dx, cy + dy) : bg;
+      s.drawPixel(cx + dx, cy + dy, theme::mix(under, c, static_cast<uint8_t>(disc * 255)));
     }
   }
 }
@@ -459,7 +533,20 @@ void DisplayManager::enterMode(Mode mode) {
     photoCorner_ = nullptr;
   }
   syncFxBuffers();
-  tft.fillScreen(C->bg);
+  barBgKey_ = -1;
+  if (mode == Mode::Clock && backdrop_ != 0) {
+    // The background theme, made for this face's colours and the night.
+    const theme::Palette p = lastLocal_.tm_year ? basePalette(lastLocal_, millis()) : pal_;
+    dimDial = analog_;
+    if (!backdrop::setup(static_cast<backdrop::Theme>(backdrop_), C->bg, p.top, p.bottom, night_, backdropSeed_,
+                         backdropPhoto_)) {
+      Serial.printf("[THEME] %s unavailable (memory or photo)\n", backdrop::title(static_cast<backdrop::Theme>(backdrop_)));
+    }
+    paintBackdrop(0, 0, kScreenW, kScreenH);
+  } else {
+    if (mode != Mode::Test) backdrop::end();
+    tft.fillScreen(C->bg);
+  }
   for (int i = 0; i < 4; ++i) {
     digits_[i] = ' ';
     bigRoll_[i].active = false;
@@ -547,7 +634,9 @@ void DisplayManager::refreshField(uint32_t now) {
 }
 
 void DisplayManager::setColors(const ColorSettings& colors) {
+  const bool restyle = backdrop_ != 0 && colors.style != colors_.style && mode_ == Mode::Clock;
   colors_ = colors;
+  if (restyle) mode_ = Mode::None;  // the theme takes the new colours: redraw the face
   syncFxBuffers();
   shineX = kNoShine;
   if (mode_ != Mode::Clock || !palValid_) {
@@ -626,7 +715,7 @@ void DisplayManager::showTime(const struct tm& local) {
   const int16_t offset = next[0] == ' ' ? -kDigitW / 2 : 0;
   if (offset != timeOffset_) {
     timeOffset_ = offset;
-    tft.fillRect(0, kTimeTop, kScreenW, kDigitH, C->bg);
+    paintBackdrop(0, kTimeTop, kScreenW, kDigitH);
     for (int i = 0; i < 4; ++i) {
       digits_[i] = ' ';
       bigRoll_[i].active = false;
@@ -696,6 +785,8 @@ void DisplayManager::tick() {
   const uint32_t now = millis();
   if (now - lastFrameMs_ < kFrameMs) return;
   lastFrameMs_ = now;
+  tickBackdrop(now);
+
   if (analog_) {
     if (!fxLeased_ && (!dialMask || !dialBandOk) && now - dialRetryMs >= 1000) syncFxBuffers();
     if (!fxLeased_ && dialMask && dialBandOk) {
@@ -864,17 +955,36 @@ void DisplayManager::drawBar(bool full, bool recolor) {
   if (!full && !recolor && len == barPx_) return;
   if (full) {
     // Only the strip the bar doesn't cover: AM/PM in 12-hour mode.
-    if (barX() > kBarX) tft.fillRect(kBarX, kBarY, barX() - kBarX, kBarH, C->bg);
+    if (barX() > kBarX) paintBackdrop(kBarX, kBarY, barX() - kBarX, kBarH);
     drawMeridiem();
   }
   barPx_ = len;
-  const uint16_t trackRaw = theme::mix(C->bg, pal_.bottom, 48);
-  const uint16_t track = swap16(trackRaw);
   uint16_t* buf = static_cast<uint16_t*>(barSprite.getPointer());
-  for (int x = 0; x < w; ++x) {  // sprites are byte-swapped
-    buf[x] = x < px ? swap16(barColor(x)) : x == px && part ? swap16(theme::mix(trackRaw, barColor(x), part)) : track;
+  if (backdrop::active()) {
+    // Over a theme the track is a tint of what's under it (kept: the bar is
+    // redrawn ~55 times a second).
+    if (full || barBgKey_ != barX()) {
+      for (int y = 0; y < kBarH; ++y) faceRow(kBarY + y, barX(), w, barBg + y * kBarW);
+      barBgKey_ = barX();
+    }
+    for (int y = 0; y < kBarH; ++y) {
+      const uint16_t* under = barBg + y * kBarW;
+      uint16_t* out = buf + y * kBarW;
+      for (int x = 0; x < w; ++x) {
+        const uint16_t trackRaw = theme::mix(swap16(under[x]), pal_.bottom, 70);
+        out[x] = x < px ? swap16(barColor(x))
+                 : x == px && part ? swap16(theme::mix(trackRaw, barColor(x), part))
+                                   : swap16(trackRaw);
+      }
+    }
+  } else {
+    const uint16_t trackRaw = theme::mix(C->bg, pal_.bottom, 48);
+    const uint16_t track = swap16(trackRaw);
+    for (int x = 0; x < w; ++x) {  // sprites are byte-swapped
+      buf[x] = x < px ? swap16(barColor(x)) : x == px && part ? swap16(theme::mix(trackRaw, barColor(x), part)) : track;
+    }
+    for (int y = 1; y < kBarH; ++y) memcpy(buf + y * kBarW, buf, w * sizeof(uint16_t));
   }
-  for (int y = 1; y < kBarH; ++y) memcpy(buf + y * kBarW, buf, w * sizeof(uint16_t));
   barSprite.pushSprite(barX(), kBarY, 0, 0, w, kBarH);
 }
 
@@ -936,9 +1046,9 @@ void DisplayManager::drawDate(const struct tm& local) {
     }
     const int16_t x = (kScreenW - w1 - s.textWidth(rest)) / 2;
     s.setTextDatum(L_BASELINE);
-    s.setTextColor(weekdayColor, bg);
+    if (bg == C->bg) ink(s, weekdayColor); else s.setTextColor(weekdayColor, bg);
     s.drawString(weekday, x, kDateBaseline);
-    s.setTextColor(restColor, bg);
+    if (bg == C->bg) ink(s, restColor); else s.setTextColor(restColor, bg);
     s.drawString(rest, x + w1, kDateBaseline);
   };
   if (night_) {
@@ -1081,8 +1191,7 @@ void DisplayManager::drawStatusBar() {
     drawWifiIcon(s, 18, kStatusBaseline + 1, bars, iconColor, C->faint);
 
     s.setTextDatum(L_BASELINE);
-    s.setTextColor(st.wifi == StatusInfo::Wifi::Setup ? C->setup : C->dim,
-                   C->bg);
+    ink(s, st.wifi == StatusInfo::Wifi::Setup ? C->setup : C->dim);
     s.drawString(st.wifiText, 38, kStatusBaseline);
 
     int16_t x = kScreenW - 10;
@@ -1090,7 +1199,7 @@ void DisplayManager::drawStatusBar() {
     if (st.hasTemp) {
       char temp[12];
       snprintf(temp, sizeof(temp), "%d\xC2\xB0" "C", st.tempC);
-      s.setTextColor(C->dim, C->bg);
+      ink(s, C->dim);
       s.drawString(temp, x, kStatusBaseline);
       x -= s.textWidth(temp) + 14;
     }
@@ -1100,17 +1209,17 @@ void DisplayManager::drawStatusBar() {
       snprintf(aqi, sizeof(aqi), "AQI %d", st.aqi);
       uint16_t c = aqiColor(st.aqi);
       if (night_) c = theme::mix(C->bg, c, 140);
-      s.setTextColor(st.aqi > 100 ? c : C->dim, C->bg);
+      ink(s, st.aqi > 100 ? c : C->dim);
       s.drawString(aqi, x, kStatusBaseline);
       x -= s.textWidth(aqi) + 9;
-      s.fillSmoothCircle(x, kStatusBaseline - 5, 4, c, C->bg);
+      s.fillSmoothCircle(x, kStatusBaseline - 5, 4, c, aaBg());
       x -= 4 + 14;
     }
-    s.setTextColor(st.ntpWarn ? C->warn : C->dim, C->bg);
+    ink(s, st.ntpWarn ? C->warn : C->dim);
     s.drawString(st.ntpText, x, kStatusBaseline);
     if (st.moonAngle >= 0) {
       x -= s.textWidth(st.ntpText) + 16;
-      drawMoon(s, x, kStatusBaseline - 5, 6.5f, st.moonAngle, moonColor(night_), C->bg);
+      drawMoon(s, x, kStatusBaseline - 5, 6.5f, st.moonAngle, moonColor(night_), C->bg, themed());
     }
   });
 }
@@ -1227,7 +1336,7 @@ void DisplayManager::drawPhraseLine() {
     snprintf(buf, sizeof(buf), "%s%.*s%s", part == 0 ? "\xE2\x80\x9C" : "\xE2\x80\xA6", lens[part],
              starts[part], last ? "\xE2\x80\x9D" : "\xE2\x80\xA6");
     s.setTextDatum(MC_DATUM);
-    s.setTextColor(C->dim, C->bg);
+    ink(s, C->dim);
     s.drawString(buf, kScreenW / 2, kPhraseH / 2 + 1);
     int chars = 0;
     for (const char* c = buf; *c; ++c) chars += (*c & 0xC0) != 0x80;  // UTF-8 code points
@@ -1251,14 +1360,21 @@ void DisplayManager::setAnalogInfo(const AnalogInfo& info) {
 void DisplayManager::drawDialPlain() {
   dialShownKey_ = lastLocal_.tm_hour * 60 + lastLocal_.tm_min;
   const int16_t cx = kDialX + kDialC, cy = kDialY + kDialC;
-  tft.fillRect(kDialX, kDialY, kDialD, kDialD, C->bg);
-  tft.fillSmoothCircle(cx, cy, kDialR, pal_.top, C->bg);
-  tft.fillSmoothCircle(cx, cy, kDialR - 2, C->bg, pal_.top);
+  // Over a theme: the background first, then the ring as an outline (the
+  // shapes read the screen to blend their edges).
+  paintBackdrop(kDialX, kDialY, kDialD, kDialD);
+  if (themed()) {
+    tft.drawSmoothCircle(cx, cy, kDialR, pal_.top, 0x00FFFFFF);
+    tft.drawSmoothCircle(cx, cy, kDialR - 1, pal_.top, 0x00FFFFFF);
+  } else {
+    tft.fillSmoothCircle(cx, cy, kDialR, pal_.top, C->bg);
+    tft.fillSmoothCircle(cx, cy, kDialR - 2, C->bg, pal_.top);
+  }
   for (int i = 0; i < 60; ++i) {
     const float a = i * PI / 30, sx = sinf(a), cs = cosf(a);
     const bool hour = i % 5 == 0;
     const float r0 = kDialR - (hour ? 15 : 9), r1 = kDialR - 5, w = hour ? 1.7f : 0.7f;
-    tft.drawWedgeLine(cx + r0 * sx, cy - r0 * cs, cx + r1 * sx, cy - r1 * cs, w, w, hour ? C->text : C->dim, C->bg);
+    tft.drawWedgeLine(cx + r0 * sx, cy - r0 * cs, cx + r1 * sx, cy - r1 * cs, w, w, hour ? C->text : C->dim, aaBg());
   }
   if (ESP.getMaxAllocHeap() >= kFontHeapBytes) {  // the numerals when the font fits
     tft.loadFont(font_date);
@@ -1268,7 +1384,9 @@ void DisplayManager::drawDialPlain() {
       const float a = h * PI / 6;
       char n[4];
       snprintf(n, sizeof(n), "%d", h);
-      tft.drawString(n, cx + (kDialR - 30) * sinf(a), cy - (kDialR - 30) * cosf(a) + 1);
+      const int16_t nx = cx + (kDialR - 30) * sinf(a), ny = cy - (kDialR - 30) * cosf(a) + 1;
+      if (themed()) tft.setTextColor(C->text, theme::mix(backdrop::at(nx, ny), C->bg, 150));
+      tft.drawString(n, nx, ny);
     }
     tft.unloadFont();
   }
@@ -1276,11 +1394,11 @@ void DisplayManager::drawDialPlain() {
   const float hour = lastLocal_.tm_hour % 12 + minute / 60;
   auto hand = [&](float turns, float len, float tail, float ar, float br) {
     const float a = turns * 2 * PI, sx = sinf(a), cs = cosf(a);
-    tft.drawWedgeLine(cx - tail * sx, cy + tail * cs, cx + len * sx, cy - len * cs, ar, br, C->text, C->bg);
+    tft.drawWedgeLine(cx - tail * sx, cy + tail * cs, cx + len * sx, cy - len * cs, ar, br, C->text, aaBg());
   };
   hand(hour / 12, 52, 10, 4.2f, 2.4f);
   hand(minute / 60, 80, 12, 3.2f, 1.6f);
-  tft.fillSmoothCircle(cx, cy, 5, pal_.top, C->bg);
+  tft.fillSmoothCircle(cx, cy, 5, pal_.top, aaBg());
   tft.fillSmoothCircle(cx, cy, 2, C->bg, pal_.top);
   analogFull_ = true;  // the full dial, with the second hand, once the buffers are back
 }
@@ -1343,6 +1461,7 @@ void DisplayManager::analogFrame() {
 void DisplayManager::drawDialRect(int16_t x0, int16_t y0, int16_t w, int16_t h, const Hand* hands) {
   const uint16_t inks[2] = {C->dim, C->text};
   const uint16_t bg = swap16(C->bg);
+  const bool themedBg = backdrop::active();
   const uint16_t accent = pal_.top;
   uint16_t* buf = static_cast<uint16_t*>(dialBand.getPointer());
   for (int16_t yy = y0; yy < y0 + h; yy += kDialBandH) {
@@ -1352,6 +1471,14 @@ void DisplayManager::drawDialRect(int16_t x0, int16_t y0, int16_t w, int16_t h, 
       const uint16_t ring = theme::mix(pal_.top, pal_.bottom, my * 255 / kDialD);
       const uint8_t* m = dialRow(my) + x0;
       uint16_t* out = buf + r * kDialD;
+      if (themedBg) {
+        faceRow(kDialY + my, kDialX + x0, w, out);
+        for (int16_t c = 0; c < w; ++c) {
+          const uint8_t v = m[c];
+          if (v >> 4) out[c] = swap16(theme::mix(swap16(out[c]), (v & 3) == 2 ? ring : inks[v & 1], (v >> 4) * 17));
+        }
+        continue;
+      }
       for (int16_t c = 0; c < w; ++c) {
         const uint8_t v = m[c];
         out[c] = v >> 4 ? swap16(theme::mix(C->bg, (v & 3) == 2 ? ring : inks[v & 1], (v >> 4) * 17))
@@ -1366,7 +1493,7 @@ void DisplayManager::drawDialRect(int16_t x0, int16_t y0, int16_t w, int16_t h, 
       dialBand.drawWedgeLine(hd.ax + ox, hd.ay + oy, hd.bx + ox, hd.by + oy, hd.ar, hd.br,
                              i == 2 ? accent : C->text, 0x00FFFFFF);
     }
-    dialBand.fillSmoothCircle(kDialC - x0, kDialC - yy, 5, accent, C->bg);
+    dialBand.fillSmoothCircle(kDialC - x0, kDialC - yy, 5, accent, aaBg());
     dialBand.fillSmoothCircle(kDialC - x0, kDialC - yy, 2, C->bg, accent);
     dialBand.pushSprite(kDialX + x0, kDialY + yy, 0, 0, w, hh);
   }
@@ -1379,30 +1506,35 @@ void DisplayManager::drawAnalogColumn() {
   const AnalogInfo& a = analogInfo_;
   drawBlockAt(kColX, 0, kColW, kDialD, font_date, [&](TFT_eSprite& s, int16_t y0) {
     const int16_t cx = kColW / 2;
+    s.setTextWrap(false, false);  // (TFT_eSPI wraps at the sprite's edge: "Wednesda / y")
     s.setTextDatum(MC_DATUM);
-    s.setTextColor(pal_.top, C->bg);
+    ink(s, pal_.top);
+    if (s.textWidth(a.weekday) > kColW - 4) {  // Wednesday: the smaller font
+      s.unloadFont();
+      s.loadFont(font_small);
+    }
     s.drawString(a.weekday, cx, 16 - y0);
     s.unloadFont();
     s.loadFont(font_temp);
-    s.setTextColor(C->text, C->bg);
+    ink(s, C->text);
     s.drawString(a.day, cx, 56 - y0);
     s.unloadFont();
     s.loadFont(font_small);
-    s.setTextColor(C->dim, C->bg);
+    ink(s, C->dim);
     s.drawString(a.month, cx, 92 - y0);
     s.drawFastHLine(14, 106 - y0, kColW - 28, C->faint);
     // With a holiday the lunar lines move up to make room for two more.
     const int16_t ly = a.holiday[0] ? 118 : 124;
     if (a.lunar[0]) {
-      s.setTextColor(C->text, C->bg);
+      ink(s, C->text);
       s.drawString(a.lunar, cx, ly - y0);
-      s.setTextColor(C->dim, C->bg);
+      ink(s, C->dim);
       s.drawString(a.lunarYear, cx, ly + 17 - y0);
     }
     if (a.holiday[0]) {
       // One line, or two split at the space nearest the middle.
       const int16_t hy = a.lunar[0] ? ly + 38 : 128;
-      s.setTextColor(pal_.top, C->bg);
+      ink(s, pal_.top);
       if (s.textWidth(a.holiday) <= kColW - 6) {
         s.drawString(a.holiday, cx, hy + 8 - y0);
       } else {
@@ -1426,16 +1558,16 @@ void DisplayManager::drawAnalogColumn() {
     const int16_t aqiW = a.aqi >= 0 ? 10 + s.textWidth(aqi) : 0;
     int16_t x = (kColW - moonW - aqiW - (moonW && aqiW ? 8 : 0)) / 2;
     if (moonW) {
-      drawMoon(s, x + 7, 196 - y0, 7.5f, a.moonAngle, moonColor(night_), C->bg);
-      s.setTextColor(C->dim, C->bg);
+      drawMoon(s, x + 7, 196 - y0, 7.5f, a.moonAngle, moonColor(night_), C->bg, themed());
+      ink(s, C->dim);
       s.drawString(lit, x + 18, 197 - y0);
       x += moonW + 8;
     }
     if (aqiW) {
       uint16_t c = aqiColor(a.aqi);
       if (night_) c = theme::mix(C->bg, c, 140);
-      s.fillSmoothCircle(x + 3, 196 - y0, 3, c, C->bg);
-      s.setTextColor(a.aqi > 100 ? c : C->dim, C->bg);
+      s.fillSmoothCircle(x + 3, 196 - y0, 3, c, aaBg());
+      ink(s, a.aqi > 100 ? c : C->dim);
       s.drawString(aqi, x + 10, 197 - y0);
     }
   });
@@ -1470,7 +1602,7 @@ void DisplayManager::drawNotice() {
     return;
   }
   drawLine(kNoticeTop, kNoticeH, font_small, [&](TFT_eSprite& s) {
-    s.setTextColor(noticeKind_ == NoticeKind::Error ? C->error : C->setup, C->bg);
+    ink(s, noticeKind_ == NoticeKind::Error ? C->error : C->setup);
     s.setTextDatum(MC_DATUM);
     s.drawString(notice_, kScreenW / 2, kNoticeH / 2);
   });
@@ -1509,7 +1641,7 @@ void DisplayManager::drawBanner(uint32_t now) {
       const uint8_t a = 255 - i * 255 / kFade;
       for (int16_t xx : {(int16_t)i, (int16_t)(kScreenW - 1 - i)}) {
         const uint16_t c = swap16(row[xx]);
-        row[xx] = swap16(theme::mix(c, C->bg, a));
+        row[xx] = swap16(theme::mix(c, backdrop::active() ? backdrop::at(xx, kNoticeTop + y) : C->bg, a));
       }
     }
   }
@@ -1559,15 +1691,17 @@ void DisplayManager::drawWeatherLine() {
     }
     int16_t x = (kScreenW - (iconW + 4 + tempW + 10 + detailW)) / 2;
 
-    weather_icons::draw(s, x + iconW / 2, kNoticeH / 2, 22, weather::iconFor(w.code), w.isDay, C->bg,
+    // Over a theme the icon's cut-outs (the moon's crescent) take its colour there.
+    const uint16_t iconBg = themed() ? backdrop::at(x + iconW / 2, kNoticeTop + kNoticeH / 2) : C->bg;
+    weather_icons::draw(s, x + iconW / 2, kNoticeH / 2, 22, weather::iconFor(w.code), w.isDay, iconBg,
                         night_ || weatherStale_, C->dim);
     x += iconW + 4;
     s.setTextDatum(ML_DATUM);
-    s.setTextColor(weatherStale_ ? C->dim : C->date, C->bg);
+    ink(s, weatherStale_ ? C->dim : C->date);
     s.drawString(detail, x + tempW + 10, kNoticeH / 2);
     s.unloadFont();
     s.loadFont(font_face);
-    s.setTextColor(weatherStale_ ? C->dim : pal_.top, C->bg);
+    ink(s, weatherStale_ ? C->dim : pal_.top);
     s.drawString(temp, x, kNoticeH / 2);
   });
 }
@@ -1596,9 +1730,9 @@ void DisplayManager::drawMeridiem() {
   TFT_eSprite s(&tft);
   s.setColorDepth(16);
   if (!s.createSprite(kMeridiemW - 4, 18)) return;
-  s.fillSprite(C->bg);
+  fillBackdrop(s, kBarX, kRowY - 9);
   s.loadFont(font_small);
-  s.setTextColor(pal_.top, C->bg);
+  ink(s, pal_.top);
   s.setTextDatum(ML_DATUM);
   s.drawString(pm_ ? "PM" : "AM", 0, 9);
   s.unloadFont();
@@ -2385,8 +2519,8 @@ DisplayManager::ConfirmHit DisplayManager::confirmHitTest(int16_t x, int16_t y) 
 namespace {
 
 constexpr int16_t kSetTop = 30;
-constexpr int16_t kSetRowH = 35;
-constexpr int16_t kBtnY = 4, kBtnH = 27;
+constexpr int16_t kSetRowH = 30;
+constexpr int16_t kBtnY = 2, kBtnH = 26;
 constexpr int16_t kMinusX = 172, kPlusX = 274, kStepW = 42;
 constexpr int16_t kToggleX = 196, kToggleW = 120;
 constexpr int16_t kArrowW = 46;
@@ -2415,10 +2549,10 @@ void DisplayManager::showSettingsScreen(const SettingsView& v) {
   auto label = [&](TFT_eSprite& s, const char* text, const char* sub) {
     s.setTextDatum(ML_DATUM);
     s.setTextColor(C->text, C->bg);
-    s.drawString(text, 12, sub ? 11 : kSetRowH / 2);
+    s.drawString(text, 12, sub ? 8 : kSetRowH / 2);
     if (sub) {
       s.setTextColor(C->dim, C->bg);
-      s.drawString(sub, 12, 26);
+      s.drawString(sub, 12, 22);
     }
   };
   auto stepper = [&](TFT_eSprite& s, const char* text, uint8_t pct) {
@@ -2449,11 +2583,20 @@ void DisplayManager::showSettingsScreen(const SettingsView& v) {
     drawButton(s, kScreenW - 8 - kArrowW, kArrowW, ">", false, accent);
     s.setTextDatum(MC_DATUM);
     s.setTextColor(C->dim, C->bg);
-    s.drawString("Colours", kScreenW / 2, 9);
+    s.drawString("Colours", kScreenW / 2, 8);
     s.setTextColor(C->text, C->bg);
-    s.drawString(v.colorName, kScreenW / 2, 25);
+    s.drawString(v.colorName, kScreenW / 2, 22);
   });
   row(5, [&](TFT_eSprite& s) {
+    drawButton(s, 8, kArrowW, "<", false, accent);
+    drawButton(s, kScreenW - 8 - kArrowW, kArrowW, ">", false, accent);
+    s.setTextDatum(MC_DATUM);
+    s.setTextColor(C->dim, C->bg);
+    s.drawString("Background", kScreenW / 2, 8);
+    s.setTextColor(C->text, C->bg);
+    s.drawString(v.themeName, kScreenW / 2, 22);
+  });
+  row(6, [&](TFT_eSprite& s) {
     const bool many = v.recentCount > 1;
     drawButton(s, 8, kArrowW, "<", false, accent);
     drawButton(s, kScreenW - 8 - kArrowW, kArrowW, ">", false, accent);
@@ -2494,6 +2637,10 @@ SettingsAction DisplayManager::settingsHitTest(int16_t x, int16_t y) const {
       if (x >= kScreenW * 2 / 3) return SettingsAction::ColorNext;
       break;
     case 5:
+      if (x < kScreenW / 3) return SettingsAction::ThemePrev;
+      if (x >= kScreenW * 2 / 3) return SettingsAction::ThemeNext;
+      break;
+    case 6:
       if (x < kScreenW / 3) return SettingsAction::LocationPrev;
       if (x >= kScreenW * 2 / 3) return SettingsAction::LocationNext;
       break;
@@ -2670,6 +2817,50 @@ void DisplayManager::showError(const char* title, const char* detail) {
     s.setTextDatum(MC_DATUM);
     s.drawString(config::kProjectName, kScreenW / 2, kNoticeH / 2);
   });
+}
+
+// Twinkling stars and shooting stars: only pixels still showing the theme's
+// old colour change, so the time, text and dial drawn over it stay as they are.
+// None at night.
+void DisplayManager::tickBackdrop(uint32_t now) {
+  if (!backdrop::active() || night_ || now - lastSparkMs_ < 33) return;
+  lastSparkMs_ = now;
+  backdrop::Spark sp[48];
+  const int n = backdrop::sparkles(now, sp, 48);
+  for (int i = 0; i < n; ++i) {
+    if (sp[i].from == sp[i].to) continue;
+    if (dimDial) {  // inside the dial the theme is darkened: compare and draw it so
+      const int dx = sp[i].x - kDialAreaX - kDialAreaC, dy = sp[i].y - kDialAreaC;
+      if (dx * dx + dy * dy < kDialAreaR * kDialAreaR) {
+        sp[i].from = blend256(sp[i].from, C->bg, 150);  // as faceRow()
+        sp[i].to = blend256(sp[i].to, C->bg, 150);
+      }
+    }
+    if (tft.readPixel(sp[i].x, sp[i].y) == sp[i].from) tft.drawPixel(sp[i].x, sp[i].y, sp[i].to);
+  }
+}
+
+void DisplayManager::setBackdrop(uint8_t theme, uint32_t seed, const char* photoPath) {
+  const char* path = photoPath ? photoPath : "";
+  if (theme == backdrop_ && seed == backdropSeed_ && !strcmp(path, backdropPhoto_)) return;
+  backdrop_ = theme;
+  backdropSeed_ = seed;
+  strlcpy(backdropPhoto_, path, sizeof(backdropPhoto_));
+  if (mode_ == Mode::Clock) mode_ = Mode::None;  // the next showTime() draws the face whole
+}
+
+bool DisplayManager::previewBackdrop(const char* name, uint32_t durationMs, const char* photoPath) {
+  backdrop::Theme t;
+  if (!backdrop::fromName(name, t)) return false;
+  const uint32_t t0 = millis();
+  const bool ok = backdrop::setup(t, C->bg, pal_.top, pal_.bottom, night_, esp_random(), photoPath);
+  const uint32_t t1 = millis();
+  mode_ = Mode::Test;
+  testUntilMs_ = millis() + durationMs;
+  paintBackdrop(0, 0, kScreenW, kScreenH);
+  Serial.printf("[THEME] %s: %s, tables %lu ms, screen %lu ms, heap %u\n", backdrop::title(t), ok ? "ok" : "failed",
+                t1 - t0, millis() - t1, ESP.getFreeHeap());
+  return true;
 }
 
 void DisplayManager::showTestPattern(uint32_t durationMs) {
