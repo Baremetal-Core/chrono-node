@@ -357,6 +357,33 @@ inline void ink(TFT_eSprite& s, uint16_t fg) {
 }
 uint16_t faceRowBuf[320];  // scratch: one row of the background
 
+// An anti-aliased ring segment (radii ir..r around cx, cy, within `half`
+// degrees either side of straight up; 180: a whole ring) blended with the
+// pixels under it. TFT_eSPI's arcs can't read the background (they blend
+// toward the literal colour 0x00FFFFFF, white), so over a theme this is used.
+void blendArc(TFT_eSPI& g, float cx, float cy, float r, float ir, float half, uint16_t color) {
+  const float halfRad = half * DEG_TO_RAD;
+  const int y0 = static_cast<int>(floorf(cy - r - 1)), y1 = static_cast<int>(ceilf(cy + r + 1));
+  const float rOut2 = (r + 1) * (r + 1), rIn2 = ir > 1 ? (ir - 1) * (ir - 1) : 0;
+  for (int y = y0; y <= y1; ++y) {
+    const float dy = y - cy;
+    if (half < 90 && dy > 0.5f) break;  // an upward fan: nothing below the centre
+    const float span = sqrtf(max(0.0f, rOut2 - dy * dy));
+    for (int x = static_cast<int>(floorf(cx - span)); x <= static_cast<int>(ceilf(cx + span)); ++x) {
+      const float dx = x - cx, d2 = dx * dx + dy * dy;
+      if (d2 > rOut2 || d2 < rIn2) continue;
+      const float d = sqrtf(d2);
+      float cov = constrain(0.5f + min(r - d, d - ir), 0.0f, 1.0f);
+      if (half < 180 && cov > 0) {
+        const float a = fabsf(atan2f(dx, -dy));  // from straight up
+        cov *= constrain(0.5f + (halfRad - a) * d, 0.0f, 1.0f);
+      }
+      if (cov <= 0.02f) continue;
+      g.drawPixel(x, y, theme::mix(g.readPixel(x, y), color, static_cast<uint8_t>(cov * 255)));
+    }
+  }
+}
+
 // Room loadFont() needs for its glyph tables; TFT_eSPI doesn't check its mallocs.
 constexpr uint32_t kFontHeapBytes = 6 * 1024;
 
@@ -447,7 +474,11 @@ void drawWifiIcon(TFT_eSprite& s, int16_t cx, int16_t baseY, uint8_t bars, uint1
   const uint8_t radii[] = {13, 9, 5};
   for (int i = 0; i < 3; ++i) {
     uint16_t c = (3 - i) <= bars ? on : off;
-    s.drawSmoothArc(cx, baseY, radii[i], radii[i] - 2, 135, 225, c, aaBg(), true);
+    if (themed()) {
+      blendArc(s, cx, baseY, radii[i], radii[i] - 2, 45, c);  // (round ends: close enough)
+    } else {
+      s.drawSmoothArc(cx, baseY, radii[i], radii[i] - 2, 135, 225, c, C->bg, true);
+    }
   }
   s.fillSmoothCircle(cx, baseY - 1, 1, bars > 0 ? on : off, aaBg());
 }
@@ -1376,8 +1407,7 @@ void DisplayManager::drawDialPlain() {
   // shapes read the screen to blend their edges).
   paintBackdrop(kDialX, kDialY, kDialD, kDialD);
   if (themed()) {
-    tft.drawSmoothCircle(cx, cy, kDialR, pal_.top, 0x00FFFFFF);
-    tft.drawSmoothCircle(cx, cy, kDialR - 1, pal_.top, 0x00FFFFFF);
+    blendArc(tft, cx, cy, kDialR, kDialR - 2, 180, pal_.top);
   } else {
     tft.fillSmoothCircle(cx, cy, kDialR, pal_.top, C->bg);
     tft.fillSmoothCircle(cx, cy, kDialR - 2, C->bg, pal_.top);
