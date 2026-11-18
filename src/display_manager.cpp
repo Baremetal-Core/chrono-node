@@ -544,7 +544,7 @@ void DisplayManager::enterMode(Mode mode) {
     }
     paintBackdrop(0, 0, kScreenW, kScreenH);
   } else {
-    if (mode != Mode::Test) backdrop::end();
+    backdrop::end();
     tft.fillScreen(C->bg);
   }
   for (int i = 0; i < 4; ++i) {
@@ -2853,13 +2853,14 @@ bool DisplayManager::previewBackdrop(const char* name, uint32_t durationMs, cons
   backdrop::Theme t;
   if (!backdrop::fromName(name, t)) return false;
   const uint32_t t0 = millis();
+  dimDial = false;
   const bool ok = backdrop::setup(t, C->bg, pal_.top, pal_.bottom, night_, esp_random(), photoPath);
   const uint32_t t1 = millis();
   mode_ = Mode::Test;
   testUntilMs_ = millis() + durationMs;
   paintBackdrop(0, 0, kScreenW, kScreenH);
   Serial.printf("[THEME] %s: %s, tables %lu ms, screen %lu ms, heap %u\n", backdrop::title(t), ok ? "ok" : "failed",
-                t1 - t0, millis() - t1, ESP.getFreeHeap());
+                static_cast<unsigned long>(t1 - t0), static_cast<unsigned long>(millis() - t1), ESP.getFreeHeap());
   return true;
 }
 

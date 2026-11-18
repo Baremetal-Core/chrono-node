@@ -247,7 +247,7 @@ BackdropChoice wantBackdrop(const struct tm& local) {
     const int n = backdrop::kThemeCount - 1 - (photos::count() > 0 ? 0 : 1);  // themes 1..n
     c.theme = 1 + (settings::faceTheme() + turn) % n;
   }
-  c.seed = turn * 2654435761u + c.theme;
+  c.seed = c.theme ? turn * 2654435761u + c.theme : 0;  // no theme: nothing to change
   if (c.theme == static_cast<uint8_t>(backdrop::Theme::Photo)) {
     const int count = photos::count();
     int slot = 0;
@@ -256,6 +256,7 @@ BackdropChoice wantBackdrop(const struct tm& local) {
       strlcpy(c.photo, photos::path(slot).c_str(), sizeof(c.photo));
     } else {
       c.theme = 0;  // no photos
+      c.seed = 0;
     }
   }
   return c;

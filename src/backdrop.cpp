@@ -456,30 +456,46 @@ void rowSynth(int16_t y, int16_t x0, int16_t w, uint16_t* out) {
 
 // ---- Photo: a darkened, blurred copy of a stored photo ----
 
-constexpr int kPhotoW = 80, kPhotoH = 60;  // a 320x240 JPEG decoded at 1/4
+constexpr int kPhotoW = 80, kPhotoH = 60;  // any photo, centre-cropped to 4:3, sampled
 struct Photo {
   uint16_t px[kPhotoH][kPhotoW];
 };
 Photo* decoding = nullptr;
+int16_t sampleX[kPhotoW], sampleY[kPhotoH];  // the decoded pixel each cell takes
 
 bool setupPhoto(const char* path) {
   Photo& p = *reinterpret_cast<Photo*>(mem);
   memset(&p, 0, sizeof(p));
   if (!path || !LittleFS.exists(path)) return false;
+  uint16_t jw = 0, jh = 0;
+  if (TJpgDec.getFsJpgSize(&jw, &jh, path, LittleFS) != JDR_OK || !jw || !jh) return false;
+  // The smallest decode that still has at least 80x60 pixels (as fast as possible).
+  uint8_t scale = 8;
+  while (scale > 1 && (jw / scale < kPhotoW || jh / scale < kPhotoH)) scale /= 2;
+  const int dw = max(1, jw / scale), dh = max(1, jh / scale);
+  // Centre-crop to 4:3, then one sample per cell.
+  int cw = dw, ch = dh;
+  if (cw * 3 > ch * 4) cw = ch * 4 / 3; else ch = cw * 3 / 4;
+  cw = max(cw, 1);
+  ch = max(ch, 1);
+  for (int i = 0; i < kPhotoW; ++i) sampleX[i] = (dw - cw) / 2 + (2 * i + 1) * cw / (2 * kPhotoW);
+  for (int i = 0; i < kPhotoH; ++i) sampleY[i] = (dh - ch) / 2 + (2 * i + 1) * ch / (2 * kPhotoH);
   decoding = &p;
-  TJpgDec.setJpgScale(4);
+  TJpgDec.setJpgScale(scale);
   TJpgDec.setSwapBytes(false);
   TJpgDec.setCallback([](int16_t x, int16_t y, uint16_t bw, uint16_t bh, uint16_t* bitmap) {
-    for (int r = 0; r < bh; ++r) {
-      for (int c = 0; c < bw; ++c) {
-        if (x + c < kPhotoW && y + r < kPhotoH) decoding->px[y + r][x + c] = bitmap[r * bw + c];
+    for (int r = 0; r < kPhotoH; ++r) {
+      const int sy = sampleY[r];
+      if (sy < y || sy >= y + bh) continue;
+      for (int c = 0; c < kPhotoW; ++c) {
+        const int sx = sampleX[c];
+        if (sx >= x && sx < x + bw) decoding->px[r][c] = bitmap[(sy - y) * bw + (sx - x)];
       }
     }
-    return true;
+    return y <= sampleY[kPhotoH - 1];  // the rows below aren't needed: stop decoding
   });
-  const bool ok = TJpgDec.drawFsJpg(0, 0, path, LittleFS) == JDR_OK;
   decoding = nullptr;
-  if (!ok) return false;
+  if (r != JDR_OK && r != JDR_INTR) return false;
   // Blur (a 3x3 box, three times) and darken, with a vignette.
   auto* tmp = static_cast<uint16_t(*)[kPhotoW]>(malloc(sizeof(uint16_t) * kPhotoW * kPhotoH));
   if (!tmp) return false;
