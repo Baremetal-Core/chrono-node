@@ -226,7 +226,16 @@ struct Paint {
   uint8_t coverage = 255;                   // scales the glyphs (pulse)
   bool shine = false;
   bool glow = false;
+  const uint16_t* under = nullptr;  // the background under the sprite (swapped, stride w); nullptr: computed
 };
+
+// The theme under the banner's line, kept while a banner scrolls: it's
+// redrawn every frame (16 ms), too often to compute the theme each time.
+uint16_t* bannerBg = nullptr;
+void freeBannerBg() {
+  free(bannerBg);
+  bannerBg = nullptr;
+}
 
 // Blend a -> b by t/256 (t 0..256). Shifts instead of divisions: this runs
 // for every glyph pixel of every animation frame.
@@ -287,16 +296,17 @@ void tintSprite(TFT_eSprite& s, int16_t w, int16_t h, int16_t y0, int16_t y1, co
   for (int16_t y = 0; y < h; ++y) {
     const int t = y <= y0 ? 0 : y >= y1 ? 256 : (y - y0) * 256 / (y1 - y0);
     const uint16_t rowFg = uniform ? blend256(pal.top, pal.bottom, t) : 0;
-    if (themedBg) faceRow(p.screenY + y, p.screenX, min<int16_t>(w, kScreenW), faceRowBuf);
+    if (themedBg && !p.under) faceRow(p.screenY + y, p.screenX, min<int16_t>(w, kScreenW), faceRowBuf);
+    const uint16_t* bgRow = p.under ? p.under + y * w : faceRowBuf;
     const int16_t shineAt = shineX - (p.screenY + y - kTimeTop) * 2 / 5;  // leans right going up
     uint16_t* row = px + y * w;
     const uint8_t* glowRow = glowA + y * w;
     for (int16_t x = 0; x < w; ++x) {
       const uint16_t c = row[x];
       const int g = glow ? glowRow[x] : 0;
-      const uint16_t under = themedBg ? swap16(faceRowBuf[x]) : bg;
+      const uint16_t under = themedBg ? swap16(bgRow[x]) : bg;
       if (c == 0 && g == 0) {
-        row[x] = themedBg ? faceRowBuf[x] : bgSwapped;
+        row[x] = themedBg ? bgRow[x] : bgSwapped;
         continue;
       }
       int16_t sx = p.screenX + x;
@@ -534,6 +544,7 @@ void DisplayManager::enterMode(Mode mode) {
   }
   syncFxBuffers();
   barBgKey_ = -1;
+  freeBannerBg();
   if (mode == Mode::Clock && backdrop_ != 0) {
     // The background theme, made for this face's colours and the night.
     const theme::Palette p = lastLocal_.tm_year ? basePalette(lastLocal_, millis()) : pal_;
@@ -1102,6 +1113,7 @@ void DisplayManager::syncFxBuffers() {
   // then waits for the next sync instead of overlapping our allocations.
   mem_lease::setReleased(false);
   fxLeased_ = mem_lease::requested();
+  if (fxLeased_) freeBannerBg();  // (the banner then computes the theme each frame)
   const bool face = mode_ == Mode::Clock && !fxLeased_;
   const bool clock = face && !analog_;  // the digital face's buffers
   const bool dial = face && analog_;
@@ -1594,6 +1606,7 @@ void DisplayManager::drawNotice() {
   if (mode_ != Mode::Clock) return;
   if (notice_[0] != '\0') {
     bannerActive_ = false;  // notices take priority
+    freeBannerBg();
   } else if (bannerActive_) {
     return;  // the banner draws this line itself
   }
@@ -1615,6 +1628,13 @@ bool DisplayManager::startBanner(const char* text, uint8_t pxPerSecond) {
   bannerSpeed_ = pxPerSecond ? pxPerSecond : 70;
   bannerStartMs_ = millis();
   bannerActive_ = true;
+  freeBannerBg();
+  if (backdrop::active() && !fxLeased_) {
+    bannerBg = static_cast<uint16_t*>(malloc(kScreenW * kNoticeH * sizeof(uint16_t)));
+    if (bannerBg) {
+      for (int16_t y = 0; y < kNoticeH; ++y) faceRow(kNoticeTop + y, 0, kScreenW, bannerBg + y * kScreenW);
+    }
+  }
   return true;
 }
 
@@ -1624,6 +1644,7 @@ void DisplayManager::drawBanner(uint32_t now) {
   const int32_t x = kScreenW - offset;
   if (x + bannerW_ < 0) {
     bannerActive_ = false;
+    freeBannerBg();
     drawNotice();  // back to the weather line
     return;
   }
@@ -1631,6 +1652,7 @@ void DisplayManager::drawBanner(uint32_t now) {
   bannerSprite.drawString(bannerText_, x, kNoticeH / 2);
   Paint paint;
   paint.screenY = kNoticeTop;
+  paint.under = bannerBg;
   tintSprite(bannerSprite, kScreenW, kNoticeH, 3, kNoticeH - 4, paint);
   // Soft fade at both edges.
   uint16_t* px = static_cast<uint16_t*>(bannerSprite.getPointer());
@@ -1641,11 +1663,14 @@ void DisplayManager::drawBanner(uint32_t now) {
       const uint8_t a = 255 - i * 255 / kFade;
       for (int16_t xx : {(int16_t)i, (int16_t)(kScreenW - 1 - i)}) {
         const uint16_t c = swap16(row[xx]);
-        row[xx] = swap16(theme::mix(c, backdrop::active() ? backdrop::at(xx, kNoticeTop + y) : C->bg, a));
+        const uint16_t to = bannerBg ? swap16(bannerBg[y * kScreenW + xx])
+                            : backdrop::active() ? backdrop::at(xx, kNoticeTop + y) : C->bg;
+        row[xx] = swap16(blend256(c, to, a));
       }
     }
   }
   bannerSprite.pushSprite(0, kNoticeTop);
+
 }
 
 void DisplayManager::setWeather(const weather::Data* data, bool stale) {
