@@ -494,6 +494,7 @@ bool setupPhoto(const char* path) {
     }
     return y <= sampleY[kPhotoH - 1];  // the rows below aren't needed: stop decoding
   });
+  const JRESULT r = TJpgDec.drawFsJpg(0, 0, path, LittleFS);
   decoding = nullptr;
   if (r != JDR_OK && r != JDR_INTR) return false;
   // Blur (a 3x3 box, three times) and darken, with a vignette.
