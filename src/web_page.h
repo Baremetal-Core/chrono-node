@@ -62,7 +62,7 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div class="row"><label>Each photo stays up for</label><select id="toph" data-cmd="TIMEOUT PHOTO"></select></div>
 <div class="row"><label>Other screens go back to the clock after</label><select id="toidle" data-cmd="TIMEOUT IDLE"></select></div>
 <div class="row"><label>Screen change animation</label><select id="trans"><option value="FADE">Fade</option><option value="WIPE">Wipe</option>
-<option value="SLIDE">Slide</option><option value="BLINDS">Blinds</option><option value="NONE">Instant</option></select></div>
+<option value="SLIDE">Slide</option><option value="BLINDS">Blinds</option><option value="CURTAIN">Curtain</option><option value="IRIS">Iris</option><option value="MIX">Mix (a different one each time)</option><option value="NONE">Instant</option></select></div>
 <div class="row"><label>Preview the forecast and photos now (also at night)</label><button id="preview">Preview</button></div>
 </section>
 

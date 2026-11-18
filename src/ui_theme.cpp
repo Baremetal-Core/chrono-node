@@ -179,7 +179,8 @@ Style mixStyleAt(int minuteOfDay, uint8_t everyMinutes) {
 
 namespace {
 constexpr const char* kSpeedKeys[] = {"slow", "normal", "fast", "veryfast"};
-constexpr const char* kTransitionKeys[] = {"fade", "wipe", "slide", "blinds", "none"};
+constexpr const char* kTransitionKeys[] = {"fade", "wipe", "slide", "blinds", "none", "curtain", "iris", "mix"};
+constexpr int kTransitionCount = sizeof(kTransitionKeys) / sizeof(kTransitionKeys[0]);
 }  // namespace
 
 const char* speedKey(Speed s) { return kSpeedKeys[static_cast<int>(s) % 4]; }
@@ -196,10 +197,10 @@ bool speedFromKey(const char* key, Speed& out) {
 
 uint8_t speedQuarters(Speed s) { return 2 << (static_cast<int>(s) % 4); }
 
-const char* transitionKey(Transition t) { return kTransitionKeys[static_cast<int>(t) % 5]; }
+const char* transitionKey(Transition t) { return kTransitionKeys[static_cast<int>(t) % kTransitionCount]; }
 
 bool transitionFromKey(const char* key, Transition& out) {
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < kTransitionCount; ++i) {
     if (strcasecmp(key, kTransitionKeys[i]) == 0) {
       out = static_cast<Transition>(i);
       return true;

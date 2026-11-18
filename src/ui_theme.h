@@ -98,7 +98,8 @@ bool speedFromKey(const char* key, Speed& out);
 uint8_t speedQuarters(Speed s);  // multiplier in quarters: 2, 4, 8, 16
 
 // Screen change animations.
-enum class Transition : uint8_t { Fade, Wipe, Slide, Blinds, None, Count };
+// Mix: a different one of the animated kinds at each screen change.
+enum class Transition : uint8_t { Fade, Wipe, Slide, Blinds, None, Curtain, Iris, Mix, Count };
 const char* transitionKey(Transition t);  // "fade", "wipe", ...
 bool transitionFromKey(const char* key, Transition& out);
 

@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "config.h"
+#include "ui_theme.h"
 
 namespace {
 
@@ -523,7 +524,7 @@ bool setMixEveryMinutes(uint8_t minutes) {
 uint8_t transition() { return transitionValue; }
 
 bool setTransition(uint8_t t) {
-  if (t > 4) return false;
+  if (t >= static_cast<uint8_t>(theme::Transition::Count)) return false;
   bool ok = save([&](Preferences& p) { return p.putUChar(kKeyTransition, t) > 0; });
   if (ok) transitionValue = t;
   return ok;

@@ -362,7 +362,7 @@ bool handleTransition(const char* arg) {
   if (*arg && theme::transitionFromKey(arg, t)) {
     settings::setTransition(static_cast<uint8_t>(t));
   } else if (*arg) {
-    Serial.println("[CONSOLE] Usage: TRANSITION FADE|WIPE|SLIDE|BLINDS|NONE");
+    Serial.println("[CONSOLE] Usage: TRANSITION FADE|WIPE|SLIDE|BLINDS|CURTAIN|IRIS|MIX|NONE");
     return false;
   }
   Serial.printf("[SCREEN] Transition: %s\n",
