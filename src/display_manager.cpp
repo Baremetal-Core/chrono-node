@@ -1066,7 +1066,8 @@ int DisplayManager::dateViewAt(const struct tm& local) const {
 // lunar date). Night mode keeps the quiet night look. Animated styles repaint
 // it every colour frame from its kept shape (see syncFxBuffers).
 void DisplayManager::drawDate(const struct tm& local) {
-  auto layout = [&](TFT_eSprite& s, uint16_t weekdayColor, uint16_t restColor, uint16_t bg) {
+  // `top`: the screen row the sprite starts at (the line is drawn in bands).
+  auto layout = [&](TFT_eSprite& s, uint16_t weekdayColor, uint16_t restColor, uint16_t bg, int16_t top) {
     // Long weekday/month combinations (e.g. WEDNESDAY, September) don't fit:
     // shorten the month first, then the weekday.
     char weekday[sizeof(DateAlt::head)];
@@ -1089,39 +1090,44 @@ void DisplayManager::drawDate(const struct tm& local) {
     const int16_t x = (kScreenW - w1 - s.textWidth(rest)) / 2;
     s.setTextDatum(L_BASELINE);
     if (bg == C->bg) ink(s, weekdayColor); else s.setTextColor(weekdayColor, bg);
-    s.drawString(weekday, x, kDateBaseline);
+    s.drawString(weekday, x, kDateBaseline - top);
     if (bg == C->bg) ink(s, restColor); else s.setTextColor(restColor, bg);
-    s.drawString(rest, x + w1, kDateBaseline);
+    s.drawString(rest, x + w1, kDateBaseline - top);
   };
   if (night_) {
-    drawLine(kDateTop, kDateH, font_face,
-             [&](TFT_eSprite& s) { layout(s, pal_.top, C->date, C->bg); });
+    drawBlock(kDateTop, kDateH, font_face,
+              [&](TFT_eSprite& s, int16_t top) { layout(s, pal_.top, C->date, C->bg, top); });
     return;
   }
   const int16_t y0 = kDateBaseline - 19, y1 = kDateBaseline;  // gradient rows: the capitals
   const int32_t key = (local.tm_year * 400 + local.tm_yday) * 4 + max(dateView_, 0);
   if (!fxCache || !dateOk || key != dateCovKey) {
-    // Lay the text out in a temporary full-height sprite.
+    // Lay the text out band by band (two of 17 rows, 11 KB each: one 22 KB
+    // sprite often can't be had while a theme, the animation buffers and a
+    // banner hold memory, and the date then went missing).
+    constexpr int16_t kDateBandH = kDateH / 2;
     TFT_eSprite s(&tft);
     s.setColorDepth(16);
-    if (!s.createSprite(kScreenW, kDateH)) return;
-    if (ESP.getMaxAllocHeap() < kFontHeapBytes) return;  // the sprite frees itself
-    s.loadFont(font_face);
-    s.fillSprite(TFT_BLACK);
-    layout(s, TFT_WHITE, TFT_WHITE, TFT_BLACK);
-    s.unloadFont();
-    if (fxCache && dateOk) {
-      saveCoverage(static_cast<uint16_t*>(s.getPointer()), fxCache->date, kScreenW * kDateH);
-      dateCovKey = key;
-      s.deleteSprite();
-    } else {
-      Paint paint;
-      paint.screenY = kDateTop;
-      tintSprite(s, kScreenW, kDateH, y0, y1, paint);
-      s.pushSprite(0, kDateTop);
-      s.deleteSprite();
-      return;
+    if (!s.createSprite(kScreenW, kDateBandH)) return;
+    const bool keep = fxCache && dateOk;
+    for (int16_t top = 0; top < kDateH; top += kDateBandH) {
+      if (ESP.getMaxAllocHeap() < kFontHeapBytes) return;  // the sprite frees itself
+      s.loadFont(font_face);
+      s.fillSprite(TFT_BLACK);
+      layout(s, TFT_WHITE, TFT_WHITE, TFT_BLACK, top);
+      s.unloadFont();
+      if (keep) {
+        saveCoverage(static_cast<uint16_t*>(s.getPointer()), fxCache->date + top * kScreenW, kScreenW * kDateBandH);
+      } else {
+        Paint paint;
+        paint.screenY = kDateTop + top;
+        tintSprite(s, kScreenW, kDateBandH, y0 - top, y1 - top, paint);
+        s.pushSprite(0, kDateTop + top);
+      }
     }
+    s.deleteSprite();
+    if (!keep) return;
+    dateCovKey = key;
   }
   // Animated styles: re-tint the kept shape strip by strip.
   for (int16_t sy = 0; sy < kDateH; sy += kDateStripH) {
