@@ -2806,6 +2806,47 @@ void DisplayManager::transitionOut(theme::Transition t, int dir) {
       });
       break;
     }
+    case theme::Transition::Curtain: {
+      // Black closes in from both edges to the middle.
+      int done = 0;
+      animate(kSweepMs, [&](int p) {
+        const int w = p / 2;
+        if (w <= done) return;
+        tft.fillRect(done, 0, w - done, kScreenH, TFT_BLACK);
+        tft.fillRect(kScreenW - w, 0, w - done, kScreenH, TFT_BLACK);
+        done = w;
+      });
+      break;
+    }
+    case theme::Transition::Iris: {
+      // A circle closes on the middle: each frame blackens the ring between
+      // the last radius and the new one, row by row.
+      constexpr int kCx = kScreenW / 2, kCy = kScreenH / 2;
+      const float rMax = sqrtf(static_cast<float>(kCx * kCx + kCy * kCy)) + 1;
+      float last = rMax;
+      animate(kSweepMs + 60, [&](int p) {
+        const float r = rMax * (1.0f - p / static_cast<float>(kScreenW));
+        if (r >= last) return;
+        for (int y = 0; y < kScreenH; ++y) {
+          const int dy = y - kCy;
+          auto half = [&](float rr) {
+            const float q = rr * rr - dy * dy;
+            return q > 0 ? static_cast<int>(sqrtf(q)) : -1;
+          };
+          const int outer = min(half(last), kCx), inner = half(r);
+          if (outer < 0) continue;  // this row is black already
+          if (inner < 0) {
+            tft.drawFastHLine(kCx - outer, y, 2 * outer + 1, TFT_BLACK);
+          } else if (inner < outer) {
+            tft.drawFastHLine(kCx - outer, y, outer - inner, TFT_BLACK);
+            tft.drawFastHLine(kCx + inner + 1, y, outer - inner, TFT_BLACK);
+          }
+        }
+        last = r;
+      });
+      tft.fillScreen(TFT_BLACK);
+      break;
+    }
     default:
       break;
   }

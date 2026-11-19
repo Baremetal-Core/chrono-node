@@ -162,10 +162,27 @@ int screenOrder(Screen s) { return s == Screen::Clock ? 0 : static_cast<int>(s);
 
 // `again` repaints the current screen (e.g. the next photo). `dir`: +1 the
 // new screen comes from the right, -1 from the left, 0 by the swipe order.
+// Mix: a random animated kind, never the same twice in a row.
+theme::Transition mixTransition() {
+  static const theme::Transition kKinds[] = {theme::Transition::Fade,   theme::Transition::Wipe,
+                                             theme::Transition::Slide,  theme::Transition::Blinds,
+                                             theme::Transition::Curtain, theme::Transition::Iris};
+  constexpr int n = sizeof(kKinds) / sizeof(kKinds[0]);
+  static int last = -1;
+  int i = esp_random() % n;
+  if (i == last) i = (i + 1 + esp_random() % (n - 1)) % n;
+  last = i;
+  return kKinds[i];
+}
+
 void requestScreen(Screen s, bool again = false, int dir = 0) {
   if (transitioning || (!again && s == screenOn && s == screenWanted)) return;
   screenWanted = s;
-  const auto style = static_cast<theme::Transition>(settings::transition());
+  auto style = static_cast<theme::Transition>(settings::transition());
+  if (style == theme::Transition::Mix) {
+    style = mixTransition();
+    Serial.printf("[SCREEN] Transition: %s\n", theme::transitionKey(style));
+  }
   if (style == theme::Transition::Fade) {
     startTransition(config::kScreenFadeOutMs, config::kScreenFadeInMs);
     return;

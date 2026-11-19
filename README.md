@@ -168,6 +168,10 @@ week on the left (this week's in the accent colour):
   - **Slide:** the old screen slides off (using the ST7789's hardware scroll), then the new
     one fades in.
   - **Blinds:** eight stripes close over the old screen, then the new one fades in.
+  - **Curtain:** black closes in from both edges to the middle, then the new one fades in.
+  - **Iris:** a circle closes on the middle of the old screen, then the new one fades in.
+  - **Mix:** a different one of Fade, Wipe, Slide, Blinds, Curtain and Iris at each change
+    (never the same twice in a row).
   - **Fade:** a quick backlight dip.
   - **Instant:** no animation.
 
@@ -768,7 +772,7 @@ EFFECT GLOW ON              # SHINE, PULSE or GLOW, ON or OFF
 COLOR SPEED FAST            # moving colours: SLOW, NORMAL, FAST, VERYFAST
 COLOR MIX                   # take turns through the colourful styles
 COLOR MIX EVERY 5           # Mix changes style every 5 minutes (1-60)
-TRANSITION WIPE             # screen changes: FADE, WIPE, SLIDE, BLINDS, NONE
+TRANSITION MIX              # screen changes: FADE, WIPE, SLIDE, BLINDS, CURTAIN, IRIS, MIX, NONE
 TIMEOUT                     # how long automatic screens stay up, and the idle timeout
 TIMEOUT FORECAST 10         # the forecast stays up 10 s (3-120)
 TIMEOUT PHOTO 12            # each photo stays up 12 s (3-120)
