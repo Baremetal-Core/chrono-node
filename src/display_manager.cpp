@@ -2560,12 +2560,35 @@ void DisplayManager::showWeatherScreen(const weather::Data& w, uint32_t ageS) {
     s.setTextDatum(L_BASELINE);
     s.setTextColor(accent, C->bg);
     s.drawString(t, 102, 58 - y0);
+    // The condition, left of the details column (x 216): the smaller font when
+    // it's too long ("Partly cloudy"), two lines when even that is.
+    constexpr int16_t kCondW = 216 - 102 - 8;
+    const char* cond = weather::describe(w.code);
     s.unloadFont();
     s.loadFont(font_date);
     s.setTextColor(C->text, C->bg);
-    s.drawString(weather::describe(w.code), 102, 84 - y0);
-    s.unloadFont();
-    s.loadFont(font_small);
+    if (s.textWidth(cond) <= kCondW) {
+      s.drawString(cond, 102, 84 - y0);
+      s.unloadFont();
+      s.loadFont(font_small);
+    } else {
+      s.unloadFont();
+      s.loadFont(font_small);
+      s.setTextColor(C->text, C->bg);
+      if (s.textWidth(cond) <= kCondW) {
+        s.drawString(cond, 102, 82 - y0);
+      } else {
+        const int len = strlen(cond);
+        int cut = -1;
+        for (int i = 0; i < len; ++i) {
+          if (cond[i] == ' ' && (cut < 0 || abs(i - len / 2) < abs(cut - len / 2))) cut = i;
+        }
+        char first[32];
+        strlcpy(first, cond, cut > 0 ? min<size_t>(sizeof(first), cut + 1) : sizeof(first));
+        s.drawString(first, 102, 70 - y0);
+        if (cut > 0) s.drawString(cond + cut + 1, 102, 86 - y0);
+      }
+    }
     char line[24];
     s.setTextColor(C->dim, C->bg);
     snprintf(line, sizeof(line), "Feels %d\xC2\xB0", (int)lroundf(w.feels));
