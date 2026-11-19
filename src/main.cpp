@@ -10,6 +10,7 @@
 #include <esp_system.h>
 #include <esp_task_wdt.h>
 
+#include "backdrop.h"
 #include "backlight.h"
 #include "clock_sync.h"
 #include "config.h"
@@ -238,6 +239,52 @@ int nextPhoto(int slot) {
     if (photos::exists(s)) return s;
   }
   return 0;
+}
+
+// The background theme the clock face should have now: the chosen one, or by
+// turns every N minutes through all of them (Photo only with photos). The seed
+// moves the stars, ribbons and lights each day, or each turn; Photo takes the
+// stored photos in turn the same way.
+struct BackdropChoice {
+  uint8_t theme;
+  uint32_t seed;
+  char photo[40];
+  bool operator==(const BackdropChoice& o) const {
+    return theme == o.theme && seed == o.seed && !strcmp(photo, o.photo);
+  }
+};
+BackdropChoice appliedBackdrop = {255, 0, ""};
+
+BackdropChoice wantBackdrop(const struct tm& local) {
+  BackdropChoice c = {settings::faceTheme(), 0, ""};
+  uint32_t turn = local.tm_year * 400 + local.tm_yday;
+  if (settings::themeRotate()) {
+    turn = turn * 1440 + local.tm_hour * 60 + local.tm_min;
+    turn /= settings::themeEveryMinutes();
+    const int n = backdrop::kThemeCount - 1 - (photos::count() > 0 ? 0 : 1);  // themes 1..n
+    c.theme = 1 + (settings::faceTheme() + turn) % n;
+  }
+  c.seed = c.theme ? turn * 2654435761u + c.theme : 0;  // no theme: nothing to change
+  if (c.theme == static_cast<uint8_t>(backdrop::Theme::Photo)) {
+    const int count = photos::count();
+    int slot = 0;
+    for (int k = 0; count > 0 && k <= static_cast<int>(turn % count); ++k) slot = nextPhoto(slot);
+    if (slot) {
+      strlcpy(c.photo, photos::path(slot).c_str(), sizeof(c.photo));
+    } else {
+      c.theme = 0;  // no photos
+      c.seed = 0;
+    }
+  }
+  return c;
+}
+
+void applyBackdrop(const struct tm& local) {
+  const BackdropChoice c = wantBackdrop(local);
+  if (c == appliedBackdrop) return;
+  appliedBackdrop = c;
+  if (c.theme) Serial.printf("[THEME] %s\n", backdrop::title(static_cast<backdrop::Theme>(c.theme)));
+  display.setBackdrop(c.theme, c.seed, c.photo);
 }
 
 uint32_t showMsFor(Screen s) {
@@ -501,6 +548,10 @@ void buildSettingsView(SettingsView& v) {
   v.hour12 = settings::hour12();
   v.face = settings::faceMode();
   strlcpy(v.colorName, theme::styleName(colorSettings().style), sizeof(v.colorName));
+  strlcpy(v.themeName,
+          settings::themeRotate() ? "Changes by itself"
+                                  : backdrop::title(static_cast<backdrop::Theme>(settings::faceTheme())),
+          sizeof(v.themeName));
   strlcpy(v.place, settings::place(), sizeof(v.place));
   v.recentCount = settings::recentLocationCount();
   v.recentIndex = -1;
@@ -843,6 +894,7 @@ void applySettingsAction(SettingsAction a) {
       }
       display.setHour12(settings::hour12());
       display.setAnalog(wantAnalog(lastLocalTm));
+      applyBackdrop(lastLocalTm);
       break;
     case SettingsAction::ColorPrev:
     case SettingsAction::ColorNext: {
@@ -850,6 +902,21 @@ void applySettingsAction(SettingsAction a) {
       const int cur = static_cast<int>(colorSettings().style);
       settings::setColorStyle((cur + (a == SettingsAction::ColorNext ? 1 : n - 1)) % n);
       applyColors();
+      break;
+    }
+    case SettingsAction::ThemePrev:
+    case SettingsAction::ThemeNext: {
+      // None, Glow ... Photo, then "Changes by itself".
+      constexpr int n = backdrop::kThemeCount + 1;
+      int i = settings::themeRotate() ? n - 1 : settings::faceTheme();
+      i = (i + (a == SettingsAction::ThemeNext ? 1 : n - 1)) % n;
+      if (i == n - 1) {
+        settings::setThemeRotate(true);
+      } else {
+        settings::setThemeRotate(false);
+        settings::setFaceTheme(i);
+      }
+      applyBackdrop(lastLocalTm);
       break;
     }
     case SettingsAction::LocationPrev:
@@ -1065,6 +1132,7 @@ void finishTransition() {
   display.setNightMode(nightActive);
   display.setHour12(settings::hour12());
   display.setAnalog(wantAnalog(lastLocalTm));
+  applyBackdrop(lastLocalTm);
   weather::Data wx;
   Screen next = screenWanted;
   if (next == Screen::Forecast && !weather::get(wx)) next = Screen::Clock;
@@ -1305,6 +1373,8 @@ void pollRtc(bool forceLog) {
   if (screenOn == Screen::Clock && !transitioning && wantAnalog(local) != display.analog()) {
     Serial.printf("[FACE] %s\n", wantAnalog(local) ? "Analog" : "Digital");
     requestScreen(Screen::Clock, true);
+  } else if (screenOn == Screen::Clock && !transitioning && !(wantBackdrop(local) == appliedBackdrop)) {
+    requestScreen(Screen::Clock, true);  // the next theme, with the screen transition
   }
   // The update popup before the photo and forecast cycles: it comes first.
   if (screenOn == Screen::Clock && !transitioning) maybePromptUpdate();
@@ -1432,6 +1502,7 @@ void setup() {
 
   display.setHour12(settings::hour12());
   display.setAnalog(wantAnalog(lastLocalTm));
+  applyBackdrop(lastLocalTm);
   applyColors();
   if (!nightKnown) backlight::fadeTo(settings::brightnessDay(), config::kNightFadeInMs);
 
@@ -1491,6 +1562,7 @@ void loop() {
     lastSecond = -1;
     display.setHour12(settings::hour12());
     display.setAnalog(wantAnalog(lastLocalTm));
+    applyBackdrop(lastLocalTm);
     applyColors();
     if (screenOn == Screen::Settings && !transitioning) showSettings();
     if (!transitioning && nightKnown) {

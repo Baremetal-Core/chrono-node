@@ -31,8 +31,9 @@ forecast, info and settings screens, plus a settings page in the browser at
   temperature is shown only when there's no weather data.
 - **Time:** HH:MM in 104 px Inter Bold with a vertical colour gradient. Changed digits roll
   upwards over 300 ms. Every digit uses a fixed-width cell, so the time never shifts sideways.
-- **Minute bar:** fills over the minute with a horizontal gradient. The seconds sit at its
-  right end.
+- **Minute bar:** fills over the minute with a horizontal gradient, flowing like the analog
+  face's second hand: its end pixel is filled in part (1/16 px steps, ~55 updates a second)
+  instead of growing a whole pixel every 1/4 s. The seconds sit at its right end.
 - **Date:** the weekday in the accent colour, then the date. It takes turns with the
   **lunar date** (see below).
 - **Bottom line:** current weather (icon, temperature, condition, today's high/low). A notice
@@ -267,7 +268,7 @@ stays in one task.
 Allowed commands: `TZ`, `NTP SERVER`, `NTP SYNC`, `BRIGHT`, `NIGHT`, `FORMAT`,
 `WEATHER LOC|FORGET|CYCLE|UPDATE`, `SETEPOCH`, `WIFI PORTAL|FORGET`, `REBOOT`, `SCREEN`, `BANNER`,
 `PHOTO`, `FACE`, `LUNAR`, `HOLIDAYS`, `PHRASE`, `TIMEOUT`, `PREVIEW`, `COLOR`, `EFFECT`, `TRANSITION`, `TOUCH CAL`,
-`OTA AUTO`, `HA`, `CALENDAR`.
+`OTA AUTO`, `HA`, `CALENDAR`, `THEME`.
 Diagnostic commands (`SHOT`, `TEST`, `TOUCH`) aren't allowed. Example:
 
 ```bash
@@ -456,6 +457,39 @@ The date takes the clock's colours too, in a bold 24 px face: all at full streng
 (long months shorten to three letters to fit). The weather line under
 it shows the temperature in the same bold face and the clock's colour. The minute bar fills smoothly through the minute instead of stepping every second,
 and it's drawn off-screen and sent in one go, so it never tears.
+
+## Background themes
+
+Like a smartwatch, the clock face (digital and analog) can have a background picture,
+computed on the clock: no image files, except Photo, which uses one of your photos.
+
+| Theme | |
+|-------|---|
+| **Glow** | a soft light of the colour style's two colours behind the time |
+| **Night sky** | stars over a deep gradient with a faint milky way; some stars twinkle and, now and then, a shooting star crosses the sky |
+| **Aurora** | three flowing ribbons of green, teal and violet light with rays |
+| **Bokeh** | blurred discs of light in the style's colours and warm tones |
+| **Waves** | four layers of smooth hills in the style's colours |
+| **Synthwave** | a striped sun on a neon horizon grid, with twinkling stars |
+| **My photo** | one of your photos, blurred and darkened (they take turns with each change) |
+
+![Aurora](docs/images/theme-aurora.png) ![Synthwave](docs/images/theme-synthwave.png)
+![Night sky, analog](docs/images/theme-sky-analog.png)
+
+- **Choosing:** Settings screen → *Background* (`<` `>`), the web page's *Display* section, or
+  `THEME AURORA` (`NONE`, `GLOW`, `SKY`, `AURORA`, `BOKEH`, `WAVES`, `SYNTHWAVE`, `PHOTO`).
+- **Changing by itself:** *Change by itself* (or `THEME ROTATE ON`) goes through all of them,
+  one every hour by default (`THEME EVERY 15`: 1–240 minutes), with the screen transition. The
+  stars, ribbons and lights are placed differently each day (each change when rotating).
+- **Legibility:** the themes are dark; the analog face darkens the theme inside its dial. At
+  night they're dimmed further and nothing moves.
+- **How it works** (`src/backdrop.*`): each theme is a function from a screen row to colours,
+  from small tables (at most 10 KB, made when the clock face shows, freed on other screens).
+  Every sprite of the face (digits, seconds, bar, date, lines, the dial's bands) is filled with
+  its part of the theme before the text is drawn over it, and text blends its edges with what's
+  under it. Gradients are dithered (no banding in 16-bit colour). Twinkling replaces only pixels
+  still showing the theme's previous colour, so text over a star is never touched.
+  `THEME PREVIEW SKY` shows a theme full screen for 15 s without saving it.
 
 ## Scrolling banner
 
@@ -781,6 +815,9 @@ PREVIEW                     # show the forecast and each photo once now, even at
 FORMAT 12                   # 12-hour clock with AM/PM (FORMAT 24 for 24-hour)
 FACE ANALOG                 # analog clock face (FACE DIGITAL for the digits, FACE MIX in turn)
 FACE EVERY 5                # Mix: change face every N minutes (1-60)
+THEME AURORA                # background: NONE, GLOW, SKY, AURORA, BOKEH, WAVES, SYNTHWAVE, PHOTO
+THEME ROTATE ON             # change the background by itself (THEME EVERY 60: every N minutes, 1-240)
+THEME PREVIEW SYNTHWAVE     # show a background full screen for 15 s (not saved)
 LUNAR                       # today's lunar date and days to Tết (LUNAR ON|OFF on the clock)
 HOLIDAYS                    # the holidays shown on the date line (HOLIDAYS ON|OFF)
 PHRASE                      # today's phrases
@@ -898,6 +935,7 @@ src/lunar_table.h               generated lunar month table (do not edit)
 src/holidays.*                  Vietnamese holidays and festivals (solar and lunar dates)
 src/moon.*                      moon phase (illuminated fraction, waxing/waning, names)
 src/phrases.*                   phrase of the day (Vietnamese proverbs and English proverbs)
+src/backdrop.*                  background themes behind the clock face (computed, plus Photo)
 src/home.*                      Home Assistant: device states, switching, device list (REST API)
 tools/gen_lunar_table.py        lunar table generator (Skyfield + JPL DE440s)
 src/serial_console.*            serial commands (SET, TZ, WIFI, NTP, WEATHER, BANNER, PHOTO, TOUCH, SCREEN, ...)

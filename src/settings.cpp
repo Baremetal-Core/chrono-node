@@ -33,6 +33,9 @@ constexpr const char* kKeyHaUrl = "ha_url";
 constexpr const char* kKeyHaToken = "ha_token";
 constexpr const char* kKeyHaEntities = "ha_ents";
 constexpr const char* kKeyFaceEvery = "face_every";
+constexpr const char* kKeyTheme = "theme";
+constexpr const char* kKeyThemeRotate = "theme_rot";
+constexpr const char* kKeyThemeEvery = "theme_every";
 constexpr const char* kKeyPhraseLang = "phr_lang";
 constexpr const char* kKeyOtaAuto = "ota_auto";
 constexpr const char* kKeyOtaSkip = "ota_skip";
@@ -103,6 +106,9 @@ char haUrlSet[config::kHaUrlMaxLen + 1] = "";
 char haTokenSet[config::kHaTokenMaxLen + 1] = "";
 char haEntitiesSet[config::kHaEntitiesMaxLen + 1] = "";
 uint8_t faceEverySet = 5;
+uint8_t themeSet = 0;
+bool themeRotateSet = false;
+uint8_t themeEverySet = 60;
 uint8_t phraseLangSet = 2;   // phrases::Lang::Both
 bool otaAuto = true;
 char otaSkip[32] = "";
@@ -180,6 +186,9 @@ void begin() {
     faceSet = prefs.getUChar(kKeyFace, faceSet);
     if (faceSet > 2) faceSet = 0;
     faceEverySet = prefs.getUChar(kKeyFaceEvery, faceEverySet);
+    themeSet = prefs.getUChar(kKeyTheme, themeSet);
+    themeRotateSet = prefs.getBool(kKeyThemeRotate, themeRotateSet);
+    themeEverySet = prefs.getUChar(kKeyThemeEvery, themeEverySet);
     phraseLangSet = prefs.getUChar(kKeyPhraseLang, phraseLangSet);
     otaAuto = prefs.getBool(kKeyOtaAuto, otaAuto);
     prefs.getString(kKeyOtaSkip, otaSkip, sizeof(otaSkip));
@@ -589,6 +598,32 @@ bool setFaceEveryMinutes(uint8_t minutes) {
   if (minutes < 1 || minutes > 60) return false;
   bool ok = save([&](Preferences& p) { return p.putUChar(kKeyFaceEvery, minutes) > 0; });
   if (ok) faceEverySet = minutes;
+  return ok;
+}
+
+uint8_t faceTheme() { return themeSet; }
+
+bool setFaceTheme(uint8_t theme) {
+  if (theme >= 8) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyTheme, theme) > 0; });
+  if (ok) themeSet = theme;
+  return ok;
+}
+
+bool themeRotate() { return themeRotateSet; }
+
+bool setThemeRotate(bool on) {
+  bool ok = save([&](Preferences& p) { return p.putBool(kKeyThemeRotate, on) > 0; });
+  if (ok) themeRotateSet = on;
+  return ok;
+}
+
+uint8_t themeEveryMinutes() { return themeEverySet; }
+
+bool setThemeEveryMinutes(uint8_t minutes) {
+  if (minutes < 1 || minutes > 240) return false;
+  bool ok = save([&](Preferences& p) { return p.putUChar(kKeyThemeEvery, minutes) > 0; });
+  if (ok) themeEverySet = minutes;
   return ok;
 }
 

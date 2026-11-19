@@ -129,6 +129,15 @@ bool setFaceMode(uint8_t mode);
 uint8_t faceEveryMinutes();
 bool setFaceEveryMinutes(uint8_t minutes);
 
+// The clock face's background theme (backdrop::Theme, 0 none) and whether it
+// changes by itself every N minutes (1-240, default 60), through all themes.
+uint8_t faceTheme();
+bool setFaceTheme(uint8_t theme);
+bool themeRotate();
+bool setThemeRotate(bool on);
+uint8_t themeEveryMinutes();
+bool setThemeEveryMinutes(uint8_t minutes);
+
 // Phrases of the day above the digits: 0 Vietnamese, 1 English, 2 both
 // (taking turns), 3 off.
 uint8_t phraseLang();
