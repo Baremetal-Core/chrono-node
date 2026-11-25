@@ -105,7 +105,7 @@ speaker GPIO26, touch XPT2046 (CLK25 MOSI32 MISO39 CS33 IRQ36), SD (5/18/19/23).
 - Set from the web page and the serial console; saved in NVS; shown at night too (dimmed).
 
 ## M12 – Photo slideshow ✅
-- Up to 5 personal photos uploaded from the web page. The browser crops (drag/zoom) and
+- Up to 12 personal photos uploaded from the web page. The browser crops (drag/zoom) and
   compresses them to a 320×240 baseline JPEG (≤64 KB), so the device only decodes.
 - Stored in LittleFS: they survive OTA/USB firmware updates and are never in the repository.
 - Photo screen in the swipe order (tap for the next photo) and an automatic slideshow every

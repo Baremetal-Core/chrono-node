@@ -104,7 +104,7 @@ constexpr uint32_t kBannerGapMs = 2000;         // pause between messages when c
 constexpr uint32_t kOtaPromptLaterS = 24 * 3600;  // the update popup's "Later"
 
 // ---- Photos (LittleFS) ----
-constexpr int kPhotoSlots = 5;
+constexpr int kPhotoSlots = 12;  // ~28 KB each fills most of the 384 KB partition
 constexpr size_t kPhotoMaxBytes = 64 * 1024;    // per JPEG; the web page compresses to fit
 constexpr uint8_t kDefaultPhotoEveryMin = 5;    // slideshow period, 0 = off
 constexpr int kPhotoShowAtSecond = 28;          // between the banner (15) and forecast (45)

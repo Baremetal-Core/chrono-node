@@ -534,11 +534,13 @@ Your own photos can be shown on the clock, for example a picture of someone you 
 
 - **Adding a photo:** on the web page's Photos section, choose **+ Add photo** and pick a
   picture (JPEG, PNG, or HEIC on an iPhone). The browser shows exactly what the clock will
-  show: drag to frame it, and use the slider or mouse wheel to zoom. **Upload to clock**
+  show: drag to frame it, and use the slider or mouse wheel to zoom. Tick **Fit the whole
+  photo** to keep a portrait picture uncropped (the sides are filled with a blurred copy).
+  You can also drop a picture onto the Photos section. **Upload to clock**
   sends a 320×240 JPEG of at most 64 KB (usually 20–40 KB) and shows it on the clock.
 - **What's sent:** the original photo never leaves your phone or computer; only the small
   cropped version is uploaded. Photos aren't part of the firmware or the repository.
-- **Storage:** up to 5 photos, kept in the LittleFS data partition (384 KB). Firmware
+- **Storage:** up to 12 photos (as many as fit), kept in the LittleFS data partition (384 KB). Firmware
   updates over the web or `pio run -t upload` keep them. Writing the `-full` image at 0x0
   (see Firmware updates) erases them, like the Wi-Fi settings.
 - **On the clock:**

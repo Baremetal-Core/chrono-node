@@ -29,7 +29,7 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 -webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:4px;background-size:200% 100%}
 @keyframes flow{from{background-position:0 0}to{background-position:-200% 0}}@keyframes hue{to{filter:hue-rotate(360deg)}}
 .st b.flow{animation:flow 9s linear infinite}.st b.hue{animation:hue 30s linear infinite}details{margin:10px 0}summary{cursor:pointer;color:var(--dim)}a{color:var(--accent)}
-.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:8px 0}.ph{position:relative}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:8px 0}.ph{position:relative}.dropping{outline:2px dashed var(--accent,#2ec5ff);outline-offset:4px}
 .ph img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px;display:block;cursor:pointer;border:1px solid var(--line);background:#000}
 .ph button{position:absolute;top:6px;right:6px;padding:2px 8px;background:#0b0f22d0}
 .ph .cap{position:absolute;left:6px;bottom:6px;font-size:12px;background:#0b0f22d0;border-radius:6px;padding:1px 7px;pointer-events:none}
@@ -88,7 +88,7 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div class="muted">Up to 5 messages, each with its own timer: messages due at the same time scroll one after another, and non-stop ones fill the time in between. Latin and Vietnamese letters are supported (e.g. "Ch&uacute;c m&#7915;ng n&#259;m m&#7899;i"); emoji are not.</div>
 </section>
 
-<section><h2>Photos</h2>
+<section id="phsec"><h2>Photos</h2>
 <div class="row"><label>Slideshow</label><select id="phevery"><option value="0">Off</option><option value="1">Every minute</option>
 <option value="2">Every 2 min</option><option value="5">Every 5 min</option><option value="10">Every 10 min</option><option value="15">Every 15 min</option>
 <option value="30">Every 30 min</option><option value="60">Every hour</option></select></div>
@@ -97,10 +97,11 @@ button.danger{border-color:var(--err);color:var(--err)}.val{min-width:44px;text-
 <div class="row"><input type="file" id="phfile" accept="image/*" hidden><button id="phadd">+ Add photo</button><span class="muted" id="phfree"></span></div>
 <div id="phedit" style="display:none"><canvas id="phcv" width="320" height="240"></canvas>
 <div class="row"><label>Zoom</label><input type="range" id="phzoom" min="1" max="4" step="0.01" value="1"></div>
+<div class="row"><label>Fit the whole photo (no cropping, good for portrait)</label><input type="checkbox" id="phfit"></div>
 <div class="row"><button id="phcancel">Cancel</button><button class="primary" id="phup">Upload to clock</button></div>
-<div class="muted">Drag to choose what's in the frame. This is exactly what the clock will show (320&times;240).</div></div>
-<div class="muted">Up to 5 photos, kept on the clock (they survive firmware updates). The slideshow shows one for 12 s, never at night.
-On the clock, swipe to the Photo screen and tap for the next one. Tap a thumbnail here to show it now.</div>
+<div class="muted">Drag to choose what's in the frame; with "Fit" the sides are filled in. This is exactly what the clock will show (320&times;240).</div></div>
+<div class="muted">Up to 12 photos (as many as fit), kept on the clock (they survive firmware updates). The slideshow shows one for 12 s, never at night.
+You can drop pictures here too. On the clock, swipe to the Photo screen and tap for the next one. Tap a thumbnail here to show it now.</div>
 </section>
 
 <section><h2>Time</h2>
@@ -226,7 +227,7 @@ return stList("Flash \u00b7 "+mb(f.chip),f.chip,[
 function ramList(s){const t=s.heap_total,used=t-s.heap_free,peak=t-s.heap_min;
 return stList("RAM \u00b7 "+kb(t),t,[{v:used,c:"var(--accent)",n:"In use",d:`Wi-Fi, web server, display and weather data. The most used since the clock started: ${kb(peak)}.`}],
 "Working memory available right now. It's cleared at every restart; nothing is stored here.")}
-const PHC=["#ff9a1f","#ff5fa2","#8b7bff","#2ec5ff","#3ddc97"];
+const PHC=["#ff9a1f","#ff5fa2","#8b7bff","#2ec5ff","#3ddc97","#ffd23f","#ff6b6b","#4dd0e1","#b388ff","#9ccc65","#ffab91","#80cbc4"];
 function esc(t){return t.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 let S;
 async function loadSettings(){S=await(await fetch("/api/settings")).json();
@@ -242,29 +243,35 @@ let phSig="";
 function phList(P){selVal("phevery",P.every_min,"Every "+P.every_min+" min");const n=P.items.length;
 $("phadd").disabled=!P.available||n>=P.max;$("phfree").textContent=P.available?`${n} of ${P.max} photos`:"Photo storage unavailable";
 // Files use whole 4 KB blocks; the rest of "used" is file-system overhead.
-const parts=P.items.map(i=>({v:i.bytes,c:PHC[(i.slot-1)%5],t:`Photo ${i.slot} ${kb(i.bytes)}`})),sum=P.items.reduce((a,i)=>a+i.bytes,0);
+const parts=P.items.map(i=>({v:i.bytes,c:PHC[(i.slot-1)%PHC.length],t:`Photo ${i.slot} ${kb(i.bytes)}`})),sum=P.items.reduce((a,i)=>a+i.bytes,0);
 parts.push({v:Math.max(0,P.used_bytes-sum),c:"#4a5072",t:"File system "+kb(Math.max(0,P.used_bytes-sum))});
 $("phstore").innerHTML=P.available?`<div class="muted">Photo storage: ${kb(P.used_bytes)} of ${kb(P.total_bytes)} used (a section of the flash chip; see Status)</div>`+bar(parts,P.total_bytes,P.total_bytes-P.used_bytes):"";
 const sig=P.items.map(i=>i.slot+":"+i.bytes).join();if(sig===phSig)return;phSig=sig;
-$("phlist").innerHTML=P.items.map(i=>`<div class="ph"><img src="/api/photo?n=${i.slot}&v=${i.bytes}" data-show="${i.slot}" title="Show on the clock"><span class="cap"><span class="sw" style="background:${PHC[(i.slot-1)%5]}"></span>Photo ${i.slot} \u00b7 ${kb(i.bytes)}</span><button class="danger" data-del="${i.slot}">&#x2715;</button></div>`).join("")}
+$("phlist").innerHTML=P.items.map(i=>`<div class="ph"><img src="/api/photo?n=${i.slot}&v=${i.bytes}" data-show="${i.slot}" title="Show on the clock"><span class="cap"><span class="sw" style="background:${PHC[(i.slot-1)%PHC.length]}"></span>Photo ${i.slot} \u00b7 ${kb(i.bytes)}</span><button class="danger" data-del="${i.slot}">&#x2715;</button></div>`).join("")}
 $("phlist").onclick=e=>{const t=e.target;if(t.dataset.show)cmd("PHOTO SHOW "+t.dataset.show,"Showing on the clock");
 else if(t.dataset.del&&confirm("Delete this photo from the clock?"))cmd("PHOTO DEL "+t.dataset.del,"Photo deleted")};
 $("phevery").onchange=e=>cmd("PHOTO EVERY "+e.target.value);
 const ph={img:null,z:1,cx:0,cy:0};
-function phScale(){return Math.max(320/ph.img.width,240/ph.img.height)*ph.z}
+function phFit(){return $("phfit").checked}
+function phScale(){const i=ph.img,a=320/i.width,b=240/i.height;return(phFit()?Math.min(a,b):Math.max(a,b))*ph.z}
 function phDraw(){const i=ph.img,s=phScale(),hw=160/s,hh=120/s;
-ph.cx=Math.min(Math.max(ph.cx,hw),i.width-hw);ph.cy=Math.min(Math.max(ph.cy,hh),i.height-hh);
+ph.cx=hw>=i.width/2?i.width/2:Math.min(Math.max(ph.cx,hw),i.width-hw);ph.cy=hh>=i.height/2?i.height/2:Math.min(Math.max(ph.cy,hh),i.height-hh);
 const g=$("phcv").getContext("2d");g.imageSmoothingEnabled=true;g.imageSmoothingQuality="high";g.fillStyle="#000";g.fillRect(0,0,320,240);
-g.drawImage(i,ph.cx-hw,ph.cy-hh,2*hw,2*hh,0,0,320,240)}
+if(phFit()&&"filter"in g){const k=Math.max(320/i.width,240/i.height);g.filter="blur(14px)";g.drawImage(i,(320-i.width*k)/2,(240-i.height*k)/2,i.width*k,i.height*k);g.filter="none";g.fillStyle="rgba(0,0,0,.5)";g.fillRect(0,0,320,240)}
+const x0=ph.cx-hw,y0=ph.cy-hh,ix=Math.max(0,x0),iy=Math.max(0,y0),iw=Math.min(i.width,ph.cx+hw)-ix,ih=Math.min(i.height,ph.cy+hh)-iy;
+g.drawImage(i,ix,iy,iw,ih,(ix-x0)*s,(iy-y0)*s,iw*s,ih*s)}
 // Halve big photos first: one large downscale in a canvas looks jagged.
 function phSource(im){let c=im,w=im.naturalWidth,h=im.naturalHeight;
 while(w/2>=1280&&h/2>=960){w=Math.round(w/2);h=Math.round(h/2);const n=document.createElement("canvas");n.width=w;n.height=h;
 const g=n.getContext("2d");g.imageSmoothingQuality="high";g.drawImage(c,0,0,w,h);c=n}return c}
 $("phadd").onclick=()=>$("phfile").click();
-$("phfile").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)return;const im=new Image(),url=URL.createObjectURL(f);
-im.onload=()=>{URL.revokeObjectURL(url);ph.img=phSource(im);ph.z=1;$("phzoom").value=1;ph.cx=ph.img.width/2;ph.cy=ph.img.height/2;
+$("phfile").onchange=e=>{const f=e.target.files[0];e.target.value="";phOpen(f)};
+function phOpen(f){if(!f)return;if(!f.type.startsWith("image/")&&!/\.(heic|heif)$/i.test(f.name)){toast("That isn't a picture");return}if($("phadd").disabled){toast("No room for more photos; delete one first");return}const im=new Image(),url=URL.createObjectURL(f);
+im.onload=()=>{URL.revokeObjectURL(url);ph.img=phSource(im);ph.z=1;$("phzoom").value=1;$("phfit").checked=false;ph.cx=ph.img.width/2;ph.cy=ph.img.height/2;
 $("phedit").style.display="block";phDraw();$("phedit").scrollIntoView({behavior:"smooth",block:"center"})};
-im.onerror=()=>{URL.revokeObjectURL(url);toast("This browser can't open that image; try a JPEG or PNG")};im.src=url};
+im.onerror=()=>{URL.revokeObjectURL(url);toast("This browser can't open that image; try a JPEG or PNG")};im.src=url}
+$("phfit").onchange=()=>{ph.z=1;$("phzoom").value=1;ph.cx=ph.img.width/2;ph.cy=ph.img.height/2;phDraw()};
+{const z=$("phsec");z.ondragover=e=>{e.preventDefault();z.classList.add("dropping")};z.ondragleave=e=>{if(!z.contains(e.relatedTarget))z.classList.remove("dropping")};z.ondrop=e=>{e.preventDefault();z.classList.remove("dropping");phOpen(e.dataTransfer.files[0])}}
 $("phzoom").oninput=e=>{ph.z=parseFloat(e.target.value);phDraw()};
 {let drag=null;const c=$("phcv");
 c.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY};c.setPointerCapture(e.pointerId);c.style.cursor="grabbing"};
